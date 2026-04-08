@@ -1,36 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Split checkout — UX-прототип
 
-## Getting Started
+Интерактивный прототип оформления заказа с расчётом **split** по правилам, админкой для тестовых данных и режимом **override** для коридорных тестов.
 
-First, run the development server:
+Стек: **Next.js 15**, **React 19**, **TypeScript**, **Tailwind CSS 4**, **Prisma 6**, **SQLite**.
+
+## Запуск
 
 ```bash
+npm install
+cp .env.example .env
+npx prisma db push
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Откройте [http://localhost:3000/checkout](http://localhost:3000/checkout) и [http://localhost:3000/admin/login](http://localhost:3000/admin/login).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Пароль админки
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Задаётся в `.env`: переменная `ADMIN_PASSWORD` (в `.env.example` — `admin`).
 
-## Learn More
+## Наполнение базы
 
-To learn more about Next.js, take a look at the following resources:
+- Схема: `prisma/schema.prisma`
+- Сид: `prisma/seed.ts` — упрощённый конфиг: только Москва, 5 товаров, источники, остатки, правила, ПВЗ, пример override (выключен)
+- Повторный сид перезаписывает данные (через `deleteMany` в начале сида)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run db:seed
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Просмотр и правка «вручную»: `npm run db:studio`.
 
-## Deploy on Vercel
+## Добавить товар
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Админка** → «Товары» — форма создания и переключение активности.
+2. Либо Prisma Studio / прямой SQL.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+После добавления товара добавьте строки в `Inventory` для нужных источников (курьер / самовывоз / ПВЗ).
+
+## Как формируется корзина
+
+Checkout больше не использует сущность тестовых корзин. Корзина формируется автоматически из **активных товаров с остатком > 0** в выбранном городе.
+
+## Логистические правила
+
+Модель `ShippingRule`: одна строка на пару **город + способ получения** (`DeliveryMethod`). Поля: сроки, стоимость доставки, порог бесплатной доставки, флаги использования склада / магазинов / click & collect.
+
+Правка доступна и в админке, и через Prisma Studio.
+
+## Override-сценарий
+
+Таблица `ScenarioOverride`: совпадение по `cityId`, `deliveryMethod` (`courier` | `pickup` | `pvz`) и `isEnabled: true` **полностью заменяет** результат движка.
+
+`payloadJson` — JSON вида:
+
+```json
+{
+  "parts": [
+    {
+      "key": "part1",
+      "sourceId": "src_wh_pod",
+      "mode": "courier",
+      "leadTimeLabel": "Завтра",
+      "items": [{ "productId": "p_kurtka", "quantity": 1 }],
+      "defaultIncluded": true,
+      "canToggle": true
+    }
+  ],
+  "remainder": [{ "productId": "p_futbolka", "quantity": 1 }],
+  "informers": ["Произвольный текст для UX-теста"]
+}
+```
+
+В админке можно **включить/выключить** готовый override; тело JSON удобно править в Studio.
+
+## Движок split (кратко)
+
+- **`lib/split-engine.ts`** — расчёт сценария по корзине, городу, способу и остаткам.
+- **Курьер**: приоритет склада (Москва), полное покрытие → одна часть; иначе порог **40%** объёма со склада + вторая часть из **одного** магазина, если возможно; иначе упрощённый сценарий и остаток в корзине (не более двух отправлений по умолчанию).
+- **Самовывоз**: сначала сток выбранного магазина (click & reserve), затем склад → магазин (click & collect), если у города `hasClickCollect` и правило разрешает; иначе остаток в корзине.
+- **ПВЗ**: только складские позиции с флагом `availableForPVZ`; ПВЗ с `requiresPrepayment` не показываются в списке на checkout.
+
+Подробнее — в ТЗ и комментариях в `split-engine.ts`.
+
+Промокод **APP20** (−20%) и **1000 ₽ бонусов** на checkout взаимоисключающие.
+
+## Маршруты
+
+| Путь | Назначение |
+|------|------------|
+| `/checkout` | Клиентский прототип |
+| `/thank-you` | Итог (данные из `sessionStorage`, заказы в БД не пишутся) |
+| `/admin/*` | Админка (cookie после логина) |
+| `/api/bootstrap` | Справочники для checkout |
+| `/api/checkout/scenario` | POST: пересчёт сценария |
+| `/api/cart-lines` | Состав корзины и суммы |
+
+## Критерии готовности (из ТЗ)
+
+Локальный запуск, редактируемые данные, расчёт split, курьер / самовывоз / ПВЗ, остаток в корзине, сид, override, thank you — реализованы в объёме MVP прототипа.

@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  sku         String      @unique
+  price       Int
+  image       String
+  isActive    Boolean     @default(true)
+  inventories Inventory[]
+}
+
+model City {
+  id              String             @id @default(cuid())
+  name            String
+  regionType      String
+  hasClickCollect Boolean            @default(true)
+  sources         Source[]
+  shippingRules   ShippingRule[]
+  pvzPoints       PvzPoint[]
+  overrides       ScenarioOverride[]
+}
+
+model Source {
+  id          String      @id @default(cuid())
+  name        String
+  type        String
+  cityId      String
+  city        City        @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  priority    Int         @default(0)
+  isActive    Boolean     @default(true)
+  inventories Inventory[]
+}
+
+model Inventory {
+  id                  String  @id @default(cuid())
+  productId           String
+  product             Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sourceId            String
+  source              Source  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  quantity            Int
+  availableForCourier Boolean @default(true)
+  availableForPickup  Boolean @default(true)
+  availableForPVZ     Boolean @default(true)
+
+  @@unique([productId, sourceId])
+}
+
+model DeliveryMethod {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  name          String
+  isActive      Boolean        @default(true)
+  shippingRules ShippingRule[]
+}
+
+/// Одна строка на пару город + способ получения
+model ShippingRule {
+  id                    String         @id @default(cuid())
+  cityId                String
+  city                  City           @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  deliveryMethodId      String
+  deliveryMethod        DeliveryMethod @relation(fields: [deliveryMethodId], references: [id], onDelete: Cascade)
+  allowed               Boolean        @default(true)
+  leadTimeDays          Int            @default(1)
+  leadTimeLabel         String         @default("")
+  requiresPrepayment    Boolean        @default(false)
+  freeDeliveryThreshold Int            @default(0)
+  deliveryPrice         Int            @default(0)
+  canUseWarehouse       Boolean        @default(true)
+  canUseStores          Boolean        @default(true)
+  canUseClickCollect    Boolean        @default(true)
+  ruleSteps             RuleStep[]
+
+  @@unique([cityId, deliveryMethodId])
+}
+
+model RuleStep {
+  id                 String       @id @default(cuid())
+  shippingRuleId     String
+  shippingRule       ShippingRule @relation(fields: [shippingRuleId], references: [id], onDelete: Cascade)
+  sortOrder          Int          @default(10)
+  sourceType         String       @default("warehouse")
+  matchMode          String       @default("full")
+  thresholdPercent   Int          @default(100)
+  continueAfterMatch Boolean      @default(true)
+
+  @@index([shippingRuleId, sortOrder])
+}
+
+model ScenarioOverride {
+  id             String   @id @default(cuid())
+  name           String
+  cityId         String
+  city           City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  deliveryMethod String
+  isEnabled      Boolean  @default(true)
+  payloadJson    String
+
+  @@index([cityId, deliveryMethod])
+}
+
+model PvzPoint {
+  id                 String  @id @default(cuid())
+  name               String
+  address            String
+  cityId             String
+  city               City    @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  requiresPrepayment Boolean @default(false)
+  isActive           Boolean @default(true)
+}
+
+model DisclaimerTemplate {
+  id       String  @id @default(cuid())
+  code     String  @unique
+  title    String
+  text     String
+  isActive Boolean @default(true)
+}
