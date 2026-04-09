@@ -9,6 +9,10 @@ type Ty = {
     sourceName: string;
     methodLabel: string;
     leadTimeLabel: string;
+    selectedDate?: string;
+    selectedSlot?: string;
+    holdDays?: number;
+    freeDeliveryThreshold: number;
     items: { name: string; quantity: number }[];
     subtotal: number;
     deliveryPrice: number;
@@ -18,12 +22,21 @@ type Ty = {
   total: number;
   payOnDeliveryOnly: boolean;
   method: string;
+  courierAddress?: string | null;
 };
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(
     n,
   );
+
+function pluralizeDays(n: number) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "день";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "дня";
+  return "дней";
+}
 
 export default function ThankYouPage() {
   const [data, setData] = useState<Ty | null | "loading">("loading");
@@ -87,6 +100,19 @@ export default function ThankYouPage() {
             <p className="mt-1 text-sm font-semibold">{p.sourceName}</p>
             <p className="text-xs text-neutral-500">{p.methodLabel}</p>
             <p className="text-xs text-[var(--gj-muted)]">{p.leadTimeLabel}</p>
+            {p.selectedDate && p.selectedSlot ? (
+              <p className="text-xs text-neutral-500">
+                Доставка: {p.selectedDate}, {p.selectedSlot}
+              </p>
+            ) : null}
+            {data.courierAddress && p.methodLabel.toLowerCase().includes("курьер") ? (
+              <p className="text-xs text-neutral-500">Адрес: {data.courierAddress}</p>
+            ) : null}
+            {p.holdDays ? (
+              <p className="text-xs text-neutral-500">
+                Срок хранения: {p.holdDays} {pluralizeDays(p.holdDays)}
+              </p>
+            ) : null}
             <ul className="mt-2 text-xs text-neutral-700">
               {p.items.map((it) => (
                 <li key={it.name + it.quantity}>
@@ -97,6 +123,19 @@ export default function ThankYouPage() {
             <p className="mt-2 text-sm font-medium">
               {fmt(p.subtotal + p.deliveryPrice - p.bonusUsed)}
             </p>
+            <div className="mt-1 space-y-1 text-xs text-neutral-500">
+              <div className="flex justify-between gap-3">
+                <span>Товары</span>
+                <span>{fmt(p.subtotal)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Доставка</span>
+                <span>{p.deliveryPrice > 0 ? fmt(p.deliveryPrice) : "Бесплатно"}</span>
+              </div>
+              {p.deliveryPrice > 0 && p.freeDeliveryThreshold > 0 ? (
+                <p>Бесплатная доставка от {fmt(p.freeDeliveryThreshold)}</p>
+              ) : null}
+            </div>
             {p.promoDiscount > 0 ? <p className="text-xs text-red-600">Скидка: − {fmt(p.promoDiscount)}</p> : null}
             {p.bonusUsed > 0 ? <p className="text-xs text-red-600">Бонусы: − {fmt(p.bonusUsed)}</p> : null}
           </div>
