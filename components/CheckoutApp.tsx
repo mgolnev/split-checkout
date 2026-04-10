@@ -2034,11 +2034,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <p className="font-semibold text-red-600">Не удалось загрузить оформление заказа</p>
         <p className="text-neutral-600">{bootError}</p>
         <p className="text-xs text-neutral-500">
-          Чаще всего на Vercel не совпадают строки Supabase: нужны две переменные{" "}
-          <code className="rounded bg-neutral-100 px-1">DATABASE_URL</code> (pooler 6543) и{" "}
-          <code className="rounded bg-neutral-100 px-1">DIRECT_URL</code> (прямой db…5432), пароль в URL должен быть
-          закодирован (# и * ломают строку). Соберите их командой{" "}
-          <code className="rounded bg-neutral-100 px-1">npm run supabase:urls</code> в репозитории. Проверка БД:{" "}
+          Проверьте <code className="rounded bg-neutral-100 px-1">DATABASE_URL</code> в Vercel: для Supabase нужна
+          прямая строка <code className="rounded bg-neutral-100 px-1">db…supabase.co:5432</code>, пароль в URL
+          закодирован (# и * ломают строку). Соберите:{" "}
+          <code className="rounded bg-neutral-100 px-1">npm run supabase:urls</code>. Проверка:{" "}
           <code className="rounded bg-neutral-100 px-1">/api/health</code>.
         </p>
       </div>
