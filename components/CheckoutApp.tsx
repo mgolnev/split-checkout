@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AlternativeMethodOption, RemainderResolution, ScenarioPart, ScenarioResult } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AlternativeMethodOption, CartLine, RemainderResolution, ScenarioPart, ScenarioResult } from "@/lib/types";
 
 type Bootstrap = {
   cities: { id: string; name: string; hasClickCollect: boolean }[];
@@ -54,13 +54,29 @@ type PartDeliverySchedule = {
   slotIx: number;
 };
 
-type SelectedRemainderOption = {
+type DeliveryMethodCode = "courier" | "pickup" | "pvz";
+
+type SecondarySelection = {
+  id: string;
+  inputLines: CartLine[];
   option: AlternativeMethodOption;
+  scenario: ScenarioResult;
+  nextResolution: RemainderResolution | null;
+};
+
+type DisplaySecondarySelection = SecondarySelection & {
+  parts: ScenarioPart[];
+};
+
+type SplitModalState = {
+  mode: "add" | "edit";
+  editIndex: number | null;
+  resolution: RemainderResolution;
 };
 
 type CourierAddressModalTarget =
   | { kind: "primary" }
-  | { kind: "remainder"; option: AlternativeMethodOption };
+  | { kind: "split"; option: AlternativeMethodOption };
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(
@@ -113,6 +129,15 @@ const methodOrder = { courier: 0, pickup: 1, pvz: 2 } as const;
 
 function countUnits(lines: { quantity: number }[]) {
   return lines.reduce((sum, line) => sum + line.quantity, 0);
+}
+
+function withSecondaryPartKeys(parts: ScenarioPart[], selectionId: string) {
+  return parts.map((part, index) => ({
+    ...part,
+    key: `${selectionId}_${index}_${part.key}`,
+    canToggle: true,
+    defaultIncluded: true,
+  }));
 }
 
 function optionSummaryTitle(option: AlternativeMethodOption) {
@@ -723,65 +748,240 @@ function CourierAddressModal({
   );
 }
 
-function AlternativeMethodChooser({
+function UnresolvedItemsBlock({
   resolution,
   productsById,
-  currentMethod,
-  selectedOption,
-  onSelect,
+  onChoose,
 }: {
   resolution: RemainderResolution;
   productsById: Record<string, Bootstrap["products"][number]>;
-  currentMethod: "courier" | "pickup" | "pvz" | null;
-  selectedOption?: AlternativeMethodOption;
-  onSelect: (option: AlternativeMethodOption) => void;
+  onChoose: () => void;
 }) {
   const totalUnits = countUnits(resolution.lines);
-  const bestOption = resolution.options[0];
-  const courierOption = resolution.options.find((option) => option.methodCode === "courier");
-  const pickupOptions = resolution.options.filter((option) => option.methodCode === "pickup");
-  const bestPickupOption = pickupOptions[0];
-  const pvzOption = resolution.options.find((option) => option.methodCode === "pvz");
-  const selectedMethodCode = selectedOption?.methodCode ?? null;
-  const methodChoices = [
-    courierOption
-      ? {
-          key: "courier",
-          label: methodGroupLabel("courier"),
-          summary: methodGroupSummary("courier", courierOption),
-          option: courierOption,
-        }
-      : null,
-    bestPickupOption
-      ? {
-          key: "pickup",
-          label: methodGroupLabel("pickup"),
-          summary: methodGroupSummary("pickup", bestPickupOption, pickupOptions.length),
-          option: bestPickupOption,
-        }
-      : null,
-    pvzOption
-      ? {
-          key: "pvz",
-          label: methodGroupLabel("pvz"),
-          summary: methodGroupSummary("pvz", pvzOption),
-          option: pvzOption,
-        }
-      : null,
-  ].filter((item): item is { key: "courier" | "pickup" | "pvz"; label: string; summary: string; option: AlternativeMethodOption } => Boolean(item));
-  const preferredLabel = currentMethod === "pickup" ? "Можно выбрать доставку, самовывоз или ПВЗ." : "Выберите, как получить эти товары.";
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold">Эти товары пока не вошли в заказ</p>
-          <p className="mt-1 text-xs text-neutral-500">{preferredLabel}</p>
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          <p className="text-sm font-semibold">Как получить остальные товары</p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Можно выбрать удобный вариант для этих товаров сейчас или оставить их в корзине.
+          </p>
+        </div>
+        <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
+          {totalUnits} шт
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-xl bg-neutral-50 p-3">
+        <p className="text-sm font-semibold">Эти товары пока не вошли в заказ</p>
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {resolution.lines.map((line) => (
+            <div
+              key={line.productId}
+              className="flex min-w-[108px] shrink-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5"
+            >
+              <div className="relative h-10 w-10 overflow-hidden rounded-md bg-neutral-100">
+                {productsById[line.productId]?.image ? (
+                  <Image
+                    src={productsById[line.productId]!.image}
+                    alt={productsById[line.productId]?.name ?? line.productId}
+                    fill
+                    className="object-cover"
+                    sizes="40px"
+                  />
+                ) : null}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-medium text-neutral-800">
+                  {productsById[line.productId]?.name ?? line.productId}
+                </p>
+                <p className="text-[10px] text-neutral-500">× {line.quantity}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          onClick={onChoose}
+          className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white"
+        >
+          Выбрать способ получения
+        </button>
+      </div>
+
+      {resolution.options.length === 0 ? (
+        <div className="mt-3 rounded-xl border border-dashed border-neutral-300 p-3 text-xs text-neutral-500">
+          Для этих товаров сейчас не нашли других способов оформления.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SecondarySelectionCard({
+  option,
+  pickupStore,
+  pvzPoint,
+  courierAddress,
+  onEdit,
+}: {
+  option: AlternativeMethodOption;
+  pickupStore?: PickupStoreOption;
+  pvzPoint?: PvzPointOption;
+  courierAddress?: string;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white px-3 py-3">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 h-4 w-4 rounded-full border border-neutral-400 bg-white">
+          <div className="m-[3px] h-2 w-2 rounded-full bg-neutral-900" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">{methodGroupLabel(option.methodCode)}</div>
+              <div className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={onEdit}
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium"
+              >
+                Изменить
+              </button>
+            </div>
+          </div>
+          {option.methodCode === "pickup" ? (
+            <PickupSelectedStoreCard store={pickupStore} onChange={onEdit} embedded />
+          ) : option.methodCode === "pvz" ? (
+            <PvzSelectedPointCard point={pvzPoint} summary={undefined} onChange={onEdit} />
+          ) : (
+            <CourierAddressCard address={courierAddress} onChange={onEdit} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SplitSelectionModal({
+  resolution,
+  productsById,
+  pvzPoints,
+  selectedPvzId,
+  onSelectPvz,
+  courierAddress,
+  onEditCourierAddress,
+  onClose,
+  onConfirm,
+  saving,
+}: {
+  resolution: RemainderResolution;
+  productsById: Record<string, Bootstrap["products"][number]>;
+  pvzPoints: PvzPointOption[];
+  selectedPvzId: string;
+  onSelectPvz: (pointId: string) => void;
+  courierAddress: string;
+  onEditCourierAddress: (option: AlternativeMethodOption) => void;
+  onClose: () => void;
+  onConfirm: (option: AlternativeMethodOption) => void;
+  saving: boolean;
+}) {
+  const courierOption = resolution.options.find((option) => option.methodCode === "courier") ?? null;
+  const pickupOptions = resolution.options.filter((option) => option.methodCode === "pickup");
+  const pvzOption = resolution.options.find((option) => option.methodCode === "pvz") ?? null;
+  const methodChoices = [
+    courierOption
+      ? {
+          key: "courier" as const,
+          label: methodGroupLabel("courier"),
+          summary: methodGroupSummary("courier", courierOption),
+        }
+      : null,
+    pickupOptions[0]
+      ? {
+          key: "pickup" as const,
+          label: methodGroupLabel("pickup"),
+          summary: methodGroupSummary("pickup", pickupOptions[0], pickupOptions.length),
+        }
+      : null,
+    pvzOption
+      ? {
+          key: "pvz" as const,
+          label: methodGroupLabel("pvz"),
+          summary: methodGroupSummary("pvz", pvzOption),
+        }
+      : null,
+  ].filter((item): item is { key: DeliveryMethodCode; label: string; summary: string } => Boolean(item));
+  const [selectedMethod, setSelectedMethod] = useState<DeliveryMethodCode | null>(null);
+  const [selectedPickupStoreId, setSelectedPickupStoreId] = useState<string>("");
+  const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
+  const [pickupSearch, setPickupSearch] = useState("");
+  const selectedPickupOption =
+    pickupOptions.find((option) => option.storeId === selectedPickupStoreId) ?? null;
+  const selectedPvzPoint = pvzPoints.find((point) => point.id === selectedPvzId) ?? pvzPoints[0];
+  const filteredPickupOptions = pickupOptions.filter((option) =>
+    (option.storeName ?? "").toLocaleLowerCase("ru").includes(pickupSearch.trim().toLocaleLowerCase("ru")),
+  );
+  const selectedOption =
+    selectedMethod === "courier"
+      ? courierOption
+      : selectedMethod === "pickup"
+        ? selectedPickupOption
+        : selectedMethod === "pvz"
+          ? pvzOption
+          : null;
+  const confirmDisabled =
+    saving ||
+    !selectedOption ||
+    (selectedMethod === "courier" && !courierAddress.trim()) ||
+    (selectedMethod === "pvz" && !selectedPvzPoint);
+
+  const handleMethodSelect = (methodCode: DeliveryMethodCode) => {
+    if (methodCode === "courier") {
+      setSelectedMethod("courier");
+      if (!courierAddress.trim() && courierOption) {
+        onEditCourierAddress(courierOption);
+      }
+      return;
+    }
+    if (methodCode === "pickup") {
+      setSelectedMethod("pickup");
+      setPickupSelectorOpen(true);
+      return;
+    }
+    setSelectedMethod("pvz");
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+      <button type="button" aria-label="Закрыть выбор способа получения" className="absolute inset-0" onClick={onClose} />
+      <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Выберите способ получения</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+          >
+            Закрыть
+          </button>
+        </div>
+
+        <div className="rounded-xl bg-neutral-50 p-3">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {resolution.lines.map((line) => (
               <div
                 key={line.productId}
-                className="flex min-w-[108px] shrink-0 items-center gap-2 rounded-lg bg-neutral-50 px-2 py-1.5"
+                className="flex min-w-[108px] shrink-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5"
               >
                 <div className="relative h-10 w-10 overflow-hidden rounded-md bg-neutral-100">
                   {productsById[line.productId]?.image ? (
@@ -804,89 +1004,27 @@ function AlternativeMethodChooser({
             ))}
           </div>
         </div>
-        <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
-          {totalUnits} шт
-        </span>
-      </div>
 
-      {bestOption ? (
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-          <span className="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-            Рекомендуем
-          </span>
-          <p className="mt-2 text-sm font-semibold text-neutral-900">{methodGroupLabel(bestOption.methodCode)}</p>
-          <p className="mt-1 text-xs text-neutral-600">{methodGroupSummary(bestOption.methodCode, bestOption, pickupOptions.length)}.</p>
-        </div>
-      ) : null}
-
-      <div className="mt-4 space-y-2">
-        {methodChoices.map((choice) => {
-          const isSelected = selectedMethodCode === choice.key;
-          const isBest = bestOption?.methodCode === choice.key;
-          return (
-            <button
-              key={choice.key}
-              type="button"
-              onClick={() => onSelect(choice.option)}
-              className={`w-full rounded-xl border p-3 text-left transition ${
-                isSelected
-                  ? "border-black bg-neutral-50"
-                  : isBest
-                    ? "border-emerald-300 bg-emerald-50/40 hover:border-emerald-400"
-                    : "border-neutral-200 bg-white hover:border-neutral-300"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold">{choice.label}</p>
-                    {isBest ? (
-                      <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase text-emerald-800">
-                        Лучший вариант
-                      </span>
-                    ) : null}
-                    {isSelected ? (
-                      <span className="rounded-full bg-black px-2 py-1 text-[10px] font-semibold uppercase text-white">
-                        Выбран
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm font-medium text-neutral-900">{choice.summary}</p>
-                </div>
-                <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
-                  {choice.option.availableUnits}/{choice.option.totalUnits}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {selectedMethodCode === "pickup" ? (
-        <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">
-          <p className="text-xs text-neutral-500">Выберите магазин, где удобнее забрать эти товары:</p>
-          {pickupOptions.map((option) => {
-            const isSelected =
-              selectedOption?.methodCode === option.methodCode &&
-              selectedOption?.storeId === option.storeId &&
-              selectedOption?.storeName === option.storeName;
+        <div className="mt-4 space-y-2">
+          {methodChoices.map((choice) => {
+            const isSelected = selectedMethod === choice.key;
             return (
               <button
-                key={`${option.methodCode}_${option.storeId ?? "default"}`}
+                key={choice.key}
                 type="button"
-                onClick={() => onSelect(option)}
+                onClick={() => handleMethodSelect(choice.key)}
                 className={`w-full rounded-xl border p-3 text-left transition ${
                   isSelected ? "border-black bg-neutral-50" : "border-neutral-200 bg-white hover:border-neutral-300"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">{optionMethodLabel(option)}</p>
-                    <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</p>
+                    <p className="text-sm font-semibold">{choice.label}</p>
+                    <p className="mt-1 text-xs text-neutral-500">{choice.summary}</p>
                   </div>
                   {isSelected ? (
-                    <span className="rounded-full bg-black px-2 py-1 text-[10px] font-semibold uppercase text-white">
-                      Выбран
+                    <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-700">
+                      Активно
                     </span>
                   ) : null}
                 </div>
@@ -894,8 +1032,173 @@ function AlternativeMethodChooser({
             );
           })}
         </div>
-      ) : null}
 
+        {selectedMethod === "pickup" ? (
+          <div className="mt-4 rounded-xl border border-neutral-200 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Магазин для этой части заказа</p>
+                {selectedPickupOption ? (
+                  <>
+                    <p className="mt-2 text-sm text-neutral-900">{optionMethodLabel(selectedPickupOption)}</p>
+                    <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(selectedPickupOption)}</p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-neutral-500">Выберите магазин в отдельном окне выбора.</p>
+                )}
+              </div>
+              {selectedPickupOption ? (
+                <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
+                  {selectedPickupOption.availableUnits}/{selectedPickupOption.totalUnits}
+                </span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPickupSelectorOpen(true)}
+              className="mt-3 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-medium"
+            >
+              {selectedPickupOption ? "Изменить магазин" : "Выбрать магазин"}
+            </button>
+          </div>
+        ) : null}
+
+        {selectedMethod === "courier" ? (
+          <div className="mt-4 rounded-xl border border-neutral-200 p-4">
+            <p className="text-sm font-semibold">Адрес для этой доставки</p>
+            {courierAddress.trim() ? (
+              <p className="mt-2 text-sm text-neutral-900">{courierAddress}</p>
+            ) : (
+              <p className="mt-2 text-sm text-neutral-500">Укажите адрес, чтобы добавить курьерское отправление.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => courierOption && onEditCourierAddress(courierOption)}
+              className="mt-3 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-medium"
+            >
+              {courierAddress.trim() ? "Изменить адрес" : "Указать адрес"}
+            </button>
+          </div>
+        ) : null}
+
+        {selectedMethod === "pvz" ? (
+          <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">
+            <p className="text-xs text-neutral-500">Выберите ПВЗ для этой части заказа.</p>
+            {pvzPoints.map((point) => {
+              const isSelected = point.id === (selectedPvzPoint?.id ?? "");
+              return (
+                <button
+                  key={point.id}
+                  type="button"
+                  onClick={() => onSelectPvz(point.id)}
+                  className={`w-full rounded-xl border p-3 text-left transition ${
+                    isSelected ? "border-black bg-neutral-50" : "border-neutral-200 bg-white hover:border-neutral-300"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{point.name}</p>
+                      <p className="mt-1 text-xs text-neutral-500">{point.address}</p>
+                    </div>
+                    {isSelected ? (
+                      <span className="rounded-full bg-black px-2 py-1 text-[10px] font-semibold uppercase text-white">
+                        Выбран
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={() => selectedOption && onConfirm(selectedOption)}
+            disabled={confirmDisabled}
+            className="flex-1 rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {saving ? "Добавляем…" : "Добавить отправление"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-200 px-4 py-3 text-sm font-medium"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+      {pickupSelectorOpen ? (
+        <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+          <button
+            type="button"
+            aria-label="Закрыть выбор магазина"
+            className="absolute inset-0"
+            onClick={() => setPickupSelectorOpen(false)}
+          />
+          <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h4 className="text-lg font-semibold">Выберите магазин</h4>
+                <p className="mt-1 text-sm text-neutral-500">
+                  Для большого списка удобнее искать магазин по названию и сразу видеть покрытие товаров.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPickupSelectorOpen(false)}
+                className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+              >
+                Закрыть
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={pickupSearch}
+              onChange={(e) => setPickupSearch(e.target.value)}
+              placeholder="Найти магазин"
+              className="mb-4 w-full rounded-xl border border-neutral-200 px-3 py-3 text-sm outline-none focus:border-neutral-400"
+            />
+
+            <div className="space-y-2">
+              {filteredPickupOptions.map((option) => {
+                const isSelected = option.storeId === selectedPickupStoreId;
+                return (
+                  <button
+                    key={`${option.methodCode}_${option.storeId ?? "default"}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPickupStoreId(option.storeId ?? "");
+                      setPickupSelectorOpen(false);
+                    }}
+                    className={`w-full rounded-xl border p-3 text-left transition ${
+                      isSelected ? "border-black bg-neutral-50" : "border-neutral-200 bg-white hover:border-neutral-300"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">{optionMethodLabel(option)}</p>
+                        <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</p>
+                      </div>
+                      <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
+                        {option.availableUnits}/{option.totalUnits}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+              {filteredPickupOptions.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+                  По этому запросу магазины не найдены.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -998,12 +1301,44 @@ function PartCard({
             <div className="min-w-0">
               <p>{collapsedSummary}</p>
               <p className="mt-0.5 text-xs font-normal text-neutral-500">{leadLabel}</p>
+              {part.holdDays ? (
+                <p className="mt-0.5 text-xs font-normal text-neutral-500">
+                  Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
+                </p>
+              ) : null}
             </div>
             <div className="ml-3 flex items-center gap-3">
               <span className="text-sm font-semibold">{fmt(sub + ship)}</span>
               {collapsible ? <span className="text-neutral-500">{expanded ? "⌃" : "⌄"}</span> : null}
             </div>
           </button>
+          {expanded && part.holdDays ? (
+            <p className="mt-2 text-xs text-neutral-500">
+              Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
+            </p>
+          ) : null}
+          {expanded ? (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {visible.map((it) => (
+                <div key={it.productId} className="w-14 shrink-0 text-center">
+                  <div className="relative aspect-square overflow-hidden rounded-md bg-neutral-100">
+                    <Image src={it.image} alt="" fill className="object-cover" sizes="56px" />
+                    {it.quantity > 1 ? (
+                      <span className="absolute bottom-0.5 right-0.5 rounded bg-black px-1 text-[9px] text-white">
+                        {it.quantity} шт
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 truncate text-[9px] text-neutral-500">SKU</p>
+                </div>
+              ))}
+              {extra > 0 ? (
+                <div className="flex w-10 shrink-0 items-center justify-center text-sm font-semibold text-neutral-500">
+                  +{extra}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {expanded && isCourier ? (
             <div className="mt-3 space-y-2">
               <p className="text-sm font-semibold">Доставим — {deliveryDate}</p>
@@ -1035,33 +1370,6 @@ function PartCard({
                   </button>
                 ))}
               </div>
-            </div>
-          ) : null}
-          {expanded && part.holdDays ? (
-            <p className="mt-2 text-xs text-neutral-500">
-              Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
-            </p>
-          ) : null}
-          {expanded ? (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {visible.map((it) => (
-                <div key={it.productId} className="w-14 shrink-0 text-center">
-                  <div className="relative aspect-square overflow-hidden rounded-md bg-neutral-100">
-                    <Image src={it.image} alt="" fill className="object-cover" sizes="56px" />
-                    {it.quantity > 1 ? (
-                      <span className="absolute bottom-0.5 right-0.5 rounded bg-black px-1 text-[9px] text-white">
-                        {it.quantity} шт
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 truncate text-[9px] text-neutral-500">SKU</p>
-                </div>
-              ))}
-              {extra > 0 ? (
-                <div className="flex w-10 shrink-0 items-center justify-center text-sm font-semibold text-neutral-500">
-                  +{extra}
-                </div>
-              ) : null}
             </div>
           ) : null}
           {expanded && showRemainderHint && remainderKeepHint ? (
@@ -1111,14 +1419,17 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const router = useRouter();
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [cityId, setCityId] = useState<string>("");
-  const [method, setMethod] = useState<"courier" | "pickup" | "pvz" | null>(null);
+  const [method, setMethod] = useState<DeliveryMethodCode | null>(null);
   const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
   const [pvzSelectorOpen, setPvzSelectorOpen] = useState(false);
   const [storeId, setStoreId] = useState<string>("");
   const [pvzId, setPvzId] = useState<string>("");
   const [scenario, setScenario] = useState<ScenarioResult | null>(null);
   const [remainderResolution, setRemainderResolution] = useState<RemainderResolution | null>(null);
-  const [selectedRemainderOption, setSelectedRemainderOption] = useState<SelectedRemainderOption | null>(null);
+  const [secondarySelections, setSecondarySelections] = useState<SecondarySelection[]>([]);
+  const [splitModalState, setSplitModalState] = useState<SplitModalState | null>(null);
+  const [splitSubmitting, setSplitSubmitting] = useState(false);
+  const [selectionSeq, setSelectionSeq] = useState(0);
   const [included, setIncluded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [partSchedules, setPartSchedules] = useState<Record<string, PartDeliverySchedule>>({});
@@ -1129,6 +1440,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [courierAddress, setCourierAddress] = useState("");
   const [courierAddressModalTarget, setCourierAddressModalTarget] = useState<CourierAddressModalTarget | null>(null);
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
+  const latestScenarioRequestRef = useRef(0);
+  const primaryCourierAddress = method === "courier" ? courierAddress : "";
 
   useEffect(() => {
     fetch("/api/bootstrap")
@@ -1140,38 +1453,60 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       });
   }, []);
 
+  const requestScenario = useCallback(
+    async (params: {
+      deliveryMethodCode: DeliveryMethodCode;
+      selectedStoreId?: string | null;
+      lines?: CartLine[];
+    }) => {
+      const res = await fetch("/api/checkout/scenario", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cityId,
+          deliveryMethodCode: params.deliveryMethodCode,
+          selectedStoreId: params.selectedStoreId ?? null,
+          lines: params.lines,
+        }),
+      });
+      return (await res.json()) as {
+        scenario: ScenarioResult;
+        remainderResolution: RemainderResolution | null;
+      };
+    },
+    [cityId],
+  );
+
   const refreshScenario = useCallback(async () => {
-    if (!cityId || !method || (method === "courier" && !courierAddress.trim())) {
+    const requestId = latestScenarioRequestRef.current + 1;
+    latestScenarioRequestRef.current = requestId;
+
+    if (!cityId || !method || (method === "courier" && !primaryCourierAddress.trim())) {
       setScenario(null);
       setRemainderResolution(null);
-      setSelectedRemainderOption(null);
+      setSecondarySelections([]);
+      setSplitModalState(null);
       setIncluded({});
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/checkout/scenario", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cityId,
-          deliveryMethodCode: method,
-          selectedStoreId: method === "pickup" ? storeId || null : null,
-        }),
+      const data = await requestScenario({
+        deliveryMethodCode: method,
+        selectedStoreId: method === "pickup" ? storeId || null : null,
       });
-      const data = await res.json();
+      if (latestScenarioRequestRef.current !== requestId) return;
       const sc: ScenarioResult = data.scenario;
       setScenario(sc);
       setRemainderResolution((data.remainderResolution ?? null) as RemainderResolution | null);
-      setSelectedRemainderOption(null);
-      const next: Record<string, boolean> = {};
-      for (const p of sc.parts) next[p.key] = p.defaultIncluded;
-      setIncluded(next);
+      setSecondarySelections([]);
+      setSplitModalState(null);
     } finally {
+      if (latestScenarioRequestRef.current !== requestId) return;
       setLoading(false);
     }
-  }, [cityId, method, storeId, courierAddress]);
+  }, [cityId, method, storeId, primaryCourierAddress, requestScenario]);
 
   useEffect(() => {
     void refreshScenario();
@@ -1261,7 +1596,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   useEffect(() => {
     setScenario(null);
     setRemainderResolution(null);
-    setSelectedRemainderOption(null);
+    setSecondarySelections([]);
+    setSplitModalState(null);
     setIncluded({});
   }, [cityId]);
 
@@ -1283,42 +1619,50 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const promoFactor = promoApplied ? 0.8 : 1;
   const [distribution, setDistribution] = useState<Record<string, { promoDiscount: number; bonusUsed: number }>>({});
 
-  const selectedAlternativeParts = useMemo(() => {
-    const option = selectedRemainderOption?.option;
-    if (!option) return [] as ScenarioPart[];
-    return option.scenario.parts.map((part, index) => ({
-      ...part,
-      key: `alt_remainder_${option.methodCode}_${option.storeId ?? "default"}_${index}_${part.key}`,
-      canToggle: true,
-      defaultIncluded: true,
-    }));
-  }, [selectedRemainderOption]);
+  const secondaryDisplaySelections = useMemo<DisplaySecondarySelection[]>(
+    () =>
+      secondarySelections.map((selection) => ({
+        ...selection,
+        parts: withSecondaryPartKeys(selection.scenario.parts, selection.id),
+      })),
+    [secondarySelections],
+  );
+
+  const secondaryDisplayParts = useMemo(
+    () => secondaryDisplaySelections.flatMap((selection) => selection.parts),
+    [secondaryDisplaySelections],
+  );
+
+  const allDisplayParts = useMemo(
+    () => [...(scenario?.parts ?? []), ...secondaryDisplayParts],
+    [scenario, secondaryDisplayParts],
+  );
+
+  const activeRemainderResolution = useMemo(
+    () =>
+      secondarySelections.length > 0
+        ? (secondarySelections[secondarySelections.length - 1]?.nextResolution ?? null)
+        : remainderResolution,
+    [secondarySelections, remainderResolution],
+  );
+
+  const unresolvedLines = useMemo(
+    () => activeRemainderResolution?.lines ?? [],
+    [activeRemainderResolution],
+  );
 
   const { includedMerch, partsTotal, includedParts } = useMemo(() => {
-    if (!scenario) {
-      return {
-        includedMerch: 0,
-        partsTotal: 0,
-        includedParts: selectedAlternativeParts,
-      };
-    }
     let merch = 0;
     let t = 0;
     const parts: ScenarioPart[] = [];
-    for (const p of scenario.parts) {
-      if (included[p.key] === false) continue;
-      parts.push(p);
-      merch += p.subtotal;
-      t += Math.round(p.subtotal * promoFactor) + p.deliveryPrice;
-    }
-    for (const part of selectedAlternativeParts) {
+    for (const part of allDisplayParts) {
       if (included[part.key] === false) continue;
       parts.push(part);
       merch += part.subtotal;
       t += Math.round(part.subtotal * promoFactor) + part.deliveryPrice;
     }
     return { includedMerch: merch, partsTotal: t, includedParts: parts };
-  }, [scenario, included, promoFactor, selectedAlternativeParts]);
+  }, [allDisplayParts, included, promoFactor]);
 
   const promoDiscount = promoApplied ? Math.round(includedMerch * 0.2) : 0;
   const payFinal = bonusOn ? Math.max(0, partsTotal - Math.min(1000, includedMerch)) : partsTotal;
@@ -1354,37 +1698,47 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [includedParts, bonusOn, includedMerch, promoApplied]);
 
   useEffect(() => {
-    if (!scenario && selectedAlternativeParts.length === 0) {
+    setIncluded((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const part of allDisplayParts) {
+        next[part.key] = prev[part.key] ?? part.defaultIncluded;
+      }
+      return next;
+    });
+  }, [allDisplayParts]);
+
+  useEffect(() => {
+    if (!allDisplayParts.length) {
       setPartSchedules({});
       return;
     }
     setPartSchedules((prev) => {
       const next: Record<string, PartDeliverySchedule> = {};
-      for (const part of [...(scenario?.parts ?? []), ...selectedAlternativeParts]) {
+      for (const part of allDisplayParts) {
         if (part.mode !== "courier") continue;
         next[part.key] = prev[part.key] ?? { dateIx: 0, slotIx: 0 };
       }
       return next;
     });
-  }, [scenario, selectedAlternativeParts]);
+  }, [allDisplayParts]);
 
   useEffect(() => {
-    if (!scenario && selectedAlternativeParts.length === 0) {
+    if (!allDisplayParts.length) {
       setExpandedParts({});
       return;
     }
     setExpandedParts((prev) => {
       const next: Record<string, boolean> = {};
-      for (const part of [...(scenario?.parts ?? []), ...selectedAlternativeParts]) {
-        next[part.key] = prev[part.key] ?? part.key.startsWith("alt_");
+      for (const part of allDisplayParts) {
+        next[part.key] = prev[part.key] ?? part.key.startsWith("secondary_");
       }
       return next;
     });
-  }, [scenario, selectedAlternativeParts]);
+  }, [allDisplayParts]);
 
   const manualExcludedLines = useMemo(() => {
     const map = new Map<string, { productId: string; quantity: number; name: string }>();
-    for (const part of scenario?.parts ?? []) {
+    for (const part of allDisplayParts) {
       if (included[part.key] !== false) continue;
       for (const item of part.items) {
         const current = map.get(item.productId);
@@ -1400,7 +1754,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       }
     }
     return [...map.values()];
-  }, [scenario, included]);
+  }, [allDisplayParts, included]);
 
   const handlePromo = () => {
     if (promo.trim().toUpperCase() === "APP20") {
@@ -1409,7 +1763,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
   };
 
-  const selectPrimaryMethod = (nextMethod: "courier" | "pickup" | "pvz") => {
+  const selectPrimaryMethod = (nextMethod: DeliveryMethodCode) => {
     if (nextMethod === "courier") {
       if (courierAddress.trim()) {
         setMethod("courier");
@@ -1421,28 +1775,84 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setMethod(nextMethod);
   };
 
-  const selectAlternativeOption = (option: AlternativeMethodOption) => {
-    if (option.methodCode === "courier" && !courierAddress.trim()) {
-      setCourierAddressModalTarget({ kind: "remainder", option });
-      return;
-    }
-    setSelectedRemainderOption({ option });
+  const openCurrentSplitModal = () => {
+    if (!activeRemainderResolution || activeRemainderResolution.lines.length === 0) return;
+    setSplitModalState({ mode: "add", editIndex: null, resolution: activeRemainderResolution });
   };
 
-  const handleCourierAddressSave = (address: string, target: CourierAddressModalTarget) => {
+  const openSplitEditModal = (selectionIndex: number) => {
+    const baseResolution = selectionIndex === 0 ? remainderResolution : secondarySelections[selectionIndex - 1]?.nextResolution;
+    if (!baseResolution || baseResolution.lines.length === 0) return;
+    setSplitModalState({ mode: "edit", editIndex: selectionIndex, resolution: baseResolution });
+  };
+
+  const applySplitSelection = async (option: AlternativeMethodOption) => {
+    if (!splitModalState) return;
+    setSplitSubmitting(true);
+    try {
+      const data = await requestScenario({
+        deliveryMethodCode: option.methodCode,
+        selectedStoreId: option.methodCode === "pickup" ? option.storeId ?? null : null,
+        lines: splitModalState.resolution.lines,
+      });
+      const nextSelectionId = `secondary_${selectionSeq + 1}`;
+      setSelectionSeq((prev) => prev + 1);
+      const nextSelection: SecondarySelection = {
+        id: nextSelectionId,
+        inputLines: splitModalState.resolution.lines,
+        option,
+        scenario: data.scenario,
+        nextResolution: data.remainderResolution ?? null,
+      };
+      setSecondarySelections((prev) => {
+        const base = splitModalState.editIndex == null ? prev : prev.slice(0, splitModalState.editIndex);
+        return [...base, nextSelection];
+      });
+      setSplitModalState(null);
+    } finally {
+      setSplitSubmitting(false);
+    }
+  };
+
+  const confirmSplitSelection = async (option: AlternativeMethodOption) => {
+    if (!splitModalState) return;
+    if (option.methodCode === "courier" && !courierAddress.trim()) {
+      setCourierAddressModalTarget({ kind: "split", option });
+      return;
+    }
+    await applySplitSelection(option);
+  };
+
+  const handleCourierAddressSave = async (address: string, target: CourierAddressModalTarget) => {
     setCourierAddress(address);
     setCourierAddressModalTarget(null);
     if (target.kind === "primary") {
       setMethod("courier");
       return;
     }
-    setSelectedRemainderOption({ option: target.option });
+    setSplitModalState(null);
+    await applySplitSelection(target.option);
   };
+
+  const productsById = useMemo(
+    () => Object.fromEntries((boot?.products ?? []).map((product) => [product.id, product] as const)),
+    [boot],
+  );
+
+  const currentRemainderLines = useMemo(
+    () =>
+      unresolvedLines.map((line) => ({
+        productId: line.productId,
+        quantity: line.quantity,
+        name: productsById[line.productId]?.name ?? line.productId,
+      })),
+    [unresolvedLines, productsById],
+  );
 
   const submit = () => {
     if (!boot || !scenario || !cartDetail || !method) return;
     const finalRemainderLines = [...manualExcludedLines];
-    for (const line of selectedRemainderLeftovers) {
+    for (const line of currentRemainderLines) {
       const existing = finalRemainderLines.find((item) => item.productId === line.productId);
       if (existing) {
         existing.quantity += line.quantity;
@@ -1481,56 +1891,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     router.push("/thank-you");
   };
 
-  const productsById = useMemo(
-    () => Object.fromEntries((boot?.products ?? []).map((product) => [product.id, product] as const)),
-    [boot],
-  );
-  const selectedRemainderLeftovers = useMemo(() => {
-    if (!remainderResolution) return [];
-    if (!selectedRemainderOption) {
-      return remainderResolution.lines.map((line) => ({
-        productId: line.productId,
-        quantity: line.quantity,
-        name: productsById[line.productId]?.name ?? line.productId,
-      }));
-    }
-
-    const map = new Map<string, { productId: string; quantity: number; name: string }>();
-    for (const line of selectedRemainderOption.option.scenario.remainder) {
-      map.set(line.productId, {
-        productId: line.productId,
-        quantity: line.quantity,
-        name: productsById[line.productId]?.name ?? line.productId,
-      });
-    }
-    for (const part of selectedAlternativeParts) {
-      if (included[part.key] !== false) continue;
-      for (const item of part.items) {
-        const current = map.get(item.productId);
-        if (current) {
-          current.quantity += item.quantity;
-        } else {
-          map.set(item.productId, {
-            productId: item.productId,
-            quantity: item.quantity,
-            name: productsById[item.productId]?.name ?? item.productId,
-          });
-        }
-      }
-    }
-    return Array.from(map.values());
-  }, [remainderResolution, selectedRemainderOption, selectedAlternativeParts, included, productsById]);
-
   if (!boot) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-neutral-500">Загрузка…</div>
     );
   }
 
-  const hasSplit = ((scenario?.parts.length ?? 0) > 1) || ((scenario?.remainder.length ?? 0) > 0);
+  const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
   const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
-  const keepSinglePartExpanded = !hasSplit && (scenario?.parts.length ?? 0) === 1;
+  const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-28">
@@ -1549,28 +1919,24 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
         <section className="mb-6">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-wide">Город доставки</h2>
-          </div>
-          <label className="block text-xs font-medium text-neutral-500">Город</label>
-          <select
-            className="mt-1 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
-            value={cityId}
-            onChange={(e) => setCityId(e.target.value)}
-          >
-            {boot.cities.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </section>
-
-        <section className="mb-6">
-          <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wide">Способ получения</h2>
-            <span className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-semibold uppercase">
-              📍 {boot.cities.find((c) => c.id === cityId)?.name ?? ""}
-            </span>
+            <div className="relative">
+              <select
+                aria-label="Выбор города"
+                className="appearance-none rounded-full border border-neutral-200 bg-white pl-3 pr-8 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-800 shadow-sm outline-none transition focus:border-neutral-400"
+                value={cityId}
+                onChange={(e) => setCityId(e.target.value)}
+              >
+                {boot.cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-neutral-500">
+                ▾
+              </span>
+            </div>
           </div>
           <div className="flex flex-col gap-2">
             {deliveryOptions.map((dm) => (
@@ -1675,8 +2041,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         {scenario && hasSplit ? (
           <section className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
             <p className="text-sm font-semibold">
-              {scenario.parts.length > 1
-                ? `Заказ будет оформлен в ${scenario.parts.length} ${pluralizeShipments(scenario.parts.length)}`
+              {allDisplayParts.length > 1
+                ? `Заказ будет оформлен в ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
                 : "Заказ будет оформлен одним отправлением"}
             </p>
             <p className="mt-1 text-xs text-neutral-500">
@@ -1731,89 +2097,68 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ))}
         </section>
 
-        {remainderResolution && remainderResolution.lines.length > 0 ? (
-          <section className="mb-6 space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold">Как получить остальные товары</h3>
-              <p className="mt-1 text-xs text-neutral-500">
-                Можно выбрать удобный вариант или оставить эти товары вне заказа.
-              </p>
-            </div>
-            <AlternativeMethodChooser
-              resolution={remainderResolution}
-              productsById={productsById}
-              currentMethod={method}
-              selectedOption={selectedRemainderOption?.option}
-              onSelect={(option) => selectAlternativeOption(option)}
+        {secondaryDisplaySelections.map((selection, selectionIndex) => (
+          <section key={selection.id} className="mb-6 space-y-3">
+            <SecondarySelectionCard
+              option={selection.option}
+              pickupStore={pickupStores.find((store) => store.id === selection.option.storeId)}
+              pvzPoint={pvzOptions.find((point) => point.id === pvzId)}
+              courierAddress={courierAddress}
+              onEdit={() => openSplitEditModal(selectionIndex)}
             />
-            {selectedAlternativeParts.length > 0 ? (
-              <div className="space-y-3">
-                {selectedAlternativeParts.map((part) => (
-                <PartCard
-                  key={part.key}
-                  part={part}
-                  included={included[part.key] !== false}
-                  onToggle={() =>
-                    setIncluded((prev) => {
-                      const cur = prev[part.key] !== false;
-                      return { ...prev, [part.key]: !cur };
-                    })
-                  }
-                  showSelectionControl
-                  expanded={expandedParts[part.key] !== false}
-                  collapsible
-                  onToggleExpand={() =>
-                    setExpandedParts((prev) => ({
-                      ...prev,
-                      [part.key]: !prev[part.key],
-                    }))
-                  }
-                  totalCartUnits={units}
-                  promoFactor={promoFactor}
-                  partPromoDiscount={distribution[part.key]?.promoDiscount ?? 0}
-                  partBonusUsed={distribution[part.key]?.bonusUsed ?? 0}
-                  showSplitMeta
-                  showRemainderHint={false}
-                  remainderKeepHint={undefined}
-                  badgeLabel="Дополнительно"
-                  selectedDateIx={partSchedules[part.key]?.dateIx ?? 0}
-                  selectedSlotIx={partSchedules[part.key]?.slotIx ?? 0}
-                  onDateChange={(dateIx) =>
-                    setPartSchedules((prev) => ({
-                      ...prev,
-                      [part.key]: { dateIx, slotIx: prev[part.key]?.slotIx ?? 0 },
-                    }))
-                  }
-                  onSlotChange={(slotIx) =>
-                    setPartSchedules((prev) => ({
-                      ...prev,
-                      [part.key]: { dateIx: prev[part.key]?.dateIx ?? 0, slotIx },
-                    }))
-                  }
-                />
-                ))}
-              </div>
-            ) : null}
-            {remainderResolution.options.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-                Для оставшихся товаров сейчас не нашли других способов оформления.
-              </div>
-            ) : null}
+            {selection.parts.map((part) => (
+              <PartCard
+                key={part.key}
+                part={part}
+                included={included[part.key] !== false}
+                onToggle={() =>
+                  setIncluded((prev) => {
+                    const cur = prev[part.key] !== false;
+                    return { ...prev, [part.key]: !cur };
+                  })
+                }
+                showSelectionControl
+                expanded={expandedParts[part.key] !== false}
+                collapsible
+                onToggleExpand={() =>
+                  setExpandedParts((prev) => ({
+                    ...prev,
+                    [part.key]: !prev[part.key],
+                  }))
+                }
+                totalCartUnits={units}
+                promoFactor={promoFactor}
+                partPromoDiscount={distribution[part.key]?.promoDiscount ?? 0}
+                partBonusUsed={distribution[part.key]?.bonusUsed ?? 0}
+                showSplitMeta
+                showRemainderHint={false}
+                remainderKeepHint={undefined}
+                selectedDateIx={partSchedules[part.key]?.dateIx ?? 0}
+                selectedSlotIx={partSchedules[part.key]?.slotIx ?? 0}
+                onDateChange={(dateIx) =>
+                  setPartSchedules((prev) => ({
+                    ...prev,
+                    [part.key]: { dateIx, slotIx: prev[part.key]?.slotIx ?? 0 },
+                  }))
+                }
+                onSlotChange={(slotIx) =>
+                  setPartSchedules((prev) => ({
+                    ...prev,
+                    [part.key]: { dateIx: prev[part.key]?.dateIx ?? 0, slotIx },
+                  }))
+                }
+              />
+            ))}
           </section>
-        ) : null}
+        ))}
 
-        {selectedRemainderLeftovers.length > 0 ? (
-          <section className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4">
-            <h3 className="text-sm font-semibold">
-              {selectedRemainderOption ? "Останется в корзине после дополнительного оформления" : "Сейчас остаётся в корзине"}
-            </h3>
-            <ul className="mt-2 text-xs text-neutral-600">
-              {selectedRemainderLeftovers.map((r) => (
-                <li key={r.productId}>
-                  {r.name} × {r.quantity}
-                </li>
-              ))}
-            </ul>
+        {activeRemainderResolution && activeRemainderResolution.lines.length > 0 ? (
+          <section className="mb-6">
+            <UnresolvedItemsBlock
+              resolution={activeRemainderResolution}
+              productsById={productsById}
+              onChoose={openCurrentSplitModal}
+            />
           </section>
         ) : null}
 
@@ -2014,6 +2359,22 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             />
           </div>
         </div>
+      ) : null}
+      {splitModalState ? (
+        <SplitSelectionModal
+          resolution={splitModalState.resolution}
+          productsById={productsById}
+          pvzPoints={pvzOptions}
+          selectedPvzId={pvzId}
+          onSelectPvz={setPvzId}
+          courierAddress={courierAddress}
+          onEditCourierAddress={(option) => setCourierAddressModalTarget({ kind: "split", option })}
+          onClose={() => {
+            if (!splitSubmitting) setSplitModalState(null);
+          }}
+          onConfirm={confirmSplitSelection}
+          saving={splitSubmitting}
+        />
       ) : null}
       {courierAddressModalTarget ? (
         <CourierAddressModal

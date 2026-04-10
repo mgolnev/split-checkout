@@ -144,6 +144,7 @@ export async function POST(req: Request) {
     cityId?: string;
     deliveryMethodCode?: "courier" | "pickup" | "pvz";
     selectedStoreId?: string | null;
+    lines?: CartLine[];
   };
 
   if (!body.cityId || !body.deliveryMethodCode) {
@@ -155,6 +156,7 @@ export async function POST(req: Request) {
       cityId: body.cityId,
       deliveryMethodCode: body.deliveryMethodCode,
       selectedStoreId: body.selectedStoreId ?? null,
+      lines: body.lines?.length ? body.lines : undefined,
     });
     const remainderResolution =
       scenario.remainder.length > 0
