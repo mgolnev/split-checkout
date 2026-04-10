@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
-    "build": "next build",
+    "build": "prisma migrate deploy && next build",
     "build:turbo": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
@@ -15,6 +15,7 @@
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "supabase:urls": "node scripts/supabase-urls.mjs",
     "postinstall": "prisma generate"
   },
   "prisma": {

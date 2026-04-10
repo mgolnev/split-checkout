@@ -45,6 +45,7 @@ function unitsForMode(
 }
 
 export async function GET() {
+  try {
   const [cities, methods, products, rules] = await Promise.all([
     prisma.city.findMany({ orderBy: { name: "asc" } }),
     prisma.deliveryMethod.findMany({
@@ -181,4 +182,19 @@ export async function GET() {
     methodSummaryByCity,
     pickupSummaryByStore,
   });
+  } catch (e) {
+    console.error("[bootstrap]", e);
+    return NextResponse.json(
+      {
+        error: "bootstrap_failed",
+        message:
+          process.env.NODE_ENV === "development"
+            ? e instanceof Error
+              ? e.message
+              : String(e)
+            : "Database error",
+      },
+      { status: 500 },
+    );
+  }
 }

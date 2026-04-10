@@ -1531,6 +1531,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   void props.variant;
   const router = useRouter();
   const [boot, setBoot] = useState<Bootstrap | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
   const [cityId, setCityId] = useState<string>("");
   const [method, setMethod] = useState<DeliveryMethodCode | null>(null);
   const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
@@ -1557,13 +1558,36 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const primaryCourierAddress = method === "courier" ? courierAddress : "";
 
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/bootstrap")
-      .then((r) => r.json())
+      .then(async (r) => {
+        const text = await r.text();
+        if (!r.ok) {
+          let msg = `Ошибка загрузки (${r.status})`;
+          try {
+            const j = JSON.parse(text) as { message?: string };
+            if (j.message) msg = j.message;
+          } catch {
+            if (text.trim()) msg = text.slice(0, 200);
+          }
+          throw new Error(msg);
+        }
+        return JSON.parse(text) as Bootstrap;
+      })
       .then((d: Bootstrap) => {
+        if (cancelled) return;
+        setBootError(null);
         setBoot(d);
         const firstCity = d.cities[0];
         if (firstCity) setCityId(firstCity.id);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setBootError(e instanceof Error ? e.message : "Не удалось загрузить данные");
       });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const requestScenario = useCallback(
@@ -2003,6 +2027,23 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     sessionStorage.setItem("thankyou", JSON.stringify(payload));
     router.push("/thank-you");
   };
+
+  if (bootError) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-md flex-col gap-3 bg-white px-4 py-8 text-sm text-neutral-800">
+        <p className="font-semibold text-red-600">Не удалось загрузить оформление заказа</p>
+        <p className="text-neutral-600">{bootError}</p>
+        <p className="text-xs text-neutral-500">
+          Чаще всего на Vercel не совпадают строки Supabase: нужны две переменные{" "}
+          <code className="rounded bg-neutral-100 px-1">DATABASE_URL</code> (pooler 6543) и{" "}
+          <code className="rounded bg-neutral-100 px-1">DIRECT_URL</code> (прямой db…5432), пароль в URL должен быть
+          закодирован (# и * ломают строку). Соберите их командой{" "}
+          <code className="rounded bg-neutral-100 px-1">npm run supabase:urls</code> в репозитории. Проверка БД:{" "}
+          <code className="rounded bg-neutral-100 px-1">/api/health</code>.
+        </p>
+      </div>
+    );
+  }
 
   if (!boot) {
     return (
