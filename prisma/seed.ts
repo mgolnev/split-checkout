@@ -7,16 +7,21 @@ const prisma = new PrismaClient();
 const IMG = (_n: number) => "/product-placeholder.svg";
 
 async function main() {
-  await prisma.disclaimerTemplate.deleteMany();
-  await prisma.ruleStep.deleteMany();
-  await prisma.scenarioOverride.deleteMany();
-  await prisma.shippingRule.deleteMany();
-  await prisma.inventory.deleteMany();
-  await prisma.pvzPoint.deleteMany();
-  await prisma.source.deleteMany();
-  await prisma.deliveryMethod.deleteMany();
-  await prisma.product.deleteMany();
-  await prisma.city.deleteMany();
+  /** Одним запросом: на Supabase pooler цепочка deleteMany() часто даёт P1017 (соединение рвётся). */
+  await prisma.$executeRawUnsafe(`
+    TRUNCATE TABLE
+      "RuleStep",
+      "Inventory",
+      "ShippingRule",
+      "ScenarioOverride",
+      "PvzPoint",
+      "Source",
+      "Product",
+      "City",
+      "DeliveryMethod",
+      "DisclaimerTemplate"
+    RESTART IDENTITY CASCADE;
+  `);
 
   const dmCourier = await prisma.deliveryMethod.create({
     data: { id: "dm_courier", code: "courier", name: "Курьер", isActive: true },
