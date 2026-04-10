@@ -2034,9 +2034,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <p className="font-semibold text-red-600">Не удалось загрузить оформление заказа</p>
         <p className="text-neutral-600">{bootError}</p>
         <p className="text-xs text-neutral-500">
-          Проверьте <code className="rounded bg-neutral-100 px-1">DATABASE_URL</code> в Vercel: для Supabase нужна
-          прямая строка <code className="rounded bg-neutral-100 px-1">db…supabase.co:5432</code>, пароль в URL
-          закодирован (# и * ломают строку). Соберите:{" "}
+          Проверьте <code className="rounded bg-neutral-100 px-1">DATABASE_URL</code> в Vercel: для Supabase на
+          сборке часто нужен Session pooler (<code className="rounded bg-neutral-100 px-1">pooler…:5432</code>,
+          пользователь <code className="rounded bg-neutral-100 px-1">postgres.&lt;ref&gt;</code>), не только
+          прямой <code className="rounded bg-neutral-100 px-1">db…supabase.co</code>. Строка:{" "}
           <code className="rounded bg-neutral-100 px-1">npm run supabase:urls</code>. Проверка:{" "}
           <code className="rounded bg-neutral-100 px-1">/api/health</code>.
         </p>
