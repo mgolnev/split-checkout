@@ -5,7 +5,7 @@ import {
   scenarioFromOverride,
   type EngineInput,
 } from "./split-engine";
-import type { ScenarioResult } from "./types";
+import type { CartLine, ScenarioResult } from "./types";
 import { compactDisclaimers, commonDisclaimer, systemDisclaimer } from "./disclaimers";
 import { prisma } from "./prisma";
 
@@ -13,6 +13,7 @@ export async function buildScenario(params: {
   cityId: string;
   deliveryMethodCode: "courier" | "pickup" | "pvz";
   selectedStoreId: string | null;
+  lines?: CartLine[];
 }): Promise<ScenarioResult> {
   const disclaimerRows = await prisma.disclaimerTemplate.findMany({
     select: { code: true, text: true, isActive: true },
@@ -86,7 +87,9 @@ export async function buildScenario(params: {
     select: { productId: true },
     distinct: ["productId"],
   });
-  const productIds = eligibleInventory.map((i) => i.productId);
+  const requestedLines = params.lines?.length ? params.lines : null;
+  const requestedProductIds = requestedLines ? requestedLines.map((line) => line.productId) : [];
+  const productIds = requestedLines ? requestedProductIds : eligibleInventory.map((i) => i.productId);
 
   if (productIds.length === 0) {
     return finalizeScenario({
@@ -103,11 +106,25 @@ export async function buildScenario(params: {
     where: { id: { in: productIds }, isActive: true },
     orderBy: { name: "asc" },
   });
-  const lines = products.map((p) => ({ productId: p.id, quantity: 1 }));
+  if (products.length === 0) {
+    return finalizeScenario({
+      parts: [],
+      remainder: requestedLines ? requestedLines : [],
+      informers: [systemDisclaimer("noActiveProductsForMethod", disclaimerMap)],
+      payOnDeliveryOnly: false,
+      fromOverride: false,
+      deliveryMethodCode: params.deliveryMethodCode,
+    });
+  }
+
+  const activeProductIds = new Set(products.map((product) => product.id));
+  const lines = requestedLines
+    ? requestedLines.filter((line) => activeProductIds.has(line.productId))
+    : products.map((p) => ({ productId: p.id, quantity: 1 }));
 
   const inventories = await prisma.inventory.findMany({
     where: {
-      productId: { in: productIds },
+      productId: { in: [...activeProductIds] },
       sourceId: { in: sources.map((s) => s.id) },
     },
   });
@@ -124,6 +141,10 @@ export async function buildScenario(params: {
   const ruleRow = rule
     ? {
         allowed: rule.allowed,
+        maxShipments: rule.maxShipments,
+        storePickupHoldDays: rule.storePickupHoldDays,
+        clickCollectHoldDays: rule.clickCollectHoldDays,
+        pvzHoldDays: rule.pvzHoldDays,
         leadTimeDays: rule.leadTimeDays,
         leadTimeLabel: rule.leadTimeLabel,
         deliveryPrice: rule.deliveryPrice,
@@ -165,7 +186,7 @@ export async function buildScenario(params: {
     availableForPVZ: i.availableForPVZ,
   }));
 
-  if (override) {
+  if (override && !requestedLines) {
     let payload: OverridePayload;
     try {
       payload = JSON.parse(override.payloadJson) as OverridePayload;

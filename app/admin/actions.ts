@@ -338,6 +338,10 @@ export async function createRule(formData: FormData) {
       cityId,
       deliveryMethodId,
       allowed: toBool(formData.get("allowed")),
+      maxShipments: Math.max(1, toInt(formData.get("maxShipments"), 2)),
+      storePickupHoldDays: Math.max(1, toInt(formData.get("storePickupHoldDays"), 3)),
+      clickCollectHoldDays: Math.max(1, toInt(formData.get("clickCollectHoldDays"), 8)),
+      pvzHoldDays: Math.max(1, toInt(formData.get("pvzHoldDays"), 5)),
       leadTimeDays: toInt(formData.get("leadTimeDays"), 1),
       leadTimeLabel: String(formData.get("leadTimeLabel") ?? "").trim(),
       requiresPrepayment: toBool(formData.get("requiresPrepayment")),
@@ -398,6 +402,10 @@ export async function updateRule(formData: FormData) {
     where: { id },
     data: {
       allowed: toBool(formData.get("allowed")),
+      maxShipments: Math.max(1, toInt(formData.get("maxShipments"), 2)),
+      storePickupHoldDays: Math.max(1, toInt(formData.get("storePickupHoldDays"), 3)),
+      clickCollectHoldDays: Math.max(1, toInt(formData.get("clickCollectHoldDays"), 8)),
+      pvzHoldDays: Math.max(1, toInt(formData.get("pvzHoldDays"), 5)),
       leadTimeDays: toInt(formData.get("leadTimeDays"), 1),
       leadTimeLabel: String(formData.get("leadTimeLabel") ?? "").trim(),
       requiresPrepayment: toBool(formData.get("requiresPrepayment")),
@@ -423,13 +431,14 @@ export async function createRuleStep(formData: FormData) {
   await gate();
   const shippingRuleId = String(formData.get("shippingRuleId") ?? "");
   if (!shippingRuleId) return;
+  const matchMode = String(formData.get("matchMode") ?? "full");
   await prisma.ruleStep.create({
     data: {
       shippingRuleId,
       sortOrder: toInt(formData.get("sortOrder"), 10),
       sourceType: String(formData.get("sourceType") ?? "warehouse"),
-      matchMode: String(formData.get("matchMode") ?? "full"),
-      thresholdPercent: toInt(formData.get("thresholdPercent"), 100),
+      matchMode,
+      thresholdPercent: matchMode === "full" ? 100 : toInt(formData.get("thresholdPercent"), 100),
       continueAfterMatch: toBool(formData.get("continueAfterMatch")),
     },
   });
@@ -440,13 +449,14 @@ export async function updateRuleStep(formData: FormData) {
   await gate();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const matchMode = String(formData.get("matchMode") ?? "full");
   await prisma.ruleStep.update({
     where: { id },
     data: {
       sortOrder: toInt(formData.get("sortOrder"), 10),
       sourceType: String(formData.get("sourceType") ?? "warehouse"),
-      matchMode: String(formData.get("matchMode") ?? "full"),
-      thresholdPercent: toInt(formData.get("thresholdPercent"), 100),
+      matchMode,
+      thresholdPercent: matchMode === "full" ? 100 : toInt(formData.get("thresholdPercent"), 100),
       continueAfterMatch: toBool(formData.get("continueAfterMatch")),
     },
   });

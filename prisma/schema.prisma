@@ -69,6 +69,10 @@ model ShippingRule {
   deliveryMethodId      String
   deliveryMethod        DeliveryMethod @relation(fields: [deliveryMethodId], references: [id], onDelete: Cascade)
   allowed               Boolean        @default(true)
+  maxShipments          Int            @default(2)
+  storePickupHoldDays   Int            @default(3)
+  clickCollectHoldDays  Int            @default(8)
+  pvzHoldDays           Int            @default(5)
   leadTimeDays          Int            @default(1)
   leadTimeLabel         String         @default("")
   requiresPrepayment    Boolean        @default(false)

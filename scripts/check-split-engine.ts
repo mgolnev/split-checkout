@@ -22,10 +22,15 @@ const sources = [
   { id: "wh", name: "Warehouse", type: "warehouse", priority: 1 },
   { id: "s1", name: "Store #1", type: "store", priority: 2 },
   { id: "s2", name: "Store #2", type: "store", priority: 3 },
+  { id: "s3", name: "Store #3", type: "store", priority: 4 },
 ];
 
 const rule = {
   allowed: true,
+  maxShipments: 2,
+  storePickupHoldDays: 3,
+  clickCollectHoldDays: 8,
+  pvzHoldDays: 5,
   leadTimeDays: 1,
   leadTimeLabel: "Tomorrow",
   deliveryPrice: 299,
@@ -108,6 +113,51 @@ function main() {
   assert.equal(c4.parts.length, 1);
   assert.equal(unitsOfPart(c4.parts[0]!), 1);
   assert.equal(c4.remainder.reduce((sum, line) => sum + line.quantity, 0), 4);
+
+  const c5 = computeScenario({
+    cartLines: cart5,
+    deliveryMethodCode: "courier",
+    cityHasClickCollect: true,
+    selectedStoreId: null,
+    products,
+    sources,
+    inventories: [inv("a", "wh", 1), inv("b", "wh", 1), inv("c", "s1", 1), inv("d", "s2", 1), inv("e", "s3", 1)],
+    rule: { ...rule, maxShipments: 4 },
+  });
+  assert.equal(c5.parts.length, 4);
+  assert.equal(c5.remainder.length, 0);
+
+  const c6 = computeScenario({
+    cartLines: [
+      { productId: "a", quantity: 1 },
+      { productId: "b", quantity: 1 },
+      { productId: "c", quantity: 1 },
+      { productId: "d", quantity: 1 },
+    ],
+    deliveryMethodCode: "courier",
+    cityHasClickCollect: true,
+    selectedStoreId: null,
+    products,
+    sources,
+    inventories: [inv("a", "wh", 1), inv("b", "s1", 1), inv("c", "s2", 1), inv("d", "s3", 1)],
+    rule: {
+      ...rule,
+      maxShipments: 4,
+      steps: [
+        { sortOrder: 10, sourceType: "warehouse", matchMode: "full", thresholdPercent: 100, continueAfterMatch: false },
+        { sortOrder: 20, sourceType: "store", matchMode: "full", thresholdPercent: 100, continueAfterMatch: false },
+        { sortOrder: 30, sourceType: "warehouse", matchMode: "threshold", thresholdPercent: 40, continueAfterMatch: true },
+        { sortOrder: 40, sourceType: "store", matchMode: "full", thresholdPercent: 100, continueAfterMatch: true },
+        { sortOrder: 50, sourceType: "any", matchMode: "threshold", thresholdPercent: 10, continueAfterMatch: true },
+      ],
+    },
+  });
+  assert.equal(c6.parts.length, 4);
+  assert.deepEqual(
+    c6.parts.map((part) => part.sourceId),
+    ["wh", "s1", "s2", "s3"],
+  );
+  assert.equal(c6.remainder.length, 0);
 
   console.log("Split engine checks passed.");
 }

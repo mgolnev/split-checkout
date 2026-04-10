@@ -16,6 +16,7 @@ export type ScenarioPart = {
   sourceType: "warehouse" | "store";
   mode: "courier" | "pvz" | "click_reserve" | "click_collect";
   leadTimeLabel: string;
+  holdDays?: number;
   items: ScenarioLine[];
   subtotal: number;
   deliveryPrice: number;
@@ -32,6 +33,27 @@ export type ScenarioResult = {
   payOnDeliveryOnly: boolean;
   fromOverride: boolean;
   deliveryMethodCode: string;
+};
+
+export type AlternativeMethodOption = {
+  methodCode: "courier" | "pickup" | "pvz";
+  methodLabel: string;
+  availableUnits: number;
+  totalUnits: number;
+  unresolvedUnits: number;
+  storeId?: string;
+  storeName?: string;
+  scenario: ScenarioResult;
+};
+
+export type RemainderLine = {
+  productId: string;
+  quantity: number;
+};
+
+export type RemainderResolution = {
+  lines: RemainderLine[];
+  options: AlternativeMethodOption[];
 };
 
 export type OverridePartPayload = {

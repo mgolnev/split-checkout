@@ -33,6 +33,10 @@ type InvRow = {
 
 type RuleRow = {
   allowed: boolean;
+  maxShipments: number;
+  storePickupHoldDays: number;
+  clickCollectHoldDays: number;
+  pvzHoldDays: number;
   leadTimeDays: number;
   leadTimeLabel: string;
   deliveryPrice: number;
@@ -183,6 +187,14 @@ function buildPart(
       : rule
         ? `Доставка за ${rule.leadTimeDays} дн.`
         : "");
+  const holdDays =
+    mode === "click_collect"
+      ? rule?.clickCollectHoldDays
+      : mode === "click_reserve"
+        ? rule?.storePickupHoldDays
+        : mode === "pvz"
+          ? rule?.pvzHoldDays
+          : undefined;
   return {
     key,
     sourceId: source.id,
@@ -190,6 +202,7 @@ function buildPart(
     sourceType: source.type === "warehouse" ? "warehouse" : "store",
     mode,
     leadTimeLabel,
+    holdDays,
     items: lines,
     subtotal,
     deliveryPrice,
@@ -197,6 +210,41 @@ function buildPart(
     defaultIncluded: true,
     canToggle: true,
   };
+}
+
+function matchStepSource(
+  remainder: CartLine[],
+  step: NonNullable<RuleRow["steps"]>[number],
+  candidates: SourceRow[],
+  stock: Map<string, Map<string, number>>,
+) {
+  if (step.matchMode === "full") {
+    for (const src of candidates) {
+      if (canFulfillFromSource(remainder, src.id, stock)) {
+        return {
+          source: src,
+          take: allocateFromSource(remainder, src.id, stock),
+        };
+      }
+    }
+    return null;
+  }
+
+  const threshold = Math.max(1, Math.min(100, step.thresholdPercent || 0)) / 100;
+  let best: { source: SourceRow; take: CartLine[]; units: number } | null = null;
+
+  for (const src of candidates) {
+    const take = allocateFromSource(remainder, src.id, stock);
+    const units = totalUnits(take);
+    if (!best || units > best.units) best = { source: src, take, units };
+  }
+
+  if (!best) return null;
+
+  const currentUnits = Math.max(1, totalUnits(remainder));
+  if (best.units / currentUnits < threshold) return null;
+
+  return { source: best.source, take: best.take };
 }
 
 function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
@@ -209,9 +257,9 @@ function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
   const warehouses = sortSources(citySources, "warehouse_first").filter((s) => s.type === "warehouse");
   const stores = sortSources(citySources, "warehouse_first").filter((s) => s.type === "store");
   const need = cloneLines(cartLines);
-  const initialUnits = Math.max(1, totalUnits(need));
   const parts: ScenarioPart[] = [];
   const informers: string[] = [];
+  const maxShipments = Math.max(1, rule?.maxShipments ?? 2);
 
   const useWh = rule?.canUseWarehouse !== false;
   const useStores = rule?.canUseStores !== false;
@@ -225,48 +273,60 @@ function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
     return [...(useWh ? warehouses : []), ...(useStores ? stores : [])];
   };
 
+  const appendPart = (step: NonNullable<RuleRow["steps"]>[number], matchedSource: SourceRow, matchedTake: CartLine[]) => {
+    const part = buildPart(
+      `step_${step.sortOrder}_${parts.length + 1}`,
+      matchedSource,
+      "courier",
+      matchedTake,
+      products,
+      rule,
+    );
+    if (part) parts.push(part);
+    return subtractLines(remainder, matchedTake).remaining;
+  };
+
+  const extendAnyStepToLimit = (step: NonNullable<RuleRow["steps"]>[number], currentRemainder: CartLine[]) => {
+    let nextRemainder = currentRemainder;
+
+    while (parts.length < maxShipments && nextRemainder.length > 0) {
+      const lastSourceId = parts.length > 0 ? parts[parts.length - 1]!.sourceId : undefined;
+      const candidates = candidatesByType("any").filter((src) => src.id !== lastSourceId);
+      const matched = matchStepSource(nextRemainder, step, candidates, stock);
+      if (!matched || matched.take.length === 0) break;
+
+      const part = buildPart(
+        `step_${step.sortOrder}_${parts.length + 1}`,
+        matched.source,
+        "courier",
+        matched.take,
+        products,
+        rule,
+      );
+      if (!part) break;
+      parts.push(part);
+      nextRemainder = subtractLines(nextRemainder, matched.take).remaining;
+    }
+
+    return nextRemainder;
+  };
+
   for (const step of allSteps) {
-    if (parts.length >= 2) break;
+    if (parts.length >= maxShipments) break;
     if (remainder.length === 0) break;
 
     const candidates = candidatesByType(step.sourceType);
     if (!candidates.length) continue;
 
-    let matchedSource: SourceRow | null = null;
-    let matchedTake: CartLine[] = [];
+    const matched = matchStepSource(remainder, step, candidates, stock);
+    if (!matched || matched.take.length === 0) continue;
 
-    if (step.matchMode === "full") {
-      for (const src of candidates) {
-        if (canFulfillFromSource(remainder, src.id, stock)) {
-          matchedSource = src;
-          matchedTake = allocateFromSource(remainder, src.id, stock);
-          break;
-        }
-      }
-    } else {
-      const threshold = Math.max(1, Math.min(100, step.thresholdPercent || 0)) / 100;
-      let best: { src: SourceRow; take: CartLine[]; units: number } | null = null;
-      for (const src of candidates) {
-        const take = allocateFromSource(remainder, src.id, stock);
-        const units = totalUnits(take);
-        if (!best || units > best.units) best = { src, take, units };
-      }
-      if (best) {
-        const baseUnits = Math.max(1, totalUnits(remainder));
-        const enoughCurrent = best.units / baseUnits >= threshold;
-        const enoughInitial = best.units / initialUnits >= threshold;
-        if (enoughCurrent || enoughInitial) {
-          matchedSource = best.src;
-          matchedTake = best.take;
-        }
-      }
+    remainder = appendPart(step, matched.source, matched.take);
+
+    if (step.sourceType === "any" && step.continueAfterMatch) {
+      remainder = extendAnyStepToLimit(step, remainder);
+      break;
     }
-
-    if (!matchedSource || matchedTake.length === 0) continue;
-
-    const part = buildPart(`step_${step.sortOrder}_${parts.length + 1}`, matchedSource, "courier", matchedTake, products, rule);
-    if (part) parts.push(part);
-    remainder = subtractLines(remainder, matchedTake).remaining;
 
     if (!step.continueAfterMatch) break;
   }
@@ -335,6 +395,7 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
   const useWh = rule?.canUseWarehouse !== false && wh;
   const useStores = rule?.canUseStores !== false;
   const total = totalUnits(need);
+  const maxShipments = Math.max(1, rule?.maxShipments ?? 2);
 
   if (rule?.steps?.length) {
     return courierScenarioByRuleSteps(ctx);
@@ -377,6 +438,33 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
       }
     }
     return best && best.units > 0 ? best : null;
+  };
+
+  const extendPartsUpToLimit = (
+    currentParts: ScenarioPart[],
+    currentRemainder: CartLine[],
+  ) => {
+    let remainder = currentRemainder;
+    let lastSourceId = currentParts.length ? currentParts[currentParts.length - 1]!.sourceId : undefined;
+
+    while (remainder.length > 0 && currentParts.length < maxShipments) {
+      const nextStep = findBestAnyCoverage(remainder, lastSourceId);
+      if (!nextStep) break;
+      const nextPart = buildPart(
+        `x${currentParts.length + 1}`,
+        nextStep.source,
+        "courier",
+        nextStep.take,
+        products,
+        rule,
+      );
+      if (!nextPart) break;
+      currentParts.push(nextPart);
+      remainder = subtractLines(remainder, nextStep.take).remaining;
+      lastSourceId = nextStep.source.id;
+    }
+
+    return remainder;
   };
 
   /** 1) Весь заказ со склада */
@@ -432,6 +520,8 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
         }
       }
 
+      remainder = extendPartsUpToLimit(parts, remainder);
+
       if (parts.length > 1) {
         informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
         informers.push(commonDisclaimer("payOnDeliveryOnly", ctx.disclaimers));
@@ -480,6 +570,8 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
       }
     }
 
+    remainder = extendPartsUpToLimit(parts, remainder);
+
     if (parts.length > 1) {
       informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
       informers.push(commonDisclaimer("payOnDeliveryOnly", ctx.disclaimers));
@@ -499,18 +591,31 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
     };
   }
 
-  /** 5) Лесенка: оформляем максимально возможную часть, но не более 2 отправлений по умолчанию */
+  /** 5) Лесенка: оформляем максимально возможную часть, не превышая лимит отправлений */
   const step1 = findBestAnyCoverage(need);
   if (step1) {
     const part1 = buildPart("x1", step1.source, "courier", step1.take, products, rule);
     if (part1) parts.push(part1);
     let remainder = subtractLines(need, step1.take).remaining;
 
-    const step2 = findBestAnyCoverage(remainder, step1.source.id);
-    if (step2) {
-      const part2 = buildPart("x2", step2.source, "courier", step2.take, products, rule);
-      if (part2) parts.push(part2);
-      remainder = subtractLines(remainder, step2.take).remaining;
+    while (parts.length < maxShipments) {
+      const nextStep = findBestAnyCoverage(
+        remainder,
+        parts.length > 0 ? parts[parts.length - 1]!.sourceId : undefined,
+      );
+      if (!nextStep) break;
+      const nextPart = buildPart(
+        `x${parts.length + 1}`,
+        nextStep.source,
+        "courier",
+        nextStep.take,
+        products,
+        rule,
+      );
+      if (!nextPart) break;
+      parts.push(nextPart);
+      remainder = subtractLines(remainder, nextStep.take).remaining;
+      if (remainder.length === 0) break;
     }
 
     if (parts.length > 1) {

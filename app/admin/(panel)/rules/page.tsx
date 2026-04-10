@@ -52,6 +52,45 @@ function RuleFlags({
   );
 }
 
+function HoldDaysFields({
+  defaults,
+}: {
+  defaults?: {
+    storePickupHoldDays?: number;
+    clickCollectHoldDays?: number;
+    pvzHoldDays?: number;
+  };
+}) {
+  return (
+    <div className="grid gap-2 md:grid-cols-3">
+      <label className="space-y-1">
+        <span className="text-xs text-slate-600">Хранение самовывоза из наличия, дней</span>
+        <input
+          name="storePickupHoldDays"
+          type="number"
+          min={1}
+          defaultValue={defaults?.storePickupHoldDays ?? 3}
+          className="w-full"
+        />
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-slate-600">Хранение click & collect, дней</span>
+        <input
+          name="clickCollectHoldDays"
+          type="number"
+          min={1}
+          defaultValue={defaults?.clickCollectHoldDays ?? 8}
+          className="w-full"
+        />
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-slate-600">Хранение ПВЗ, дней</span>
+        <input name="pvzHoldDays" type="number" min={1} defaultValue={defaults?.pvzHoldDays ?? 5} className="w-full" />
+      </label>
+    </div>
+  );
+}
+
 export default async function AdminRulesPage() {
   const [list, cities, methods] = await Promise.all([
     prisma.shippingRule.findMany({
@@ -111,7 +150,13 @@ export default async function AdminRulesPage() {
             <span className="text-xs text-slate-600">Порог бесплатной доставки, ₽</span>
             <input name="freeDeliveryThreshold" type="number" defaultValue={0} className="w-full" />
           </label>
+          <label className="space-y-1">
+            <span className="text-xs text-slate-600">Макс. отправлений</span>
+            <input name="maxShipments" type="number" min={1} defaultValue={2} className="w-full" />
+          </label>
         </div>
+
+        <HoldDaysFields />
 
         <RuleFlags />
 
@@ -163,7 +208,19 @@ export default async function AdminRulesPage() {
                     className="w-full"
                   />
                 </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-slate-600">Макс. отправлений</span>
+                  <input name="maxShipments" type="number" min={1} defaultValue={r.maxShipments} className="w-full" />
+                </label>
               </div>
+
+              <HoldDaysFields
+                defaults={{
+                  storePickupHoldDays: r.storePickupHoldDays,
+                  clickCollectHoldDays: r.clickCollectHoldDays,
+                  pvzHoldDays: r.pvzHoldDays,
+                }}
+              />
 
               <RuleFlags
                 defaults={{
@@ -221,7 +278,7 @@ export default async function AdminRulesPage() {
                       </select>
                     </label>
                     <label className="space-y-1 md:col-span-2">
-                      <span className="text-slate-600">Порог, %</span>
+                      <span className="text-slate-600">Порог, % (для threshold)</span>
                       <input
                         name="thresholdPercent"
                         type="number"
@@ -280,7 +337,7 @@ export default async function AdminRulesPage() {
                   </select>
                 </label>
                 <label className="space-y-1 md:col-span-2">
-                  <span className="text-slate-600">Порог, %</span>
+                  <span className="text-slate-600">Порог, % (для threshold)</span>
                   <input
                     name="thresholdPercent"
                     type="number"
