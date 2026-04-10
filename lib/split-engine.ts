@@ -733,7 +733,7 @@ function pickupScenario(ctx: EngineInput): ScenarioResult {
         collectTake,
         products,
         rule,
-        "Доставим в магазин до 3 дней",
+        "Доставим в магазин через 3 дня",
       );
       if (p) {
         p.deliveryPrice = 0;

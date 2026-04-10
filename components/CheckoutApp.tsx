@@ -109,6 +109,11 @@ function pluralizeProducts(n: number) {
 
 const MOCK_DATES = ["Завтра, 9 апр.", "10 апр.", "11 апр.", "12 апр."];
 const MOCK_SLOTS = ["9:00–12:00", "12:00–15:00", "15:00–18:00"];
+/** В шапке карточки курьерской доставки — перевозчик, а не склад/магазин отгрузки */
+const COURIER_CARRIER_LABEL = "СДЭК";
+/** Самовывоз GJ: в заголовке — срок готовности, а не название точки отгрузки */
+const PICKUP_RESERVE_TITLE = "Соберём за 30 минут";
+const PICKUP_COLLECT_TITLE = "Доставим в магазин";
 const PICKUP_MAP_POSITIONS = [
   { left: "14%", top: "22%" },
   { left: "72%", top: "18%" },
@@ -301,6 +306,35 @@ function pvzPointTone(summary?: MethodSummary) {
     accent: "bg-amber-100 text-amber-800",
     card: "border-amber-200 bg-amber-50/60",
   };
+}
+
+const PRODUCT_PLACEHOLDER = "/product-placeholder.svg";
+
+function SafeProductImage({
+  src,
+  alt,
+  className,
+  fill,
+  sizes,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  fill?: boolean;
+  sizes?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const url = !src.trim() || failed ? PRODUCT_PLACEHOLDER : src;
+  return (
+    <Image
+      src={url}
+      alt={alt}
+      fill={fill}
+      className={className}
+      sizes={sizes}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function Stepper({ step }: { step: number }) {
@@ -782,15 +816,13 @@ function UnresolvedItemsBlock({
               className="flex min-w-[108px] shrink-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5"
             >
               <div className="relative h-10 w-10 overflow-hidden rounded-md bg-neutral-100">
-                {productsById[line.productId]?.image ? (
-                  <Image
-                    src={productsById[line.productId]!.image}
-                    alt={productsById[line.productId]?.name ?? line.productId}
-                    fill
-                    className="object-cover"
-                    sizes="40px"
-                  />
-                ) : null}
+                <SafeProductImage
+                  src={productsById[line.productId]?.image ?? ""}
+                  alt={productsById[line.productId]?.name ?? line.productId}
+                  fill
+                  className="object-cover"
+                  sizes="40px"
+                />
               </div>
               <div className="min-w-0">
                 <p className="truncate text-[11px] font-medium text-neutral-800">
@@ -828,13 +860,68 @@ function SecondarySelectionCard({
   pvzPoint,
   courierAddress,
   onEdit,
+  variant = "card",
 }: {
   option: AlternativeMethodOption;
   pickupStore?: PickupStoreOption;
   pvzPoint?: PvzPointOption;
   courierAddress?: string;
   onEdit: () => void;
+  /** `stacked` — без отдельной рамки, как верхняя часть единого блока с PartCard */
+  variant?: "card" | "stacked";
 }) {
+  if (variant === "stacked") {
+    return (
+      <>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-neutral-900">{methodGroupLabel(option.methodCode)}</p>
+          <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</p>
+        </div>
+        {option.methodCode === "pickup" && pickupStore ? (
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-neutral-800">{pickupStore.name}</p>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+            >
+              Изменить
+            </button>
+          </div>
+        ) : null}
+        {option.methodCode === "courier" ? (
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <p className="min-w-0 truncate text-sm text-neutral-800">
+              {courierAddress?.trim() ? courierAddress : "Укажите адрес доставки"}
+            </p>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+            >
+              Изменить
+            </button>
+          </div>
+        ) : null}
+        {option.methodCode === "pvz" && pvzPoint ? (
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-neutral-800">{pvzPoint.name}</p>
+              <p className="mt-0.5 truncate text-xs text-neutral-500">{pvzPoint.address}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+            >
+              Изменить
+            </button>
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-neutral-200 bg-white px-3 py-3">
       <div className="flex items-start gap-3">
@@ -984,15 +1071,13 @@ function SplitSelectionModal({
                 className="flex min-w-[108px] shrink-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5"
               >
                 <div className="relative h-10 w-10 overflow-hidden rounded-md bg-neutral-100">
-                  {productsById[line.productId]?.image ? (
-                    <Image
-                      src={productsById[line.productId]!.image}
-                      alt={productsById[line.productId]?.name ?? line.productId}
-                      fill
-                      className="object-cover"
-                      sizes="40px"
-                    />
-                  ) : null}
+                  <SafeProductImage
+                    src={productsById[line.productId]?.image ?? ""}
+                    alt={productsById[line.productId]?.name ?? line.productId}
+                    fill
+                    className="object-cover"
+                    sizes="40px"
+                  />
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-[11px] font-medium text-neutral-800">
@@ -1211,18 +1296,17 @@ function PartCard({
   expanded,
   collapsible,
   onToggleExpand,
-  totalCartUnits,
   promoFactor,
   showRemainderHint,
   remainderKeepHint,
   partPromoDiscount,
   partBonusUsed,
-  showSplitMeta,
   selectedDateIx,
   selectedSlotIx,
   onDateChange,
   onSlotChange,
   badgeLabel,
+  inGroup = false,
 }: {
   part: ScenarioPart;
   included: boolean;
@@ -1231,19 +1315,19 @@ function PartCard({
   expanded: boolean;
   collapsible: boolean;
   onToggleExpand: () => void;
-  totalCartUnits: number;
   promoFactor: number;
   /** Показываем подсказку только если реально есть remainder и текст не отключён в админке. */
   showRemainderHint: boolean;
   remainderKeepHint?: string;
   partPromoDiscount: number;
   partBonusUsed: number;
-  showSplitMeta: boolean;
   selectedDateIx?: number;
   selectedSlotIx?: number;
   onDateChange?: (dateIx: number) => void;
   onSlotChange?: (slotIx: number) => void;
   badgeLabel?: string;
+  /** Без отдельной рамки — внутри общего блока заказа */
+  inGroup?: boolean;
 }) {
   const visible = part.items.slice(0, 5);
   const extra = part.items.reduce((s, i) => s + i.quantity, 0) - visible.reduce((s, i) => s + i.quantity, 0);
@@ -1253,11 +1337,34 @@ function PartCard({
   const deliveryDate = isCourier ? MOCK_DATES[selectedDateIx ?? 0] : null;
   const deliverySlot = isCourier ? MOCK_SLOTS[selectedSlotIx ?? 0] : null;
   const leadLabel = isCourier && deliveryDate && deliverySlot ? `${deliveryDate}, ${deliverySlot}` : part.leadTimeLabel;
-  const itemsCount = part.items.reduce((s, i) => s + i.quantity, 0);
-  const collapsedSummary = showSplitMeta ? `${itemsCount} из ${totalCartUnits} товаров` : `${itemsCount} товар(ов)`;
+  const isGjStorePickup = part.mode === "click_reserve" || part.mode === "click_collect";
+  const isPvz = part.mode === "pvz";
+  const gjPickupHeadline =
+    part.leadTimeLabel?.trim() ||
+    (part.mode === "click_reserve" ? PICKUP_RESERVE_TITLE : PICKUP_COLLECT_TITLE);
+  const pvzHeadline = part.leadTimeLabel?.trim() || part.sourceName;
+  const partTitle = isCourier
+    ? COURIER_CARRIER_LABEL
+    : part.mode === "click_reserve"
+      ? PICKUP_RESERVE_TITLE
+      : part.mode === "click_collect"
+        ? PICKUP_COLLECT_TITLE
+        : part.sourceName;
+  /** В шапке курьера окно доставки — только в свёртке; в развёрнутом виде даты в чипах */
+  const showCourierSlotInHeader = isCourier && !expanded && Boolean(leadLabel);
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+    <div
+      className={`transition ${
+        inGroup ? "px-4 py-6" : "p-4"
+      } ${
+        inGroup
+          ? included
+            ? ""
+            : "opacity-60"
+          : `rounded-xl border bg-white ${included ? "border-neutral-200" : "border-neutral-200 opacity-60"}`
+      }`}
+    >
       <div className={`flex items-start ${showSelectionControl ? "gap-3" : ""}`}>
         {showSelectionControl ? (
           <button
@@ -1274,74 +1381,84 @@ function PartCard({
           </button>
         ) : null}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="truncate text-sm font-semibold">{part.sourceName}</p>
-              {badgeLabel ? (
-                <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-700">
-                  {badgeLabel}
-                </span>
-              ) : null}
-            </div>
-            <span className="text-[10px] uppercase text-[var(--gj-muted)]">
-              {part.mode === "click_reserve"
-                ? "бесплатно / примерка"
-                : part.mode === "click_collect"
-                  ? "бесплатно / доставка в магазин"
-                  : part.mode === "pvz"
-                    ? "ПВЗ"
-                    : "курьер"}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={collapsible ? onToggleExpand : undefined}
-            className="mt-2 flex w-full items-center justify-between rounded-lg bg-[var(--gj-beige)] px-3 py-2 text-left text-sm font-medium"
-          >
+          {isGjStorePickup ? (
             <div className="min-w-0">
-              <p>{collapsedSummary}</p>
-              <p className="mt-0.5 text-xs font-normal text-neutral-500">{leadLabel}</p>
+              <p className="text-sm font-semibold leading-snug text-neutral-900">{gjPickupHeadline}</p>
               {part.holdDays ? (
-                <p className="mt-0.5 text-xs font-normal text-neutral-500">
+                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">
                   Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
                 </p>
               ) : null}
+              <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--gj-muted)]">
+                {part.mode === "click_reserve"
+                  ? "бесплатно / примерка"
+                  : "бесплатно / доставка в магазин"}
+              </p>
             </div>
-            <div className="ml-3 flex items-center gap-3">
-              <span className="text-sm font-semibold">{fmt(sub + ship)}</span>
-              {collapsible ? <span className="text-neutral-500">{expanded ? "⌃" : "⌄"}</span> : null}
-            </div>
-          </button>
-          {expanded && part.holdDays ? (
-            <p className="mt-2 text-xs text-neutral-500">
-              Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
-            </p>
-          ) : null}
-          {expanded ? (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {visible.map((it) => (
-                <div key={it.productId} className="w-14 shrink-0 text-center">
-                  <div className="relative aspect-square overflow-hidden rounded-md bg-neutral-100">
-                    <Image src={it.image} alt="" fill className="object-cover" sizes="56px" />
-                    {it.quantity > 1 ? (
-                      <span className="absolute bottom-0.5 right-0.5 rounded bg-black px-1 text-[9px] text-white">
-                        {it.quantity} шт
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 truncate text-[9px] text-neutral-500">SKU</p>
-                </div>
-              ))}
-              {extra > 0 ? (
-                <div className="flex w-10 shrink-0 items-center justify-center text-sm font-semibold text-neutral-500">
-                  +{extra}
-                </div>
+          ) : isCourier ? (
+            <div className="min-w-0">
+              <p className="text-sm font-semibold leading-snug text-neutral-900">{COURIER_CARRIER_LABEL}</p>
+              {showCourierSlotInHeader ? (
+                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">{leadLabel}</p>
               ) : null}
+              <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--gj-muted)]">курьер</p>
             </div>
-          ) : null}
+          ) : isPvz ? (
+            <div className="min-w-0">
+              <p className="text-sm font-semibold leading-snug text-neutral-900">{pvzHeadline}</p>
+              {part.holdDays ? (
+                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">
+                  Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
+                </p>
+              ) : null}
+              <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--gj-muted)]">бесплатно / ПВЗ</p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-sm font-semibold">{partTitle}</p>
+                {badgeLabel ? (
+                  <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-700">
+                    {badgeLabel}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Always-visible thumbnails row */}
+          <div className="mt-3 flex gap-1.5">
+            {visible.map((it) => (
+              <div key={it.productId} className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                <SafeProductImage src={it.image} alt="" fill className="object-cover" sizes="48px" />
+                {it.quantity > 1 ? (
+                  <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1 text-[8px] text-white">
+                    {it.quantity}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+            {extra > 0 ? (
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-xs font-semibold text-neutral-500">
+                +{extra}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex w-full items-baseline justify-between gap-3">
+            <span className="text-base font-semibold tabular-nums text-neutral-900">{fmt(sub + ship)}</span>
+            {collapsible ? (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                className="shrink-0 text-xs font-medium text-neutral-500 underline decoration-neutral-300 underline-offset-2"
+              >
+                {expanded ? "Свернуть" : "Состав и оплата"}
+              </button>
+            ) : null}
+          </div>
           {expanded && isCourier ? (
             <div className="mt-3 space-y-2">
-              <p className="text-sm font-semibold">Доставим — {deliveryDate}</p>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {MOCK_DATES.map((d, i) => (
                   <button
@@ -1377,11 +1494,7 @@ function PartCard({
           ) : null}
           {expanded ? (
             <>
-              <div className="mt-3 flex justify-between text-sm">
-                <span className="text-neutral-600">{showSplitMeta ? "Часть заказа" : "Заказ"}</span>
-                <span className="font-medium">{fmt(sub + ship)}</span>
-              </div>
-              <div className="mt-1 space-y-1 text-xs text-neutral-500">
+              <div className="mt-3 space-y-1 text-xs text-neutral-500">
                 <div className="flex justify-between gap-3">
                   <span>Товары</span>
                   <span>{fmt(sub)}</span>
@@ -1902,6 +2015,61 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
   const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
+  const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
+
+  const renderScenarioMethodSummary = () => {
+    if (!method || !scenario) return null;
+    const dm = deliveryOptions.find((d) => d.code === method);
+    if (!dm) return null;
+    const summaryText = methodSummaryLabel(dm.code as "courier" | "pickup" | "pvz", dm.summary, dm.enabled);
+    return (
+      <>
+        {summaryText ? <p className="mb-2 text-xs text-neutral-400">{summaryText}</p> : null}
+        {method === "pickup" && selectedPickupStore ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-neutral-800">{selectedPickupStore.name}</p>
+            <button
+              type="button"
+              onClick={() => setPickupSelectorOpen(true)}
+              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+            >
+              Изменить
+            </button>
+          </div>
+        ) : null}
+        {method === "courier" ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="min-w-0 truncate text-sm text-neutral-800">
+              {courierAddress.trim() ? courierAddress : "Укажите адрес доставки"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setCourierAddressModalTarget({ kind: "primary" })}
+              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+            >
+              Изменить
+            </button>
+          </div>
+        ) : null}
+        {method === "pvz" && selectedPvzPoint ? (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-neutral-800">{selectedPvzPoint.name}</p>
+              <p className="mt-0.5 truncate text-xs text-neutral-500">{selectedPvzPoint.address}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPvzSelectorOpen(true)}
+              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+            >
+              Изменить
+            </button>
+          </div>
+        ) : null}
+      </>
+    );
+  };
+
   return (
     <div className="mx-auto min-h-screen max-w-md bg-white pb-28">
       <header className="sticky top-0 z-10 border-b border-neutral-100 bg-white px-4 py-3">
@@ -1938,82 +2106,86 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               </span>
             </div>
           </div>
-          <div className="flex flex-col gap-2">
-            {deliveryOptions.map((dm) => (
-              <label
-                key={dm.id}
-                onClick={() => {
-                  if (!dm.enabled) return;
-                  selectPrimaryMethod(dm.code as "courier" | "pickup" | "pvz");
-                  if (dm.code === "pickup") {
-                    setPickupSelectorOpen(true);
-                  }
-                  if (dm.code === "pvz") {
-                    setPvzSelectorOpen(true);
-                  }
-                }}
-                className={`rounded-xl border px-3 py-3 transition ${
-                  dm.enabled
-                    ? method === dm.code
-                      ? "cursor-pointer border-black bg-neutral-50"
-                      : "cursor-pointer border-neutral-200 bg-white"
-                    : "cursor-not-allowed border-neutral-200 bg-neutral-50 opacity-60"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <input
-                    type="radio"
-                    className="mt-0.5 h-4 w-4"
-                    name="dm"
-                    checked={method === dm.code}
-                    disabled={!dm.enabled}
-                    onChange={() => {
-                      selectPrimaryMethod(dm.code as "courier" | "pickup" | "pvz");
-                      if (dm.code === "pickup") {
-                        setPickupSelectorOpen(true);
-                      }
-                      if (dm.code === "pvz") {
-                        setPvzSelectorOpen(true);
-                      }
-                    }}
-                  />
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">{dm.name}</div>
-                    {methodSummaryLabel(dm.code as "courier" | "pickup" | "pvz", dm.summary, dm.enabled) ? (
-                      <div className="mt-1 text-xs text-neutral-500">
-                        {methodSummaryLabel(dm.code as "courier" | "pickup" | "pvz", dm.summary, dm.enabled)}
-                      </div>
-                    ) : null}
-                    {dm.code === "pickup" && method === "pickup" && selectedPickupStore ? (
-                      <PickupSelectedStoreCard
-                        store={selectedPickupStore}
-                        onChange={() => setPickupSelectorOpen(true)}
-                        embedded
-                      />
-                    ) : null}
-                    {dm.code === "courier" && method === "courier" ? (
-                      <CourierAddressCard
-                        address={courierAddress}
-                        onChange={() => setCourierAddressModalTarget({ kind: "primary" })}
-                      />
-                    ) : null}
-                    {dm.code === "pvz" && method === "pvz" && selectedPvzPoint ? (
-                      <PvzSelectedPointCard
-                        point={selectedPvzPoint}
-                        summary={pvzSummary}
-                        onChange={() => setPvzSelectorOpen(true)}
-                      />
-                    ) : null}
-                  </div>
-                </div>
-              </label>
-            ))}
-            {deliveryOptions.length === 0 ? (
-              <p className="text-xs text-neutral-500">
-                Для выбранного города нет доступных способов получения по логистическим правилам.
-              </p>
-            ) : null}
+          {/* Горизонтальные вкладки */}
+          <div className="flex gap-2">
+            {deliveryOptions.map((dm) => {
+              const tabName = dm.code === "pickup" ? "Магазины GJ" : dm.name;
+              const isSelected = method === dm.code;
+              return (
+                <button
+                  key={dm.id}
+                  type="button"
+                  disabled={!dm.enabled}
+                  onClick={() => {
+                    if (!dm.enabled) return;
+                    selectPrimaryMethod(dm.code as "courier" | "pickup" | "pvz");
+                    if (dm.code === "pickup") setPickupSelectorOpen(true);
+                    if (dm.code === "pvz") setPvzSelectorOpen(true);
+                  }}
+                  className={`flex-1 rounded-xl border py-3 text-sm font-semibold transition ${
+                    isSelected
+                      ? "border-black bg-black text-white"
+                      : dm.enabled
+                        ? "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
+                        : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
+                  }`}
+                >
+                  {tabName}
+                </button>
+              );
+            })}
           </div>
+          {deliveryOptions.length === 0 ? (
+            <p className="mt-2 text-xs text-neutral-500">
+              Для выбранного города нет доступных способов получения по логистическим правилам.
+            </p>
+          ) : null}
+
+          {/* Детали способа: отдельная «кирпичная» карточка только если заказ ниже ещё не собран в единый блок */}
+          {method && !unifiedOrderBlock ? (
+            <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
+              {!scenario ? (
+                (() => {
+                  const dm = deliveryOptions.find((d) => d.code === method);
+                  if (!dm) return null;
+                  const summaryText = methodSummaryLabel(
+                    dm.code as "courier" | "pickup" | "pvz",
+                    dm.summary,
+                    dm.enabled,
+                  );
+                  return (
+                    <>
+                      {summaryText ? (
+                        <p className="mb-2 text-sm text-neutral-400">{summaryText}</p>
+                      ) : null}
+                      {method === "pickup" && selectedPickupStore ? (
+                        <PickupSelectedStoreCard
+                          store={selectedPickupStore}
+                          onChange={() => setPickupSelectorOpen(true)}
+                          embedded
+                        />
+                      ) : null}
+                      {method === "courier" ? (
+                        <CourierAddressCard
+                          address={courierAddress}
+                          onChange={() => setCourierAddressModalTarget({ kind: "primary" })}
+                        />
+                      ) : null}
+                      {method === "pvz" && selectedPvzPoint ? (
+                        <PvzSelectedPointCard
+                          point={selectedPvzPoint}
+                          summary={pvzSummary}
+                          onChange={() => setPvzSelectorOpen(true)}
+                        />
+                      ) : null}
+                    </>
+                  );
+                })()
+              ) : (
+                renderScenarioMethodSummary()
+              )}
+            </div>
+          ) : null}
         </section>
 
         {!method ? (
@@ -2038,77 +2210,152 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
         ) : null}
 
-        {scenario && hasSplit ? (
-          <section className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-            <p className="text-sm font-semibold">
-              {allDisplayParts.length > 1
-                ? `Заказ будет оформлен в ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
-                : "Заказ будет оформлен одним отправлением"}
-            </p>
-            <p className="mt-1 text-xs text-neutral-500">
-              Откройте отправление, если хотите посмотреть товары, стоимость и срок получения подробнее.
-            </p>
+        {unifiedOrderBlock ? (
+          <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
+            <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
+            {hasSplit ? (
+              <div className="flex items-center justify-between px-3 py-3">
+                <p className="text-sm font-bold uppercase tracking-wide">
+                  {allDisplayParts.length > 1
+                    ? `Ваш заказ · ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
+                    : "Ваш заказ"}
+                </p>
+                {units > 0 ? (
+                  <span className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600">
+                    В заказе{" "}
+                    {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из {units}{" "}
+                    шт
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            {scenario?.parts.map((p, partIndex) => (
+              <PartCard
+                key={p.key}
+                inGroup
+                part={p}
+                included={included[p.key] !== false}
+                onToggle={() =>
+                  setIncluded((prev) => {
+                    const cur = prev[p.key] !== false;
+                    return { ...prev, [p.key]: !cur };
+                  })
+                }
+                showSelectionControl={!keepSinglePartExpanded}
+                expanded={keepSinglePartExpanded || expandedParts[p.key] === true}
+                collapsible={!keepSinglePartExpanded}
+                onToggleExpand={() =>
+                  setExpandedParts((prev) => ({
+                    ...prev,
+                    [p.key]: !prev[p.key],
+                  }))
+                }
+                promoFactor={promoFactor}
+                partPromoDiscount={distribution[p.key]?.promoDiscount ?? 0}
+                partBonusUsed={distribution[p.key]?.bonusUsed ?? 0}
+                showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
+                remainderKeepHint={scenario.remainderKeepHint}
+                selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
+                selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
+                onDateChange={(dateIx) =>
+                  setPartSchedules((prev) => ({
+                    ...prev,
+                    [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
+                  }))
+                }
+                onSlotChange={(slotIx) =>
+                  setPartSchedules((prev) => ({
+                    ...prev,
+                    [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
+                  }))
+                }
+              />
+            ))}
           </section>
-        ) : null}
+        ) : (
+          <>
+            {scenario && hasSplit ? (
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-sm font-bold uppercase tracking-wide">
+                  {allDisplayParts.length > 1
+                    ? `Ваш заказ · ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
+                    : "Ваш заказ"}
+                </p>
+                {units > 0 ? (
+                  <span className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600">
+                    В заказе{" "}
+                    {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из {units}{" "}
+                    шт
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
 
-        <section className="mb-6 space-y-3">
-          {scenario?.parts.map((p, partIndex) => (
-            <PartCard
-              key={p.key}
-              part={p}
-              included={included[p.key] !== false}
-              onToggle={() =>
-                setIncluded((prev) => {
-                  const cur = prev[p.key] !== false;
-                  return { ...prev, [p.key]: !cur };
-                })
-              }
-              showSelectionControl={!keepSinglePartExpanded}
-              expanded={keepSinglePartExpanded || expandedParts[p.key] === true}
-              collapsible={!keepSinglePartExpanded}
-              onToggleExpand={() =>
-                setExpandedParts((prev) => ({
-                  ...prev,
-                  [p.key]: !prev[p.key],
-                }))
-              }
-              totalCartUnits={units}
-              promoFactor={promoFactor}
-              partPromoDiscount={distribution[p.key]?.promoDiscount ?? 0}
-              partBonusUsed={distribution[p.key]?.bonusUsed ?? 0}
-              showSplitMeta={hasSplit}
-              showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
-              remainderKeepHint={scenario.remainderKeepHint}
-              selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
-              selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
-              onDateChange={(dateIx) =>
-                setPartSchedules((prev) => ({
-                  ...prev,
-                  [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
-                }))
-              }
-              onSlotChange={(slotIx) =>
-                setPartSchedules((prev) => ({
-                  ...prev,
-                  [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
-                }))
-              }
-            />
-          ))}
-        </section>
+            <section className="mb-6 space-y-3">
+              {scenario?.parts.map((p, partIndex) => (
+                <PartCard
+                  key={p.key}
+                  part={p}
+                  included={included[p.key] !== false}
+                  onToggle={() =>
+                    setIncluded((prev) => {
+                      const cur = prev[p.key] !== false;
+                      return { ...prev, [p.key]: !cur };
+                    })
+                  }
+                  showSelectionControl={!keepSinglePartExpanded}
+                  expanded={keepSinglePartExpanded || expandedParts[p.key] === true}
+                  collapsible={!keepSinglePartExpanded}
+                  onToggleExpand={() =>
+                    setExpandedParts((prev) => ({
+                      ...prev,
+                      [p.key]: !prev[p.key],
+                    }))
+                  }
+                  promoFactor={promoFactor}
+                  partPromoDiscount={distribution[p.key]?.promoDiscount ?? 0}
+                  partBonusUsed={distribution[p.key]?.bonusUsed ?? 0}
+                  showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
+                  remainderKeepHint={scenario.remainderKeepHint}
+                  selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
+                  selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
+                  onDateChange={(dateIx) =>
+                    setPartSchedules((prev) => ({
+                      ...prev,
+                      [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
+                    }))
+                  }
+                  onSlotChange={(slotIx) =>
+                    setPartSchedules((prev) => ({
+                      ...prev,
+                      [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
+                    }))
+                  }
+                />
+              ))}
+            </section>
+          </>
+        )}
 
         {secondaryDisplaySelections.map((selection, selectionIndex) => (
-          <section key={selection.id} className="mb-6 space-y-3">
-            <SecondarySelectionCard
-              option={selection.option}
-              pickupStore={pickupStores.find((store) => store.id === selection.option.storeId)}
-              pvzPoint={pvzOptions.find((point) => point.id === pvzId)}
-              courierAddress={courierAddress}
-              onEdit={() => openSplitEditModal(selectionIndex)}
-            />
+          <section
+            key={selection.id}
+            className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100"
+          >
+            <div className="px-3 py-3">
+              <SecondarySelectionCard
+                variant="stacked"
+                option={selection.option}
+                pickupStore={pickupStores.find((store) => store.id === selection.option.storeId)}
+                pvzPoint={pvzOptions.find((point) => point.id === pvzId)}
+                courierAddress={courierAddress}
+                onEdit={() => openSplitEditModal(selectionIndex)}
+              />
+            </div>
             {selection.parts.map((part) => (
               <PartCard
                 key={part.key}
+                inGroup
                 part={part}
                 included={included[part.key] !== false}
                 onToggle={() =>
@@ -2126,11 +2373,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     [part.key]: !prev[part.key],
                   }))
                 }
-                totalCartUnits={units}
                 promoFactor={promoFactor}
                 partPromoDiscount={distribution[part.key]?.promoDiscount ?? 0}
                 partBonusUsed={distribution[part.key]?.bonusUsed ?? 0}
-                showSplitMeta
                 showRemainderHint={false}
                 remainderKeepHint={undefined}
                 selectedDateIx={partSchedules[part.key]?.dateIx ?? 0}
@@ -2283,7 +2528,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             disabled={!scenario || includedParts.length === 0}
             className="w-full rounded-lg bg-black py-4 text-sm font-semibold uppercase tracking-wide text-white disabled:opacity-40"
           >
-            Оформить заказ
+            {(() => {
+              const orderedUnits = includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0);
+              if (units > 0 && orderedUnits < units) {
+                return `Оформить ${orderedUnits} из ${units} товаров`;
+              }
+              if (units > 0 && orderedUnits > 0) {
+                return `Оформить ${orderedUnits} ${pluralizeProducts(orderedUnits)}`;
+              }
+              return "Оформить заказ";
+            })()}
           </button>
           <p className="mt-2 text-center text-[10px] text-neutral-400">split-checkout.local</p>
         </div>

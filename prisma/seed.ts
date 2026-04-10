@@ -3,7 +3,8 @@ import { defaultDisclaimerRows } from "../lib/disclaimers";
 
 const prisma = new PrismaClient();
 
-const IMG = (n: number) => `https://picsum.photos/seed/gj${n}/200/200`;
+/** Локальный плейсхолдер — не зависит от внешних CDN (picsum / GJ могут быть недоступны из сети) */
+const IMG = (_n: number) => "/product-placeholder.svg";
 
 async function main() {
   await prisma.disclaimerTemplate.deleteMany();

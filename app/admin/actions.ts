@@ -16,7 +16,7 @@ export async function createProduct(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
-  const image = String(formData.get("image") ?? "").trim() || "https://picsum.photos/seed/new/200/200";
+  const image = String(formData.get("image") ?? "").trim() || "/product-placeholder.svg";
   if (!name || !sku) return;
   await prisma.product.create({
     data: { name, sku, price: Math.round(price), image, isActive: true },
@@ -29,7 +29,7 @@ export async function createProductWithStocks(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
-  const image = String(formData.get("image") ?? "").trim() || "https://picsum.photos/seed/new/200/200";
+  const image = String(formData.get("image") ?? "").trim() || "/product-placeholder.svg";
   if (!name || !sku) return;
 
   const product = await prisma.product.create({
