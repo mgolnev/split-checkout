@@ -192,7 +192,7 @@ function methodSummaryLabel(
   if (summary.totalUnits <= 0) return "";
   if (code === "pickup") {
     if (summary.fullStoreCount > 0) {
-      return `Все ${summary.totalUnits} товаров доступны не во всех магазинах`;
+      return "Доступность по магазинам разная — выберите точку ниже.";
     }
     if (!summary.hasSplit) return "";
     if (summary.availableUnits <= 0) return `0 из ${summary.totalUnits} товаров`;
@@ -308,23 +308,45 @@ function pvzPointTone(summary?: MethodSummary) {
   };
 }
 
-/** Короткая подсказка при входе в чекаут (до выбора вкладки). */
-function deliveryEntryHint(summaries: Bootstrap["methodSummaryByCity"][string] | undefined): string | null {
+/** Короткие подсказки до выбора способа: без дублирования текста из карточки способа. */
+function getDeliveryGuidance(
+  summaries: Bootstrap["methodSummaryByCity"][string] | undefined,
+): { badge: "Рекомендуем" | "К сведению" | null; lines: string[] } | null {
   if (!summaries) return null;
   const { courier, pickup, pvz } = summaries;
   const total = Math.max(courier.totalUnits, pickup.totalUnits, pvz.totalUnits);
   if (total <= 0) return null;
 
-  if (courier.availableUnits >= total && !courier.hasSplit) {
-    return "Все товары доступны курьером.";
+  const courierOneShipment = courier.availableUnits >= total && !courier.hasSplit;
+  const storeVaries = pickup.fullStoreCount > 0 || pickup.hasSplit;
+  const pvzLimited = pvz.availableUnits < total && pvz.availableUnits > 0;
+
+  if (courierOneShipment) {
+    const lines = ["Курьер — весь заказ одним отправлением."];
+    if (storeVaries) {
+      lines.push("В магазинах набор по точкам может отличаться.");
+    }
+    return { badge: "Рекомендуем", lines };
   }
-  if (pickup.fullStoreCount > 0 || pickup.hasSplit) {
-    return `Все ${total} товаров доступны не во всех магазинах.`;
+  if (pvzLimited) {
+    return {
+      badge: "К сведению",
+      lines: ["В ПВЗ доступна часть корзины — для полного набора смотрите курьера или магазины."],
+    };
   }
-  if (pvz.availableUnits > 0 && pvz.availableUnits < total) {
-    return "Через ПВЗ можно оформить не всю корзину — сравните способы ниже.";
+  if (storeVaries) {
+    return {
+      badge: "К сведению",
+      lines: [
+        `Не все ${total} позиций есть в каждом магазине.`,
+        "Сравните вкладки — так проще собрать заказ целиком.",
+      ],
+    };
   }
-  return "Выберите способ получения — от него зависят отправления и сроки.";
+  return {
+    badge: null,
+    lines: ["Выберите способ — от него зависят отправления и сроки."],
+  };
 }
 
 const PRODUCT_PLACEHOLDER = "/product-placeholder.svg";
@@ -1571,6 +1593,79 @@ function PartCard({
   );
 }
 
+function ScenarioPartCardSkeleton({ inGroup }: { inGroup?: boolean }) {
+  const inner = (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 h-5 w-5 shrink-0 rounded-[4px] bg-neutral-200" />
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="space-y-2">
+          <div className="h-4 w-[72%] max-w-[260px] rounded-md bg-neutral-200" />
+          <div className="h-3 w-[40%] max-w-[140px] rounded-md bg-neutral-100" />
+        </div>
+        <div className="flex gap-1.5">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-12 w-12 shrink-0 rounded-lg bg-neutral-200/90" />
+          ))}
+        </div>
+        <div className="flex items-baseline justify-between gap-3 pt-0.5">
+          <div className="h-5 w-28 rounded-md bg-neutral-200" />
+          <div className="h-4 w-20 rounded-md bg-neutral-100" />
+        </div>
+      </div>
+    </div>
+  );
+  if (inGroup) {
+    return <div className="px-4 py-6">{inner}</div>;
+  }
+  return <div className="rounded-xl border border-neutral-200 bg-white p-4">{inner}</div>;
+}
+
+function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) {
+  if (variant === "stacked") {
+    return (
+      <div
+        role="status"
+        aria-busy="true"
+        aria-live="polite"
+        className="pointer-events-none mb-6 space-y-3 select-none"
+      >
+        <span className="sr-only">Считаем доступные отправления и сроки.</span>
+        <div className="animate-pulse">
+          <ScenarioPartCardSkeleton />
+        </div>
+        <div className="animate-pulse">
+          <ScenarioPartCardSkeleton />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <section
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+      className="pointer-events-none mb-6 select-none overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100"
+    >
+      <span className="sr-only">Считаем доступные отправления и сроки.</span>
+      <div className="animate-pulse space-y-2 px-3 py-3">
+        <div className="h-3 w-36 rounded bg-neutral-200/90" />
+        <div className="h-3 w-full max-w-sm rounded bg-neutral-100" />
+        <div className="h-4 w-[85%] max-w-xs rounded bg-neutral-200/80" />
+      </div>
+      <div className="animate-pulse flex items-center justify-between px-3 py-3">
+        <div className="h-3.5 w-44 rounded bg-neutral-200/90" />
+        <div className="h-7 w-[7.5rem] rounded-full bg-neutral-200/80" />
+      </div>
+      <div className="animate-pulse">
+        <ScenarioPartCardSkeleton inGroup />
+      </div>
+      <div className="animate-pulse">
+        <ScenarioPartCardSkeleton inGroup />
+      </div>
+    </section>
+  );
+}
+
 export default function CheckoutApp(props: { variant?: "classic" | "redesign" } = {}) {
   void props.variant;
   const router = useRouter();
@@ -1745,8 +1840,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const selectedPvzPoint = pvzOptions.find((point) => point.id === pvzId);
   const pvzSummary = boot?.methodSummaryByCity[cityId]?.pvz;
 
-  const entryHint = useMemo(
-    () => (boot && cityId ? deliveryEntryHint(boot.methodSummaryByCity[cityId]) : null),
+  const deliveryGuide = useMemo(
+    () => (boot && cityId ? getDeliveryGuidance(boot.methodSummaryByCity[cityId]) : null),
     [boot, cityId],
   );
 
@@ -2107,6 +2202,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
 
+  const awaitingScenario =
+    !!cityId && !!method && (method !== "courier" || primaryCourierAddress.trim().length > 0);
+  const showScenarioSkeleton = loading && awaitingScenario;
+
   const renderScenarioMethodSummary = () => {
     if (!method || !scenario) return null;
     const dm = deliveryOptions.find((d) => d.code === method);
@@ -2161,8 +2260,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   };
 
   return (
-    <div className="mx-auto min-h-screen max-w-md bg-white pb-28">
-      <header className="sticky top-0 z-10 border-b border-neutral-100 bg-white px-4 py-3">
+    <div className="relative isolate mx-auto min-h-screen max-w-md bg-white pb-28">
+      <header className="sticky top-0 z-50 border-b border-neutral-100 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-3">
           <button type="button" className="text-xl text-neutral-700" aria-label="Назад">
             ←
@@ -2172,7 +2271,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </div>
       </header>
 
-      <div className="px-4 pt-4">
+      <div className="relative z-0 px-4 pt-4">
         <Stepper step={2} />
 
         <section className="mb-6">
@@ -2225,9 +2324,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               );
             })}
           </div>
-          {method && entryHint ? (
-            <p className="mt-3 text-xs leading-relaxed text-neutral-500">{entryHint}</p>
-          ) : null}
           {deliveryOptions.length === 0 ? (
             <p className="mt-2 text-xs text-neutral-500">
               Для выбранного города нет доступных способов получения по логистическим правилам.
@@ -2283,10 +2379,28 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
         {!method ? (
           <div className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4 text-neutral-500">
-            {entryHint ? (
-              <p className="mb-2 text-xs leading-relaxed text-neutral-600">{entryHint}</p>
+            {deliveryGuide && deliveryGuide.lines.length > 0 ? (
+              <div className="mb-3">
+                {deliveryGuide.badge ? (
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                    {deliveryGuide.badge}
+                  </p>
+                ) : null}
+                {deliveryGuide.lines.map((line, i) => (
+                  <p
+                    key={i}
+                    className={
+                      i === 0
+                        ? `text-xs leading-snug text-neutral-800 ${deliveryGuide.badge ? "mt-1.5" : ""}`
+                        : "mt-1.5 text-xs leading-snug text-neutral-600"
+                    }
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
             ) : null}
-            <p className="text-sm">
+            <p className="text-sm text-neutral-500">
               Выберите способ получения, чтобы увидеть доступные отправления и сроки.
             </p>
           </div>
@@ -2298,9 +2412,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
         ) : null}
 
-        {loading ? <p className="text-sm text-neutral-500">Пересчёт доступных отправлений…</p> : null}
-
-        {scenario?.informers?.length ? (
+        {!showScenarioSkeleton && scenario?.informers?.length ? (
           <div className="mb-4 space-y-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-950">
             {scenario.informers.map((t, i) => (
               <p key={i}>{t}</p>
@@ -2308,7 +2420,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
         ) : null}
 
-        {unifiedOrderBlock ? (
+        {showScenarioSkeleton ? (
+          <ScenarioOrderSkeleton variant={unifiedOrderBlock ? "unified" : "stacked"} />
+        ) : unifiedOrderBlock ? (
           <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
             <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
             {hasSplit ? (
