@@ -14,8 +14,10 @@
     "test:autocheck": "node scripts/autotest.mjs",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
+    "db:seed:remote": "node scripts/run-seed-remote.mjs",
     "db:studio": "prisma studio",
     "supabase:urls": "node scripts/supabase-urls.mjs",
+    "db:copy-to-prod": "tsx scripts/copy-local-to-prod.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
