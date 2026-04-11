@@ -308,6 +308,25 @@ function pvzPointTone(summary?: MethodSummary) {
   };
 }
 
+/** Короткая подсказка при входе в чекаут (до выбора вкладки). */
+function deliveryEntryHint(summaries: Bootstrap["methodSummaryByCity"][string] | undefined): string | null {
+  if (!summaries) return null;
+  const { courier, pickup, pvz } = summaries;
+  const total = Math.max(courier.totalUnits, pickup.totalUnits, pvz.totalUnits);
+  if (total <= 0) return null;
+
+  if (courier.availableUnits >= total && !courier.hasSplit) {
+    return "Все товары доступны курьером.";
+  }
+  if (pickup.fullStoreCount > 0 || pickup.hasSplit) {
+    return `Все ${total} товаров доступны не во всех магазинах.`;
+  }
+  if (pvz.availableUnits > 0 && pvz.availableUnits < total) {
+    return "Через ПВЗ можно оформить не всю корзину — сравните способы ниже.";
+  }
+  return "Выберите способ получения — от него зависят отправления и сроки.";
+}
+
 const PRODUCT_PLACEHOLDER = "/product-placeholder.svg";
 
 function SafeProductImage({
@@ -337,38 +356,63 @@ function SafeProductImage({
   );
 }
 
-function Stepper({ step }: { step: number }) {
-  const labels = ["Доставка", "Получатель", "Оплата", "Оформление"];
+function StepperCheckIcon() {
   return (
-    <div className="mb-6">
-      <div className="flex justify-between gap-1 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
-        {labels.map((l, i) => (
-          <span key={l} className={i <= step ? "text-neutral-900" : ""}>
-            {l}
-          </span>
-        ))}
-      </div>
-      <div className="mt-2 flex items-center gap-1">
-        {labels.map((_, i) => (
-          <div key={i} className="flex flex-1 items-center">
-            <div
-              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-xs ${
-                i < step
-                  ? "border-emerald-600 bg-emerald-600 text-white"
-                  : i === step
-                    ? "border-neutral-900 bg-white text-neutral-900"
-                    : "border-neutral-300 bg-white text-neutral-400"
-              }`}
-            >
-              {i < step ? "✓" : i + 1}
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden className="text-white">
+      <path
+        d="M3 7L6 10L11 4"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Прогресс чекаута: линия + круги по макету (зелёный ✓ / текущий контур / будущие). */
+function Stepper({ step }: { step: number }) {
+  const labels = ["Доставка", "Получатель", "Способ оплаты", "Оформление"];
+  return (
+    <nav className="mb-6" aria-label="Этапы оформления заказа">
+      <div className="relative grid grid-cols-4">
+        {/* Линия между центрами первого и последнего круга */}
+        <div
+          className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-3 z-0 h-px bg-neutral-950"
+          aria-hidden
+        />
+        {labels.map((label, i) => {
+          const done = i < step;
+          const current = i === step;
+          return (
+            <div key={label} className="relative z-10 flex flex-col items-center gap-2">
+              <div
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+                  done
+                    ? "border-emerald-600 bg-emerald-600 text-white"
+                    : current
+                      ? "border-neutral-900 bg-white"
+                      : "border-neutral-200 bg-white text-neutral-400"
+                }`}
+              >
+                {done ? (
+                  <StepperCheckIcon />
+                ) : current ? null : (
+                  <span className="text-[11px] font-semibold leading-none">{i + 1}</span>
+                )}
+              </div>
+              <span
+                className={`max-w-[5.5rem] text-center text-[10px] font-medium leading-tight sm:max-w-none sm:text-[11px] ${
+                  done || current ? "text-neutral-950" : "text-neutral-400"
+                }`}
+              >
+                {label}
+              </span>
             </div>
-            {i < labels.length - 1 && (
-              <div className={`mx-0.5 h-0.5 flex-1 ${i < step ? "bg-emerald-600" : "bg-neutral-200"}`} />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
-    </div>
+    </nav>
   );
 }
 
@@ -755,7 +799,7 @@ function CourierAddressModal({
         </div>
         <label className="block text-xs font-medium text-neutral-500">Адрес</label>
         <textarea
-          className="mt-2 min-h-24 w-full rounded-xl border border-neutral-200 px-3 py-3 text-sm"
+          className="mt-2 min-h-24 w-full rounded-xl border border-neutral-200 px-3 py-3 text-base text-neutral-900 placeholder:text-neutral-400"
           placeholder="Москва, улица, дом, подъезд, квартира"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -802,7 +846,7 @@ function UnresolvedItemsBlock({
             Можно выбрать удобный вариант для этих товаров сейчас или оставить их в корзине.
           </p>
         </div>
-        <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
+        <span className="inline-flex min-w-[2.75rem] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-semibold tabular-nums uppercase text-neutral-600">
           {totalUnits} шт
         </span>
       </div>
@@ -1245,7 +1289,7 @@ function SplitSelectionModal({
               value={pickupSearch}
               onChange={(e) => setPickupSearch(e.target.value)}
               placeholder="Найти магазин"
-              className="mb-4 w-full rounded-xl border border-neutral-200 px-3 py-3 text-sm outline-none focus:border-neutral-400"
+              className="mb-4 w-full rounded-xl border border-neutral-200 px-3 py-3 text-base outline-none focus:border-neutral-400"
             />
 
             <div className="space-y-2">
@@ -1453,7 +1497,7 @@ function PartCard({
                 onClick={onToggleExpand}
                 className="shrink-0 text-xs font-medium text-neutral-500 underline decoration-neutral-300 underline-offset-2"
               >
-                {expanded ? "Свернуть" : "Состав и оплата"}
+                {expanded ? "Свернуть" : "Подробнее"}
               </button>
             ) : null}
           </div>
@@ -1700,6 +1744,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const pvzOptions = (boot?.pvzByCity[cityId] ?? []).filter((p) => !p.requiresPrepayment);
   const selectedPvzPoint = pvzOptions.find((point) => point.id === pvzId);
   const pvzSummary = boot?.methodSummaryByCity[cityId]?.pvz;
+
+  const entryHint = useMemo(
+    () => (boot && cityId ? deliveryEntryHint(boot.methodSummaryByCity[cityId]) : null),
+    [boot, cityId],
+  );
 
   useEffect(() => {
     if (method && !availableMethods.some((m) => m.code === method)) {
@@ -2127,7 +2176,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <Stepper step={2} />
 
         <section className="mb-6">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wide">Способ получения</h2>
             <div className="relative">
               <select
@@ -2148,7 +2197,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </div>
           </div>
           {/* Горизонтальные вкладки */}
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             {deliveryOptions.map((dm) => {
               const tabName = dm.code === "pickup" ? "Магазины GJ" : dm.name;
               const isSelected = method === dm.code;
@@ -2176,6 +2225,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               );
             })}
           </div>
+          {method && entryHint ? (
+            <p className="mt-3 text-xs leading-relaxed text-neutral-500">{entryHint}</p>
+          ) : null}
           {deliveryOptions.length === 0 ? (
             <p className="mt-2 text-xs text-neutral-500">
               Для выбранного города нет доступных способов получения по логистическим правилам.
@@ -2230,8 +2282,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </section>
 
         {!method ? (
-          <div className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-            Выберите способ получения, чтобы увидеть доступные отправления и сроки.
+          <div className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4 text-neutral-500">
+            {entryHint ? (
+              <p className="mb-2 text-xs leading-relaxed text-neutral-600">{entryHint}</p>
+            ) : null}
+            <p className="text-sm">
+              Выберите способ получения, чтобы увидеть доступные отправления и сроки.
+            </p>
           </div>
         ) : null}
 
@@ -2262,10 +2319,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     : "Ваш заказ"}
                 </p>
                 {units > 0 ? (
-                  <span className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600">
-                    В заказе{" "}
-                    {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из {units}{" "}
-                    шт
+                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-neutral-600">
+                    В заказе {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из{" "}
+                    {units} шт
                   </span>
                 ) : null}
               </div>
@@ -2323,10 +2379,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     : "Ваш заказ"}
                 </p>
                 {units > 0 ? (
-                  <span className="rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-semibold text-neutral-600">
-                    В заказе{" "}
-                    {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из {units}{" "}
-                    шт
+                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-neutral-600">
+                    В заказе {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из{" "}
+                    {units} шт
                   </span>
                 ) : null}
               </div>
@@ -2467,7 +2522,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           <h2 className="mb-2 text-sm font-bold uppercase tracking-wide">Мои данные</h2>
           <p className="text-xs text-neutral-500">Введите номер телефона, чтобы оформить заказ</p>
           <input
-            className="mt-2 w-full rounded-lg bg-neutral-100 px-3 py-3 text-sm uppercase placeholder:text-neutral-400"
+            className="mt-2 w-full rounded-lg bg-neutral-100 px-3 py-3 text-base uppercase placeholder:text-neutral-400"
             placeholder="Телефон"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -2482,7 +2537,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
         <section className="mb-6 flex flex-wrap gap-2 border-t border-neutral-100 pt-4">
           <input
-            className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs uppercase"
+            className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-base uppercase"
             placeholder="Промокод"
             value={promo}
             onChange={(e) => {
