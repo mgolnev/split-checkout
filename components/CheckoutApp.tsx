@@ -1,8 +1,12 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { loadCourierAddress, saveCourierAddress } from "@/lib/courier-address-storage";
+import { loadCheckoutCart } from "@/lib/checkout-cart-storage";
+import { loadLastPickupStoreId, saveLastPickupStore } from "@/lib/pickup-store-storage";
 import type { AlternativeMethodOption, CartLine, RemainderResolution, ScenarioPart, ScenarioResult } from "@/lib/types";
 
 type Bootstrap = {
@@ -453,10 +457,13 @@ function Stepper({ step }: { step: number }) {
 function PickupStoreSelector({
   stores,
   selectedStoreId,
+  lastChosenStoreId,
   onSelect,
 }: {
   stores: PickupStoreOption[];
   selectedStoreId: string;
+  /** Подсказка «выбирали в прошлый раз» — без автоподстановки выбора */
+  lastChosenStoreId?: string | null;
   onSelect: (storeId: string) => void;
 }) {
   if (stores.length === 0) {
@@ -467,7 +474,7 @@ function PickupStoreSelector({
     );
   }
 
-  const selectedStore = stores.find((store) => store.id === selectedStoreId) ?? stores[0]!;
+  const selectedStore = selectedStoreId ? stores.find((store) => store.id === selectedStoreId) : undefined;
 
   return (
     <div className="space-y-3">
@@ -477,8 +484,8 @@ function PickupStoreSelector({
             <p className="text-sm font-semibold">Карта магазинов</p>
             <p className="text-xs text-neutral-500">Схема доступности без точной географии.</p>
           </div>
-          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-neutral-500 shadow-sm">
-            {selectedStore.name}
+          <span className="max-w-[55%] truncate rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-neutral-500 shadow-sm">
+            {selectedStore?.name ?? "Не выбран"}
           </span>
         </div>
         <div className="relative h-52 overflow-hidden rounded-xl border border-white/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]">
@@ -487,37 +494,50 @@ function PickupStoreSelector({
             const tone = pickupStoreTone(store.summary);
             const pos = PICKUP_MAP_POSITIONS[index % PICKUP_MAP_POSITIONS.length]!;
             const selected = selectedStoreId === store.id;
+            const wasLastChoice = lastChosenStoreId === store.id;
             return (
               <button
                 key={store.id}
                 type="button"
                 onClick={() => onSelect(store.id)}
-                className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-1 text-[11px] font-semibold shadow-sm transition ${tone.marker} ${selected ? "scale-110 ring-4 ring-black/10" : ""}`}
+                className={`relative absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-1 text-[11px] font-semibold shadow-sm transition ${tone.marker} ${selected ? "scale-110 ring-4 ring-black/10" : ""}`}
                 style={{ left: pos.left, top: pos.top }}
                 aria-pressed={selected}
                 aria-label={`${store.name}. ${pickupStoreCountLabel(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
               >
+                {wasLastChoice ? (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white" title="Выбирали в прошлый раз">
+                    ↻
+                  </span>
+                ) : null}
                 {store.summary?.availableUnits ?? 0}/{store.summary?.totalUnits ?? 0}
               </button>
             );
           })}
         </div>
-        <div className="mt-3 rounded-xl bg-white/90 p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold">{selectedStore.name}</p>
-            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${pickupStoreTone(selectedStore.summary).accent}`}>
-              {pickupStoreStatusTitle(selectedStore.summary)}
-            </span>
+        {selectedStore ? (
+          <div className="mt-3 rounded-xl bg-white/90 p-3 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">{selectedStore.name}</p>
+              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${pickupStoreTone(selectedStore.summary).accent}`}>
+                {pickupStoreStatusTitle(selectedStore.summary)}
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-neutral-900">{pickupStoreCountLabel(selectedStore.summary)}</p>
+            <p className="mt-1 text-xs text-neutral-500">{pickupStoreStatusDetail(selectedStore.summary)}</p>
           </div>
-          <p className="mt-2 text-sm text-neutral-900">{pickupStoreCountLabel(selectedStore.summary)}</p>
-          <p className="mt-1 text-xs text-neutral-500">{pickupStoreStatusDetail(selectedStore.summary)}</p>
-        </div>
+        ) : (
+          <div className="mt-3 rounded-xl bg-white/90 p-3 text-sm text-neutral-600 shadow-sm">
+            Выберите магазин на карте или в списке ниже.
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
         {stores.map((store) => {
           const tone = pickupStoreTone(store.summary);
           const selected = selectedStoreId === store.id;
+          const wasLastChoice = lastChosenStoreId === store.id;
           return (
             <button
               key={store.id}
@@ -528,7 +548,14 @@ function PickupStoreSelector({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold">{store.name}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">{store.name}</span>
+                    {wasLastChoice ? (
+                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+                        Выбирали в прошлый раз
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-1 text-sm text-neutral-900">{pickupStoreCountLabel(store.summary)}</div>
                   <div className="mt-1 text-xs text-neutral-500">{pickupStoreStatusDetail(store.summary)}</div>
                 </div>
@@ -1731,6 +1758,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
   const [pvzSelectorOpen, setPvzSelectorOpen] = useState(false);
   const [storeId, setStoreId] = useState<string>("");
+  const [lastPickupMemoryId, setLastPickupMemoryId] = useState<string | null>(null);
   const [pvzId, setPvzId] = useState<string>("");
   const [scenario, setScenario] = useState<ScenarioResult | null>(null);
   const [remainderResolution, setRemainderResolution] = useState<RemainderResolution | null>(null);
@@ -1750,6 +1778,21 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [courierAddressModalTarget, setCourierAddressModalTarget] = useState<CourierAddressModalTarget | null>(null);
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
   const latestScenarioRequestRef = useRef(0);
+  const skipPersistCourierAddress = useRef(true);
+
+  useEffect(() => {
+    const saved = loadCourierAddress();
+    if (saved) setCourierAddress(saved);
+    skipPersistCourierAddress.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (skipPersistCourierAddress.current) {
+      skipPersistCourierAddress.current = false;
+      return;
+    }
+    saveCourierAddress(courierAddress);
+  }, [courierAddress]);
   const primaryCourierAddress = method === "courier" ? courierAddress : "";
 
   useEffect(() => {
@@ -1784,6 +1827,63 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       cancelled = true;
     };
   }, []);
+
+  const [cartDetail, setCartDetail] = useState<{
+    lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
+    units: number;
+    subtotal: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!boot || !cityId) return;
+    let cancelled = false;
+
+    async function loadCart() {
+      const snap = loadCheckoutCart();
+      const fromStorage =
+        snap?.cityId === cityId && snap.lines.length > 0
+          ? snap.lines.filter((l) => l.selected !== false && l.quantity > 0)
+          : null;
+
+      try {
+        if (fromStorage && fromStorage.length === 0) {
+          if (!cancelled) setCartDetail({ lines: [], units: 0, subtotal: 0 });
+          return;
+        }
+        if (fromStorage && fromStorage.length > 0) {
+          const r = await fetch("/api/cart-lines", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cityId,
+              lines: fromStorage.map(({ productId, quantity }) => ({ productId, quantity })),
+            }),
+          });
+          const json = (await r.json()) as {
+            lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
+            units: number;
+            subtotal: number;
+          };
+          if (!cancelled) setCartDetail(json);
+          return;
+        }
+        const r = await fetch(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`);
+        const json = (await r.json()) as {
+          lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
+          units: number;
+          subtotal: number;
+        };
+        if (!cancelled) setCartDetail(json);
+      } catch {
+        if (!cancelled) setCartDetail(null);
+      }
+    }
+
+    void loadCart();
+    return () => {
+      cancelled = true;
+    };
+  }, [boot, cityId]);
 
   const requestScenario = useCallback(
     async (params: {
@@ -1822,11 +1922,31 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       setLoading(false);
       return;
     }
+    if (!cartDetail?.lines?.length) {
+      setScenario(null);
+      setRemainderResolution(null);
+      setSecondarySelections([]);
+      setSplitModalState(null);
+      setIncluded({});
+      setLoading(false);
+      return;
+    }
+    if (method === "pickup" && !storeId.trim()) {
+      setScenario(null);
+      setRemainderResolution(null);
+      setSecondarySelections([]);
+      setSplitModalState(null);
+      setIncluded({});
+      setLoading(false);
+      return;
+    }
+    const cartLinesPayload = cartDetail.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
     setLoading(true);
     try {
       const data = await requestScenario({
         deliveryMethodCode: method,
         selectedStoreId: method === "pickup" ? storeId || null : null,
+        lines: cartLinesPayload,
       });
       if (latestScenarioRequestRef.current !== requestId) return;
       const sc: ScenarioResult = data.scenario;
@@ -1838,17 +1958,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       if (latestScenarioRequestRef.current !== requestId) return;
       setLoading(false);
     }
-  }, [cityId, method, storeId, primaryCourierAddress, requestScenario]);
+  }, [cityId, method, storeId, primaryCourierAddress, requestScenario, cartDetail]);
 
   useEffect(() => {
     void refreshScenario();
   }, [refreshScenario]);
-
-  useEffect(() => {
-    if (scenario?.payOnDeliveryOnly) {
-      setPaymentMethod("on_receipt");
-    }
-  }, [scenario?.payOnDeliveryOnly]);
 
   useEffect(() => {
     if (!boot || !cityId) return;
@@ -1897,6 +2011,27 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         return a.name.localeCompare(b.name, "ru");
       });
   }, [boot, cityId]);
+
+  useEffect(() => {
+    setLastPickupMemoryId(loadLastPickupStoreId(cityId));
+  }, [cityId]);
+
+  useEffect(() => {
+    if (method !== "pickup" || !cityId || !storeId.trim()) return;
+    if (!pickupStores.some((s) => s.id === storeId)) return;
+    saveLastPickupStore(cityId, storeId);
+    setLastPickupMemoryId(storeId);
+  }, [method, cityId, storeId, pickupStores]);
+
+  const pickupStoresOrdered = useMemo(() => {
+    const hint = lastPickupMemoryId;
+    if (!hint) return pickupStores;
+    const ix = pickupStores.findIndex((s) => s.id === hint);
+    if (ix < 1) return pickupStores;
+    const chosen = pickupStores[ix]!;
+    return [chosen, ...pickupStores.filter((_, i) => i !== ix)];
+  }, [pickupStores, lastPickupMemoryId]);
+
   const selectedPickupStore = pickupStores.find((store) => store.id === storeId);
   const pvzOptions = (boot?.pvzByCity[cityId] ?? []).filter((p) => !p.requiresPrepayment);
   const selectedPvzPoint = pvzOptions.find((point) => point.id === pvzId);
@@ -1919,8 +2054,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       if (storeId) setStoreId("");
       return;
     }
-    if (!pickupStores.some((store) => store.id === storeId)) {
-      setStoreId(pickupStores[0]!.id);
+    if (storeId && !pickupStores.some((store) => store.id === storeId)) {
+      setStoreId("");
     }
   }, [method, pickupStores, storeId]);
 
@@ -1943,20 +2078,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setSplitModalState(null);
     setIncluded({});
   }, [cityId]);
-
-  const [cartDetail, setCartDetail] = useState<{
-    lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
-    units: number;
-    subtotal: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!boot || !cityId) return;
-    fetch(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`)
-      .then((r) => r.json())
-      .then(setCartDetail)
-      .catch(() => setCartDetail(null));
-  }, [boot, cityId]);
 
   const units = cartDetail?.units ?? 0;
   const promoFactor = promoApplied ? 0.8 : 1;
@@ -2006,6 +2127,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
     return { includedMerch: merch, partsTotal: t, includedParts: parts };
   }, [allDisplayParts, included, promoFactor]);
+
+  const payOnDeliveryOnlyEffective = includedParts.length > 1;
+
+  useEffect(() => {
+    if (payOnDeliveryOnlyEffective) {
+      setPaymentMethod("on_receipt");
+    }
+  }, [payOnDeliveryOnlyEffective]);
 
   const promoDiscount = promoApplied ? Math.round(includedMerch * 0.2) : 0;
   const payFinal = bonusOn ? Math.max(0, partsTotal - Math.min(1000, includedMerch)) : partsTotal;
@@ -2222,7 +2351,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           selectedSlot: p.mode === "courier" ? MOCK_SLOTS[partSchedules[p.key]?.slotIx ?? 0] : undefined,
         })),
       remainder: finalRemainderLines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
-      payOnDeliveryOnly: scenario.payOnDeliveryOnly,
+      payOnDeliveryOnly: payOnDeliveryOnlyEffective,
       informers: scenario.informers,
       total: payFinal,
       method,
@@ -2266,7 +2395,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
 
   const awaitingScenario =
-    !!cityId && !!method && (method !== "courier" || primaryCourierAddress.trim().length > 0);
+    !!cityId &&
+    !!method &&
+    (method !== "courier" || primaryCourierAddress.trim().length > 0) &&
+    (method !== "pickup" || storeId.trim().length > 0);
   const showScenarioSkeleton = loading && awaitingScenario;
 
   const renderScenarioMethodSummary = () => {
@@ -2326,9 +2458,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     <div className="relative isolate mx-auto min-h-screen max-w-md bg-white pb-28">
       <header className="sticky top-0 z-50 border-b border-neutral-100 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-3">
-          <button type="button" className="text-xl text-neutral-700" aria-label="Назад">
+          <Link href="/cart" className="text-xl text-neutral-700" aria-label="Назад в корзину">
             ←
-          </button>
+          </Link>
           <h1 className="flex-1 text-center text-base font-semibold">Оформление заказа</h1>
           <span className="w-6" />
         </div>
@@ -2416,6 +2548,28 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                           onChange={() => setPickupSelectorOpen(true)}
                           embedded
                         />
+                      ) : method === "pickup" ? (
+                        <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 p-3 text-sm text-neutral-700">
+                          <p className="font-medium text-neutral-900">Выберите магазин</p>
+                          <p className="mt-1 text-xs text-neutral-600">
+                            {lastPickupMemoryId && pickupStores.find((s) => s.id === lastPickupMemoryId) ? (
+                              <>
+                                В прошлый раз вы выбирали «
+                                {pickupStores.find((s) => s.id === lastPickupMemoryId)!.name}» — он показан первым в
+                                списке.
+                              </>
+                            ) : (
+                              "Укажите точку самовывоза на карте или в списке."
+                            )}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setPickupSelectorOpen(true)}
+                            className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                          >
+                            Открыть выбор магазина
+                          </button>
+                        </div>
                       ) : null}
                       {method === "courier" ? (
                         <CourierAddressCard
@@ -2734,7 +2888,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             ).map(({ id, Icon, iconClass }) => {
               const label = checkoutPaymentMethodLabel(id);
               const selected = paymentMethod === id;
-              const onlyReceipt = !!scenario?.payOnDeliveryOnly;
+              const onlyReceipt = payOnDeliveryOnlyEffective;
               const disabled = onlyReceipt && id !== "on_receipt";
               return (
                 <button
@@ -2899,8 +3053,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               </button>
             </div>
             <PickupStoreSelector
-              stores={pickupStores}
+              stores={pickupStoresOrdered}
               selectedStoreId={storeId}
+              lastChosenStoreId={lastPickupMemoryId}
               onSelect={(nextStoreId) => {
                 setStoreId(nextStoreId);
                 setPickupSelectorOpen(false);

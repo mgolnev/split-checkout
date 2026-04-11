@@ -6,6 +6,7 @@
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
+    "docker:build": "docker build -t split-checkout:latest .",
     "db:migrate:deploy": "prisma migrate deploy",
     "build:turbo": "next build --turbopack",
     "start": "next start",

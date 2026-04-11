@@ -27,6 +27,14 @@ npm run dev
 - локально: `DATABASE_URL="…из Vercel…" npm run db:migrate:deploy`, или
 - **GitHub Actions** → workflow **«Migrate database»** (секрет `PRODUCTION_DATABASE_URL` = тот же `DATABASE_URL`, что в Vercel).
 
+### Демо для клиентов (дешевле облака Yandex)
+
+Если нужно просто **выложить прототип** для показов с телефона и сбора фидбека, а **Vercel не устраивает по TTFB из РФ** — разумный минимум: **небольшой VPS** (например Hetzner HEL / бюджетный тариф у российского провайдера) + тот же **`Dockerfile`**. База может остаться на **Supabase**. Кратко: **`deploy/demo-testing.md`**.
+
+### Yandex Cloud
+
+Полноценный деплой в YC (Managed PostgreSQL, Container Registry, ВМ) — см. **`deploy/yandex/README.md`**, если позже понадобится именно это.
+
 ### Supabase: `MaxClientsInSessionMode`
 
 Если в логах runtime появится лимит сессий пула, в **`DATABASE_URL`** на Vercel используйте **Transaction pooler :6543** с `pgbouncer=true` (строка из `npm run supabase:urls`, блок «VERCEL runtime»).

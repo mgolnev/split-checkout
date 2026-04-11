@@ -15,6 +15,12 @@ export default function Home() {
           Открыть checkout
         </Link>
         <Link
+          className="rounded-lg border border-neutral-900 px-4 py-3 text-center text-sm font-medium uppercase tracking-wide text-neutral-900"
+          href="/cart"
+        >
+          Корзина
+        </Link>
+        <Link
           className="rounded-lg border border-neutral-300 px-4 py-3 text-center text-sm font-medium"
           href="/admin/login"
         >

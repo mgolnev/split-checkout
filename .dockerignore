@@ -1,0 +1,23 @@
+# Git и окружение
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.dockerignore
+Dockerfile*
+
+# Зависимости и сборка (пересобираем внутри образа)
+node_modules
+.next
+out
+
+# Прочее
+*.md
+!README.md
+coverage
+.DS_Store
+*.log
+.vercel
+prisma/dev.db
+prisma/prisma/dev.db
