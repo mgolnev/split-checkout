@@ -1,5 +1,5 @@
 # Заполнение продовой БД тестовыми данными (тот же prisma/seed.ts, что локально).
-# Нужен секрет PRODUCTION_DATABASE_URL — та же строка, что DATABASE_URL в Vercel (Session pooler).
+# Секрет PRODUCTION_DATABASE_URL — та же строка, что DATABASE_URL в Vercel.
 #
 # GitHub → Actions → «Seed database» → Run workflow
 

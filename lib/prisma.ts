@@ -8,4 +8,5 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+/** В production на Vercel тоже кэшируем на globalThis — иначе возможны лишние клиенты при hot paths. */
+globalForPrisma.prisma = prisma;

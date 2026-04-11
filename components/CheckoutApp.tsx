@@ -56,6 +56,9 @@ type PartDeliverySchedule = {
 
 type DeliveryMethodCode = "courier" | "pickup" | "pvz";
 
+/** Выбранный способ оплаты на чекауте (макет). */
+type CheckoutPaymentMethod = "sbp" | "card" | "on_receipt";
+
 type SecondarySelection = {
   id: string;
   inputLines: CartLine[];
@@ -105,6 +108,15 @@ function pluralizeProducts(n: number) {
   if (mod10 === 1 && mod100 !== 11) return "товар";
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "товара";
   return "товаров";
+}
+
+function checkoutPaymentMethodLabel(method: CheckoutPaymentMethod): string {
+  const labels: Record<CheckoutPaymentMethod, string> = {
+    sbp: "СБП",
+    card: "Банковской картой онлайн",
+    on_receipt: "При получении",
+  };
+  return labels[method];
 }
 
 const MOCK_DATES = ["Завтра, 9 апр.", "10 апр.", "11 апр.", "12 апр."];
@@ -1666,6 +1678,49 @@ function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) 
   );
 }
 
+function SbpBrandIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path fill="#21A038" d="M16 4 28 16H16V4Z" />
+      <path fill="#2B59FF" d="M28 16 16 28V16h12Z" />
+      <path fill="#FF5F40" d="M16 28 4 16h12v12Z" />
+      <path fill="#FFCB00" d="M4 16 16 4v12H4Z" />
+    </svg>
+  );
+}
+
+function PaymentCardOutlineIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden
+    >
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M2.5 10h19" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PaymentBagOutlineIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden
+    >
+      <path d="M6 9h12l-1 11H7L6 9Z" strokeLinejoin="round" />
+      <path d="M9 9V7a3 3 0 0 1 6 0v2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function CheckoutApp(props: { variant?: "classic" | "redesign" } = {}) {
   void props.variant;
   const router = useRouter();
@@ -1689,6 +1744,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [promo, setPromo] = useState("");
   const [promoApplied, setPromoApplied] = useState(false);
   const [bonusOn, setBonusOn] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>("sbp");
   const [phone, setPhone] = useState("");
   const [courierAddress, setCourierAddress] = useState("");
   const [courierAddressModalTarget, setCourierAddressModalTarget] = useState<CourierAddressModalTarget | null>(null);
@@ -1787,6 +1843,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   useEffect(() => {
     void refreshScenario();
   }, [refreshScenario]);
+
+  useEffect(() => {
+    if (scenario?.payOnDeliveryOnly) {
+      setPaymentMethod("on_receipt");
+    }
+  }, [scenario?.payOnDeliveryOnly]);
 
   useEffect(() => {
     if (!boot || !cityId) return;
@@ -2167,6 +2229,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       pvzId: method === "pvz" ? pvzId : null,
       storeId: method === "pickup" ? storeId : null,
       courierAddress: courierAddress.trim() ? courierAddress : null,
+      paymentMethod,
     };
     sessionStorage.setItem("thankyou", JSON.stringify(payload));
     router.push("/thank-you");
@@ -2647,6 +2710,64 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           >
             Получить смс с кодом
           </button>
+        </section>
+
+        <section className="mb-6" aria-labelledby="checkout-payment-heading">
+          <h2 id="checkout-payment-heading" className="mb-3 text-base font-bold text-neutral-900">
+            Способ оплаты
+          </h2>
+          <div role="radiogroup" aria-labelledby="checkout-payment-heading" className="space-y-2">
+            {(
+              [
+                { id: "sbp" as const, Icon: SbpBrandIcon, iconClass: "h-7 w-7" },
+                {
+                  id: "card" as const,
+                  Icon: PaymentCardOutlineIcon,
+                  iconClass: "h-7 w-7 text-neutral-900",
+                },
+                {
+                  id: "on_receipt" as const,
+                  Icon: PaymentBagOutlineIcon,
+                  iconClass: "h-7 w-7 text-neutral-900",
+                },
+              ] as const
+            ).map(({ id, Icon, iconClass }) => {
+              const label = checkoutPaymentMethodLabel(id);
+              const selected = paymentMethod === id;
+              const onlyReceipt = !!scenario?.payOnDeliveryOnly;
+              const disabled = onlyReceipt && id !== "on_receipt";
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) setPaymentMethod(id);
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-xl border bg-white p-4 text-left transition ${
+                    disabled
+                      ? "cursor-not-allowed border-neutral-100 opacity-45"
+                      : selected
+                        ? "border-neutral-900 ring-1 ring-neutral-900"
+                        : "border-neutral-200 hover:border-neutral-300"
+                  }`}
+                >
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                      selected ? "border-neutral-900" : "border-neutral-300"
+                    }`}
+                    aria-hidden
+                  >
+                    {selected ? <span className="h-2.5 w-2.5 rounded-full bg-neutral-900" /> : null}
+                  </span>
+                  <Icon className={`shrink-0 ${iconClass}`} />
+                  <span className="min-w-0 flex-1 text-sm font-medium text-neutral-900">{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </section>
 
         <section className="mb-6 flex flex-wrap gap-2 border-t border-neutral-100 pt-4">

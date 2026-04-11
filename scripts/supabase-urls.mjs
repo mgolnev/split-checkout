@@ -2,8 +2,7 @@
 /**
  * Печатает строки Supabase для Prisma.
  *
- * Для Vercel: если direct `db.*.supabase.co` даёт P1001 (Can't reach database),
- * используйте **Session pooler** — у него есть IPv4 к пулу, сборка доходит до БД.
+ * Для Vercel в .env достаточно одной DATABASE_URL; migrate на прод — отдельно (README).
  *
  * Usage:
  *   node scripts/supabase-urls.mjs <project-ref> "<plain-password>" [aws-region]
@@ -25,18 +24,28 @@ if (!projectRef || password === undefined) {
 
 const enc = encodeURIComponent(password);
 
-// Session mode (порт 5432 на pooler) — рекомендуется для Vercel + prisma migrate deploy
-const vercelUrl = `postgresql://postgres.${projectRef}:${enc}@aws-0-${region}.pooler.supabase.com:5432/postgres?sslmode=require`;
+const poolerHost = `aws-0-${region}.pooler.supabase.com`;
+const userSession = `postgres.${projectRef}`;
+
+// Session mode :5432 — лимит одновременных клиентов = pool_size; при пиках на Vercel возможен MaxClientsInSessionMode.
+const sessionPoolerUrl = `postgresql://${userSession}:${enc}@${poolerHost}:5432/postgres?sslmode=require`;
+
+// Transaction mode :6543 — для Prisma на serverless; много параллельных функций не выбивают Session pool.
+// connection_limit=1 — один коннект на инстанс serverless через PgBouncer.
+const transactionPoolerUrl = `postgresql://${userSession}:${enc}@${poolerHost}:6543/postgres?pgbouncer=true&connection_limit=1&sslmode=require`;
 
 // Прямое подключение — удобно локально; с Vercel иногда P1001 (IPv4)
-const directUrl = `postgresql://postgres:${enc}@db.${projectRef}.supabase.co:5432/postgres?sslmode=require`;
+const directDbUrl = `postgresql://postgres:${enc}@db.${projectRef}.supabase.co:5432/postgres?sslmode=require`;
 
 console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-console.log("1) VERCEL — вставьте в DATABASE_URL (если был P1001 на direct):");
-console.log(vercelUrl);
+console.log("1) VERCEL runtime — DATABASE_URL (Transaction pooler, меньше ошибок MaxClients):");
+console.log(transactionPoolerUrl);
 console.log("");
-console.log("2) ЛОКАЛЬНО — можно .env (Prisma Studio, seed):");
-console.log(directUrl);
+console.log("2) Альтернатива DATABASE_URL — Session pooler :5432 (проще, но при нагрузке возможен MaxClients):");
+console.log(sessionPoolerUrl);
+console.log("");
+console.log("3) Локально / Prisma Studio — часто direct host:");
+console.log(directDbUrl);
 console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-console.log("Не используйте Transaction pooler :6543 для migrate без отдельной настройки.");
-console.log("Альтернатива при проблемах с сетью: Supabase → Project Settings → Add IPv4 (платно).\n");
+console.log("В Vercel вставьте в DATABASE_URL строку из пункта 1 (или 2). Миграции: npm run db:migrate:deploy или GitHub Action.");
+console.log("При P1001 на direct: Supabase → IPv4 add-on или pooler.\n");

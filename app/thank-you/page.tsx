@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+type CheckoutPaymentMethod = "sbp" | "card" | "on_receipt";
+
 type Ty = {
   parts: {
     key: string;
@@ -23,12 +25,22 @@ type Ty = {
   payOnDeliveryOnly: boolean;
   method: string;
   courierAddress?: string | null;
+  paymentMethod?: CheckoutPaymentMethod;
 };
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(
     n,
   );
+
+function paymentMethodLabel(m: CheckoutPaymentMethod): string {
+  const labels: Record<CheckoutPaymentMethod, string> = {
+    sbp: "СБП",
+    card: "Банковской картой онлайн",
+    on_receipt: "При получении",
+  };
+  return labels[m];
+}
 
 function pluralizeDays(n: number) {
   const mod10 = n % 10;
@@ -83,6 +95,11 @@ export default function ThankYouPage() {
             ? `Оформлено отправлений: ${data.parts.length}. Спасибо за покупку!`
             : "Спасибо за покупку!"}
         </p>
+        {data.paymentMethod ? (
+          <p className="mt-3 text-sm text-neutral-700">
+            Способ оплаты: <span className="font-medium">{paymentMethodLabel(data.paymentMethod)}</span>
+          </p>
+        ) : null}
       </div>
 
       {data.payOnDeliveryOnly ? (

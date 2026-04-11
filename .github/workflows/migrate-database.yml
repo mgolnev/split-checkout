@@ -1,0 +1,29 @@
+# Применить миграции Prisma к продовой БД (без сборки Vercel).
+# Сборка на Vercel больше не вызывает prisma migrate — не висит на подключении к БД.
+#
+# GitHub → Actions → «Migrate database» → Run workflow
+
+name: Migrate database
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: npx prisma migrate deploy

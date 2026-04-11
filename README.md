@@ -16,6 +16,21 @@ npm run dev
 
 Откройте [http://localhost:3000/checkout](http://localhost:3000/checkout) и [http://localhost:3000/admin/login](http://localhost:3000/admin/login).
 
+В `.env` достаточно **`DATABASE_URL`** (см. `.env.example`). Пароль в URL лучше не собирать вручную — `npm run supabase:urls` выдаёт строки с уже закодированными символами.
+
+### Деплой (Vercel) и миграции
+
+Сборка **`npm run build`** = только **Next.js** (без `prisma migrate deploy`). На этапе билда к базе не подключаемся — деплой не «висит» на Supabase, как при отдельном `DIRECT_URL` / migrate в CI.
+
+После изменений в `prisma/migrations` примените миграции к продовой БД **один раз**:
+
+- локально: `DATABASE_URL="…из Vercel…" npm run db:migrate:deploy`, или
+- **GitHub Actions** → workflow **«Migrate database»** (секрет `PRODUCTION_DATABASE_URL` = тот же `DATABASE_URL`, что в Vercel).
+
+### Supabase: `MaxClientsInSessionMode`
+
+Если в логах runtime появится лимит сессий пула, в **`DATABASE_URL`** на Vercel используйте **Transaction pooler :6543** с `pgbouncer=true` (строка из `npm run supabase:urls`, блок «VERCEL runtime»).
+
 ## Пароль админки
 
 Задаётся в `.env`: переменная `ADMIN_PASSWORD` (в `.env.example` — `admin`).
