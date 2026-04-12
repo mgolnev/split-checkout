@@ -168,7 +168,7 @@ function BonusPointsToggle({ bonusOn, promoApplied, amountLabel, onToggle }: Bon
     <div className="flex w-full items-center gap-3">
       <GjMark className="h-8 w-8 text-[10px]" />
       <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium leading-snug text-neutral-900">
+        <span className="cu-label-primary min-w-0 text-neutral-900">
           Списать с карты GJ {amountLabel}
         </span>
       </div>
@@ -503,18 +503,17 @@ function Stepper({
   deliveryDone,
   recipientDone,
   paymentDone,
-  finalizeReady,
 }: {
   deliveryDone: boolean;
   recipientDone: boolean;
   paymentDone: boolean;
-  finalizeReady: boolean;
 }) {
+  /** «Оформление» не подсвечиваем зелёным — заказ ещё не отправлен, этап завершается кнопкой. */
   const items: { label: string; done: boolean }[] = [
     { label: "Доставка", done: deliveryDone },
     { label: "Получатель", done: recipientDone },
     { label: "Способ оплаты", done: paymentDone },
-    { label: "Оформление", done: finalizeReady },
+    { label: "Оформление", done: false },
   ];
   return (
     <nav className="mb-6" aria-label="Этапы оформления заказа">
@@ -532,9 +531,7 @@ function Stepper({
             >
               {done ? <StepperCheckIcon /> : null}
             </div>
-            <span className="max-w-[5.5rem] text-center text-[10px] font-medium leading-tight text-neutral-950 sm:max-w-none sm:text-[11px]">
-              {label}
-            </span>
+            <span className="cu-stepper-label">{label}</span>
           </div>
         ))}
       </div>
@@ -969,7 +966,7 @@ function CourierAddressModal({
       <div className="relative z-10 w-full max-w-lg rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold">Куда доставить?</h3>
+            <h3 className="cu-sheet-title">Куда доставить?</h3>
             <p className="mt-1 text-sm text-neutral-500">
               Укажите адрес, чтобы мы могли показать и оформить курьерскую доставку.
             </p>
@@ -1103,7 +1100,7 @@ function SecondarySelectionCard({
     return (
       <>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-neutral-900">{methodGroupLabel(option.methodCode)}</p>
+          <p className="cu-label-primary text-neutral-900">{methodGroupLabel(option.methodCode)}</p>
           <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</p>
         </div>
         {option.methodCode === "pickup" && pickupStore ? (
@@ -1281,7 +1278,7 @@ function SplitSelectionModal({
       <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold">Выберите способ получения</h3>
+            <h3 className="cu-sheet-title">Выберите способ получения</h3>
           </div>
           <button
             type="button"
@@ -1455,7 +1452,7 @@ function SplitSelectionModal({
           <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h4 className="text-lg font-semibold">Выберите магазин</h4>
+                <h4 className="cu-sheet-title">Выберите магазин</h4>
                 <p className="mt-1 text-sm text-neutral-500">
                   Для большого списка удобнее искать магазин по названию и сразу видеть покрытие товаров.
                 </p>
@@ -1618,7 +1615,7 @@ function PartCard({
                   Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
                 </p>
               ) : null}
-              <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--gj-muted)]">
+              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">
                 {part.mode === "click_reserve"
                   ? "бесплатно / примерка"
                   : "бесплатно / доставка в магазин"}
@@ -1628,7 +1625,7 @@ function PartCard({
             <div className="min-w-0">
               <p className="text-sm font-semibold leading-snug text-neutral-900">{COURIER_CARRIER_LABEL}</p>
               <p className="mt-0.5 text-xs font-normal leading-snug text-neutral-600">{courierOriginCaption(part)}</p>
-              <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--gj-muted)]">курьер</p>
+              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">курьер</p>
             </div>
           ) : isPvz ? (
             <div className="min-w-0">
@@ -1638,7 +1635,7 @@ function PartCard({
                   Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
                 </p>
               ) : null}
-              <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--gj-muted)]">бесплатно / ПВЗ</p>
+              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">бесплатно / ПВЗ</p>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-2">
@@ -1653,20 +1650,33 @@ function PartCard({
             </div>
           )}
 
-          {/* Always-visible thumbnails row */}
-          <div className="mt-3 flex gap-1.5">
-            {visible.map((it) => (
-              <div key={it.productId} className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
-                <SafeProductImage src={it.image} alt="" fill className="object-cover" sizes="48px" />
-                {it.quantity > 1 ? (
-                  <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1 text-[8px] text-white">
-                    {it.quantity}
+          {/* Превью fashion 3:4: бейдж количества при ≥ 2 шт. по позиции (товар+размер) */}
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2.5">
+            {visible.map((it, thumbIx) => (
+              <div
+                key={`${it.productId}-${it.sizeLabel ?? ""}-${thumbIx}`}
+                className="flex w-10 shrink-0 flex-col items-center gap-0.5"
+              >
+                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-neutral-100">
+                  <SafeProductImage src={it.image} alt="" fill className="object-cover" sizes="40px" />
+                  {it.quantity >= 2 ? (
+                    <span
+                      className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-[7px] font-semibold leading-none tabular-nums text-white ring-1 ring-white/35"
+                      aria-label={`${it.quantity} шт.`}
+                    >
+                      {it.quantity}
+                    </span>
+                  ) : null}
+                </div>
+                {it.sizeLabel ? (
+                  <span className="w-full text-center text-[10px] font-medium leading-none text-neutral-600">
+                    {it.sizeLabel}
                   </span>
                 ) : null}
               </div>
             ))}
             {extra > 0 ? (
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-xs font-semibold text-neutral-500">
+              <div className="flex aspect-[3/4] w-10 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-xs font-semibold text-neutral-500">
                 +{extra}
               </div>
             ) : null}
@@ -1794,9 +1804,12 @@ function ScenarioPartCardSkeleton({ inGroup }: { inGroup?: boolean }) {
           <div className="h-4 w-[72%] max-w-[260px] rounded-md bg-neutral-200" />
           <div className="h-3 w-[40%] max-w-[140px] rounded-md bg-neutral-100" />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-x-3 gap-y-2">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-12 w-12 shrink-0 rounded-lg bg-neutral-200/90" />
+            <div key={i} className="flex w-10 shrink-0 flex-col items-center gap-0.5">
+              <div className="aspect-[3/4] w-full rounded-md bg-neutral-200/90" />
+              <div className="h-2 w-6 rounded bg-neutral-200/70" />
+            </div>
           ))}
         </div>
         <div className="flex items-baseline justify-between gap-3 pt-0.5">
@@ -1993,7 +2006,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, []);
 
   const [cartDetail, setCartDetail] = useState<{
-    lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
+    lines: {
+      productId: string;
+      quantity: number;
+      name: string;
+      price: number;
+      image: string;
+      sizeLabel?: string | null;
+    }[];
     units: number;
     subtotal: number;
   } | null>(null);
@@ -2770,7 +2790,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
-  const stepperFinalizeReady = !!scenario && includedParts.length > 0;
 
   const awaitingScenario =
     !!cityId &&
@@ -2787,7 +2806,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     const summaryText = methodSummaryLabel(dm.code as "courier" | "pickup" | "pvz", dm.summary, dm.enabled);
     return (
       <>
-        {summaryText ? <p className="mb-2 text-xs text-neutral-400">{summaryText}</p> : null}
+        {summaryText ? <p className="cu-muted mb-2">{summaryText}</p> : null}
         {method === "pickup" && selectedPickupStore ? (
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium text-neutral-800">{selectedPickupStore.name}</p>
@@ -2834,32 +2853,27 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   };
 
   return (
-    <div className="relative isolate mx-auto min-h-screen max-w-md bg-white pb-28">
+    <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-white pb-28">
       <header className="sticky top-0 z-50 border-b border-neutral-100 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-3">
           <Link href="/cart" className="text-xl text-neutral-700" aria-label="Назад в корзину">
             ←
           </Link>
-          <h1 className="flex-1 text-center text-base font-semibold">Оформление заказа</h1>
+          <h1 className="cu-page-title flex-1 text-center">Оформление заказа</h1>
           <span className="w-6" />
         </div>
       </header>
 
       <div className="relative z-0 px-4 pt-4">
-        <Stepper
-          deliveryDone={unifiedOrderBlock}
-          recipientDone={!!recipient}
-          paymentDone
-          finalizeReady={stepperFinalizeReady}
-        />
+        <Stepper deliveryDone={unifiedOrderBlock} recipientDone={!!recipient} paymentDone />
 
         <section className="mb-6">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-wide">Способ получения</h2>
+            <h2 className="cu-section-title">Способ получения</h2>
             <div className="relative">
               <select
                 aria-label="Выбор города"
-                className="appearance-none rounded-full border border-neutral-200 bg-white pl-3 pr-8 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-800 shadow-sm outline-none transition focus:border-neutral-400"
+                className="appearance-none rounded-full border border-neutral-200 bg-white pl-3 pr-8 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-sm outline-none transition focus:border-neutral-400"
                 value={cityId}
                 onChange={(e) => setCityId(e.target.value)}
               >
@@ -2869,7 +2883,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   </option>
                 ))}
               </select>
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] text-neutral-500">
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-neutral-500">
                 ▾
               </span>
             </div>
@@ -2911,8 +2925,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                           : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
                   }`}
                 >
-                  <span className="text-xs font-semibold leading-tight">{tabName}</span>
-                  <p className={`text-[11px] leading-tight ${isSelected ? "text-white/95" : "text-neutral-800"}`}>
+                  <span className="cu-label-primary leading-tight text-inherit">{tabName}</span>
+                  <p className={`text-xs leading-tight ${isSelected ? "text-white/95" : "text-neutral-600"}`}>
                     {coverage}
                   </p>
                   {isRecommended ? (
@@ -3045,13 +3059,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
             {hasSplit ? (
               <div className="flex items-center justify-between px-3 py-3">
-                <p className="text-sm font-bold uppercase tracking-wide">
+                <p className="cu-block-heading">
                   {allDisplayParts.length > 1
                     ? `Ваш заказ · ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
                     : "Ваш заказ"}
                 </p>
                 {units > 0 ? (
-                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-neutral-600">
+                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
                     В заказе {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из{" "}
                     {units} шт
                   </span>
@@ -3105,13 +3119,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           <>
             {scenario && hasSplit ? (
               <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm font-bold uppercase tracking-wide">
+                <p className="cu-block-heading">
                   {allDisplayParts.length > 1
                     ? `Ваш заказ · ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
                     : "Ваш заказ"}
                 </p>
                 {units > 0 ? (
-                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-neutral-600">
+                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
                     В заказе {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из{" "}
                     {units} шт
                   </span>
@@ -3237,8 +3251,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
         {manualExcludedLines.length > 0 ? (
           <section className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4">
-            <h3 className="text-sm font-semibold">Останется в корзине</h3>
-            <ul className="mt-2 text-xs text-neutral-600">
+            <h3 className="text-sm font-semibold text-neutral-900">Останется в корзине</h3>
+            <ul className="cu-muted mt-2">
               {manualExcludedLines.map((r) => {
                 return (
                   <li key={r.productId}>
@@ -3251,12 +3265,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : null}
 
         <section className="mb-6" aria-labelledby="checkout-recipient-heading">
-          <h2 id="checkout-recipient-heading" className="mb-2 text-sm font-bold uppercase tracking-wide">
+          <h2 id="checkout-recipient-heading" className="cu-section-title mb-2">
             Мои данные
           </h2>
           {!recipient ? (
             <>
-              <p className="text-xs text-neutral-500">Введите номер телефона, чтобы оформить заказ</p>
+              <p className="cu-muted">Введите номер телефона, чтобы оформить заказ</p>
               <input
                 id="checkout-recipient-phone"
                 className="mt-2 w-full rounded-lg bg-neutral-100 px-3 py-3 text-base placeholder:text-neutral-400"
@@ -3274,13 +3288,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               >
                 Получить смс с кодом
               </button>
-              <p className="mt-2 text-[10px] text-neutral-400">
+              <p className="cu-muted mt-2">
                 Для демо код не запрашиваем — после нажатия вы будете «авторизованы» с тестовым именем.
               </p>
             </>
           ) : (
             <div className="rounded-xl border border-neutral-200 px-3 py-3">
-              <p className="text-sm font-semibold leading-snug text-neutral-900">{recipient.fullName}</p>
+              <p className="cu-label-primary text-neutral-900">{recipient.fullName}</p>
               <p className="mt-1 text-sm text-neutral-600">{recipient.phone}</p>
               <button
                 type="button"
@@ -3294,7 +3308,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </section>
 
         <section className="mb-6" aria-labelledby="checkout-payment-heading">
-          <h2 id="checkout-payment-heading" className="mb-3 text-base font-bold text-neutral-900">
+          <h2 id="checkout-payment-heading" className="cu-section-title mb-3">
             Способ оплаты
           </h2>
           <div role="radiogroup" aria-labelledby="checkout-payment-heading" className="space-y-2">
@@ -3344,13 +3358,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     {selected ? <span className="h-2.5 w-2.5 rounded-full bg-neutral-900" /> : null}
                   </span>
                   <Icon className={`shrink-0 ${iconClass}`} />
-                  <span className="min-w-0 flex-1 text-sm font-medium text-neutral-900">{label}</span>
+                  <span className="cu-label-primary min-w-0 flex-1 text-neutral-900">{label}</span>
                 </button>
               );
             })}
           </div>
           {payOnDeliveryOnlyEffective ? (
-            <p className="mt-3 text-xs leading-snug text-neutral-600">{payOnDeliveryDisclaimerText}</p>
+            <p className="cu-muted mt-3">{payOnDeliveryDisclaimerText}</p>
           ) : null}
         </section>
 
@@ -3405,32 +3419,39 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : (
             <BonusAuthBar />
           )}
+          {promoApplied || bonusOn ? (
+            <p className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-snug text-neutral-600">
+              В одном заказе можно применить или промокод, или бонусы.
+            </p>
+          ) : null}
         </section>
 
         <section className="mb-24 border-t border-neutral-100 pt-4">
-          <h2 className="text-sm font-bold uppercase tracking-wide">Итого</h2>
-          <div className="mt-2 space-y-1 text-sm">
+          <h2 className="cu-section-title">Итого</h2>
+          <div className="mt-2 space-y-1">
             <div className="flex justify-between">
-              <span className="text-neutral-600">Товары</span>
-              <span>{fmt(displayGoodsSubtotal)}</span>
+              <span className="cu-total-row-label">Товары</span>
+              <span className="cu-total-row-value">{fmt(displayGoodsSubtotal)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-600">Доставка</span>
-              <span>{includedDeliveryTotal > 0 ? fmt(includedDeliveryTotal) : "Бесплатно"}</span>
+              <span className="cu-total-row-label">Доставка</span>
+              <span className="cu-total-row-value">
+                {includedDeliveryTotal > 0 ? fmt(includedDeliveryTotal) : "Бесплатно"}
+              </span>
             </div>
             {promoDiscount > 0 ? (
-              <div className="flex justify-between text-red-600">
+              <div className="flex justify-between text-sm text-red-600">
                 <span>Скидка (APP20)</span>
-                <span>− {fmt(promoDiscount)}</span>
+                <span className="tabular-nums">− {fmt(promoDiscount)}</span>
               </div>
             ) : null}
             {bonusOn ? (
-              <div className="flex justify-between text-red-600">
+              <div className="flex justify-between text-sm text-red-600">
                 <span>Бонусы</span>
-                <span>− {fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}</span>
+                <span className="tabular-nums">− {fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}</span>
               </div>
             ) : null}
-            <div className="flex justify-between font-semibold">
+            <div className="cu-total-final-row">
               <span>Итого</span>
               <span>{fmt(payFinal)}</span>
             </div>
@@ -3471,8 +3492,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold">Самовывоз из магазина</h3>
-                <p className="mt-1 text-sm text-neutral-500">
+                <h3 className="cu-sheet-title">Самовывоз из магазина</h3>
+                <p className="cu-sheet-lead mt-1">
                   Выберите магазин и посмотрите, сколько товаров доступны сразу, а сколько привезем позже.
                 </p>
               </div>
@@ -3507,8 +3528,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold">Пункт выдачи заказа</h3>
-                <p className="mt-1 text-sm text-neutral-500">
+                <h3 className="cu-sheet-title">Пункт выдачи заказа</h3>
+                <p className="cu-sheet-lead mt-1">
                   Выберите удобный ПВЗ на карте и сразу увидите его данные в карточке способа получения.
                 </p>
               </div>
@@ -3566,8 +3587,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             onClick={() => setPhoneGateOpen(false)}
           />
           <div className="relative z-10 w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
-            <h3 className="text-lg font-semibold text-neutral-900">Подтвердите телефон</h3>
-            <p className="mt-1 text-sm text-neutral-500">
+            <h3 className="cu-sheet-title">Подтвердите телефон</h3>
+            <p className="cu-sheet-lead mt-1">
               Чтобы оформить заказ, укажите номер и нажмите «Получить смс с кодом» — в демо переходим без ввода кода.
             </p>
             <input

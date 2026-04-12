@@ -13,6 +13,8 @@ model Product {
   sku         String      @unique
   price       Int
   image       String
+  /** Подпись размера для чекаута (напр. «M», «42»); опционально */
+  sizeLabel   String?
   isActive    Boolean     @default(true)
   inventories Inventory[]
 }

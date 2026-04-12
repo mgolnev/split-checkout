@@ -7,6 +7,8 @@ export type ScenarioLine = {
   price: number;
   image: string;
   quantity: number;
+  /** Размер варианта (напр. «M», «42»), если есть */
+  sizeLabel?: string;
 };
 
 export type ScenarioPart = {

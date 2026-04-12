@@ -168,6 +168,7 @@ export async function buildScenario(params: {
     sku: p.sku,
     price: p.price,
     image: p.image,
+    sizeLabel: p.sizeLabel,
   }));
 
   const sourceRows = sources.map((s) => ({

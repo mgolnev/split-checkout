@@ -25,7 +25,7 @@ export default async function AdminProductsPage() {
           <fieldset className="admin-fieldset">
             <legend>Данные товара</legend>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
-              <div className="sm:col-span-2 lg:col-span-4">
+              <div className="sm:col-span-2 lg:col-span-3">
                 <label className="admin-field-label" htmlFor="new-name">
                   Название
                 </label>
@@ -58,7 +58,20 @@ export default async function AdminProductsPage() {
                 </label>
                 <input id="new-price" name="price" type="number" min={0} placeholder="3499" required />
               </div>
-              <div className="sm:col-span-2 lg:col-span-4">
+              <div className="lg:col-span-2">
+                <label className="admin-field-label" htmlFor="new-sizeLabel">
+                  Размер (чекаут)
+                </label>
+                <input
+                  id="new-sizeLabel"
+                  name="sizeLabel"
+                  type="text"
+                  placeholder="M, 42…"
+                  autoComplete="off"
+                  className="font-mono"
+                />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
                 <label className="admin-field-label" htmlFor="new-image">
                   URL картинки
                 </label>
@@ -124,7 +137,7 @@ export default async function AdminProductsPage() {
                   <fieldset className="admin-fieldset">
                     <legend>Данные товара</legend>
                     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
-                      <div className="sm:col-span-2 lg:col-span-4">
+                      <div className="sm:col-span-2 lg:col-span-3">
                         <label className="admin-field-label" htmlFor={`name-${p.id}`}>
                           Название
                         </label>
@@ -157,7 +170,21 @@ export default async function AdminProductsPage() {
                         </label>
                         <input id={`price-${p.id}`} name="price" type="number" min={0} defaultValue={p.price} required />
                       </div>
-                      <div className="sm:col-span-2 lg:col-span-4">
+                      <div className="lg:col-span-2">
+                        <label className="admin-field-label" htmlFor={`sizeLabel-${p.id}`}>
+                          Размер (чекаут)
+                        </label>
+                        <input
+                          id={`sizeLabel-${p.id}`}
+                          name="sizeLabel"
+                          type="text"
+                          defaultValue={p.sizeLabel ?? ""}
+                          placeholder="M, 42…"
+                          autoComplete="off"
+                          className="font-mono"
+                        />
+                      </div>
+                      <div className="sm:col-span-2 lg:col-span-3">
                         <label className="admin-field-label" htmlFor={`image-${p.id}`}>
                           URL картинки
                         </label>

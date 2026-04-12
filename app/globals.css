@@ -142,3 +142,41 @@ body {
 .admin-link-action {
   @apply text-xs font-medium text-slate-600 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-slate-900 hover:decoration-slate-500;
 }
+
+/* Чекаут (сторона покупателя): единая типографика */
+@layer components {
+  .checkout-ui .cu-page-title {
+    @apply text-base font-semibold leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-section-title {
+    @apply text-xs font-semibold uppercase tracking-[0.08em] text-neutral-900;
+  }
+  .checkout-ui .cu-block-heading {
+    @apply text-xs font-semibold uppercase tracking-[0.06em] text-neutral-900;
+  }
+  .checkout-ui .cu-sheet-title {
+    @apply text-lg font-semibold leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-sheet-lead {
+    @apply text-sm leading-snug text-neutral-600;
+  }
+  .checkout-ui .cu-stepper-label {
+    @apply max-w-[5.5rem] text-center text-[11px] font-medium leading-tight text-neutral-600 sm:max-w-none;
+  }
+  .checkout-ui .cu-muted {
+    @apply text-xs leading-snug text-neutral-500;
+  }
+  /** Размер/начертание основных подписей; цвет задавайте рядом или через inherit (вкладки доставки) */
+  .checkout-ui .cu-label-primary {
+    @apply text-sm font-semibold leading-snug;
+  }
+  .checkout-ui .cu-total-row-label {
+    @apply text-sm text-neutral-600;
+  }
+  .checkout-ui .cu-total-row-value {
+    @apply text-sm tabular-nums text-neutral-900;
+  }
+  .checkout-ui .cu-total-final-row {
+    @apply flex justify-between text-sm font-semibold tabular-nums text-neutral-900;
+  }
+}

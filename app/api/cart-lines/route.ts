@@ -42,6 +42,7 @@ export async function POST(req: Request) {
     name: string;
     price: number;
     image: string;
+    sizeLabel?: string | null;
   }[] = [];
   let subtotal = 0;
   let units = 0;
@@ -93,12 +94,14 @@ export async function GET(req: Request) {
   const resolved = products.map((p) => {
     subtotal += p.price;
     units += 1;
+    const sl = p.sizeLabel?.trim();
     return {
       productId: p.id,
       quantity: 1,
       name: p.name,
       price: p.price,
       image: p.image,
+      ...(sl ? { sizeLabel: sl } : {}),
     };
   });
 

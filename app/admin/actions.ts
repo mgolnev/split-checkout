@@ -30,10 +30,12 @@ export async function createProductWithStocks(formData: FormData) {
   const sku = String(formData.get("sku") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
   const image = String(formData.get("image") ?? "").trim() || "/product-placeholder.svg";
+  const sizeLabelRaw = String(formData.get("sizeLabel") ?? "").trim();
+  const sizeLabel = sizeLabelRaw.length > 0 ? sizeLabelRaw : null;
   if (!name || !sku) return;
 
   const product = await prisma.product.create({
-    data: { name, sku, price: Math.round(price), image, isActive: true },
+    data: { name, sku, price: Math.round(price), image, sizeLabel, isActive: true },
   });
 
   const sources = await prisma.source.findMany({ where: { isActive: true } });
@@ -132,6 +134,8 @@ export async function saveProductFull(formData: FormData) {
   const sku = String(formData.get("sku") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
   const imageRaw = String(formData.get("image") ?? "").trim();
+  const sizeLabelRaw = String(formData.get("sizeLabel") ?? "").trim();
+  const sizeLabel = sizeLabelRaw.length > 0 ? sizeLabelRaw : null;
   const isActive = toBool(formData.get("isActive"));
 
   if (!name || !sku || !Number.isFinite(price)) return;
@@ -149,7 +153,7 @@ export async function saveProductFull(formData: FormData) {
 
   await prisma.product.update({
     where: { id: productId },
-    data: { name, sku, price: priceInt, image, isActive },
+    data: { name, sku, price: priceInt, image, sizeLabel, isActive },
   });
 
   const sources = await prisma.source.findMany({ where: { isActive: true } });

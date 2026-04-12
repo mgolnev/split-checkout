@@ -18,6 +18,7 @@ type ProductRow = {
   sku: string;
   price: number;
   image: string;
+  sizeLabel?: string | null;
 };
 
 type SourceRow = { id: string; name: string; type: string; priority: number };
@@ -161,6 +162,7 @@ function buildPart(
   for (const l of items) {
     const p = pmap.get(l.productId);
     if (!p) continue;
+    const sl = p.sizeLabel?.trim();
     lines.push({
       productId: l.productId,
       name: p.name,
@@ -168,6 +170,7 @@ function buildPart(
       price: p.price,
       image: p.image,
       quantity: l.quantity,
+      ...(sl ? { sizeLabel: sl } : {}),
     });
     subtotal += p.price * l.quantity;
   }
