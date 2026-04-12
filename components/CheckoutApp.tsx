@@ -138,8 +138,98 @@ function checkoutPaymentMethodLabel(method: CheckoutPaymentMethod): string {
   return labels[method];
 }
 
+function scrollToCheckoutRecipientAuth() {
+  document.getElementById("checkout-recipient-heading")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.setTimeout(() => {
+    document.getElementById("checkout-recipient-phone")?.focus();
+  }, 350);
+}
+
+function GjMark({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-lg bg-neutral-900 font-bold text-white ${className}`}
+    >
+      GJ
+    </span>
+  );
+}
+
+type BonusPointsToggleProps = {
+  bonusOn: boolean;
+  promoApplied: boolean;
+  amountLabel: string;
+  onToggle: (next: boolean) => void;
+};
+
+function BonusPointsToggle({ bonusOn, promoApplied, amountLabel, onToggle }: BonusPointsToggleProps) {
+  const blocked = promoApplied;
+  return (
+    <div className="flex w-full items-center gap-3">
+      <GjMark className="h-8 w-8 text-[10px]" />
+      <div className="min-w-0 flex-1">
+        <span className="text-sm font-medium leading-snug text-neutral-900">
+          Списать с карты GJ {amountLabel}
+        </span>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={bonusOn}
+        disabled={blocked}
+        onClick={() => {
+          if (blocked) return;
+          onToggle(!bonusOn);
+        }}
+        className={`relative h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
+          blocked ? "cursor-not-allowed opacity-45" : "cursor-pointer"
+        } ${bonusOn ? "bg-neutral-900" : "bg-neutral-300"}`}
+      >
+        <span className="sr-only">Списать бонусы с карты GJ</span>
+        <span
+          className={`pointer-events-none block h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+            bonusOn ? "translate-x-5" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+/** Пока нет входа по телефону — подсказка перейти к блоку «Мои данные». */
+function BonusAuthBar() {
+  return (
+    <button
+      type="button"
+      onClick={() => scrollToCheckoutRecipientAuth()}
+      aria-label="Перейти к входу по телефону, чтобы копить и списывать бонусы"
+      className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-neutral-900 transition hover:opacity-90 active:opacity-90"
+    >
+      <GjMark className="h-10 w-10 text-[11px]" />
+      <span className="min-w-0 flex-1 text-sm leading-snug text-neutral-900">
+        <span className="block">Войдите в аккаунт, чтобы копить</span>
+        <span className="block">и списывать бонусы GJ</span>
+      </span>
+      <svg
+        className="h-5 w-5 shrink-0 text-neutral-700"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </button>
+  );
+}
+
 const MOCK_DATES = ["Завтра, 9 апр.", "10 апр.", "11 апр.", "12 апр."];
 const MOCK_SLOTS = ["9:00–12:00", "12:00–15:00", "15:00–18:00"];
+/** Демо: лимит списания с карты лояльности и сумма в подписи «Списать с карты GJ …» */
+const GJ_LOYALTY_MAX_SPEND_RUB = 1000;
 /** В шапке карточки курьерской доставки — перевозчик, а не склад/магазин отгрузки */
 const COURIER_CARRIER_LABEL = "СДЭК";
 
@@ -2322,7 +2412,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     return { includedMerch: merch, partsTotal: t, includedParts: parts };
   }, [allDisplayParts, included, promoFactor]);
 
+  const cartGoodsSubtotal = cartDetail?.subtotal ?? 0;
+  /** Пока нет сценария доставки — берём сумму корзины; иначе из включённых частей */
+  const goodsMerchForUi = allDisplayParts.length > 0 ? includedMerch : cartGoodsSubtotal;
+
   const payOnDeliveryOnlyEffective = includedParts.length > 1;
+
+  useEffect(() => {
+    if (!recipient) setBonusOn(false);
+  }, [recipient]);
 
   const payOnDeliveryDisclaimerText = useMemo(() => commonDisclaimer("payOnDeliveryOnly"), []);
 
@@ -2338,8 +2436,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
   }, [payOnDeliveryOnlyEffective]);
 
-  const promoDiscount = promoApplied ? Math.round(includedMerch * 0.2) : 0;
-  const payFinal = bonusOn ? Math.max(0, partsTotal - Math.min(1000, includedMerch)) : partsTotal;
+  const promoDiscount = promoApplied ? Math.round(goodsMerchForUi * 0.2) : 0;
+  const payFinal =
+    allDisplayParts.length > 0
+      ? bonusOn
+        ? Math.max(0, partsTotal - Math.min(GJ_LOYALTY_MAX_SPEND_RUB, includedMerch))
+        : partsTotal
+      : bonusOn
+        ? Math.max(0, Math.round(cartGoodsSubtotal * promoFactor) - Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))
+        : Math.round(cartGoodsSubtotal * promoFactor);
 
   useEffect(() => {
     const next: Record<string, { promoDiscount: number; bonusUsed: number }> = {};
@@ -2354,7 +2459,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       };
     }
     if (bonusOn) {
-      const maxBonus = Math.min(1000, includedMerch);
+      const maxBonus = Math.min(GJ_LOYALTY_MAX_SPEND_RUB, includedMerch);
       let used = 0;
       for (let i = 0; i < includedParts.length; i += 1) {
         const p = includedParts[i]!;
@@ -2656,6 +2761,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
   const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
+  const displayGoodsSubtotal =
+    includedParts.length > 0
+      ? includedSubtotalTotal
+      : allDisplayParts.length > 0
+        ? 0
+        : Math.round(cartGoodsSubtotal * promoFactor);
   const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
@@ -3147,6 +3258,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <>
               <p className="text-xs text-neutral-500">Введите номер телефона, чтобы оформить заказ</p>
               <input
+                id="checkout-recipient-phone"
                 className="mt-2 w-full rounded-lg bg-neutral-100 px-3 py-3 text-base placeholder:text-neutral-400"
                 placeholder="+7 (___) ___-__-__"
                 inputMode="tel"
@@ -3167,7 +3279,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               </p>
             </>
           ) : (
-            <div className="rounded-xl border border-neutral-200 bg-neutral-50/80 px-3 py-3">
+            <div className="rounded-xl border border-neutral-200 px-3 py-3">
               <p className="text-sm font-semibold leading-snug text-neutral-900">{recipient.fullName}</p>
               <p className="mt-1 text-sm text-neutral-600">{recipient.phone}</p>
               <button
@@ -3242,54 +3354,57 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : null}
         </section>
 
-        <section className="mb-6 flex flex-wrap gap-2 border-t border-neutral-100 pt-4">
-          <input
-            className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-base uppercase"
-            placeholder="Промокод"
-            value={promo}
-            onChange={(e) => {
-              const next = e.target.value;
-              setPromo(next);
-              if (promoApplied && next.trim().toUpperCase() !== "APP20") {
-                setPromoApplied(false);
-              }
-            }}
-            disabled={bonusOn}
-          />
-          {promoApplied && !bonusOn ? (
+        <section className="mb-6 space-y-3 border-t border-neutral-100 pt-4">
+          <div className="flex w-full items-stretch gap-2 rounded-xl bg-neutral-100 p-1.5 pl-3">
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
+              placeholder="Промокод"
+              value={promo}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPromo(next);
+                if (promoApplied && next.trim().toUpperCase() !== "APP20") {
+                  setPromoApplied(false);
+                }
+              }}
+              disabled={bonusOn}
+            />
+            {promoApplied && !bonusOn ? (
+              <button
+                type="button"
+                aria-label="Убрать промокод"
+                className="shrink-0 rounded-lg border border-neutral-200/80 bg-white px-2.5 py-2 text-sm font-semibold text-neutral-600"
+                onClick={() => {
+                  setPromo("");
+                  setPromoApplied(false);
+                }}
+              >
+                ×
+              </button>
+            ) : null}
             <button
               type="button"
-              aria-label="Убрать промокод"
-              className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold uppercase"
-              onClick={() => {
-                setPromo("");
-                setPromoApplied(false);
-              }}
+              className="shrink-0 rounded-lg bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-sm"
+              onClick={handlePromo}
+              disabled={bonusOn}
             >
-              ×
+              Добавить
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="rounded-lg border border-neutral-900 px-4 py-2 text-xs font-semibold uppercase"
-            onClick={handlePromo}
-            disabled={bonusOn}
-          >
-            Добавить
-          </button>
-          <label className="flex w-full items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={bonusOn}
-              onChange={(e) => {
-                setBonusOn(e.target.checked);
-                if (e.target.checked) setPromoApplied(false);
+          </div>
+          {promoApplied ? <p className="text-xs text-emerald-700">Применён промокод APP20 (−20%)</p> : null}
+          {recipient ? (
+            <BonusPointsToggle
+              bonusOn={bonusOn}
+              promoApplied={promoApplied}
+              amountLabel={fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}
+              onToggle={(next) => {
+                setBonusOn(next);
+                if (next) setPromoApplied(false);
               }}
-              disabled={promoApplied}
             />
-            Списать 1000 ₽ бонусами (взаимоисключение с промокодом)
-          </label>
-          {promoApplied ? <p className="w-full text-xs text-emerald-700">Применён промокод APP20 (−20%)</p> : null}
+          ) : (
+            <BonusAuthBar />
+          )}
         </section>
 
         <section className="mb-24 border-t border-neutral-100 pt-4">
@@ -3297,7 +3412,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           <div className="mt-2 space-y-1 text-sm">
             <div className="flex justify-between">
               <span className="text-neutral-600">Товары</span>
-              <span>{fmt(includedSubtotalTotal)}</span>
+              <span>{fmt(displayGoodsSubtotal)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-600">Доставка</span>
@@ -3312,7 +3427,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             {bonusOn ? (
               <div className="flex justify-between text-red-600">
                 <span>Бонусы</span>
-                <span>− {fmt(Math.min(1000, includedMerch))}</span>
+                <span>− {fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}</span>
               </div>
             ) : null}
             <div className="flex justify-between font-semibold">
