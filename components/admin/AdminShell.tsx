@@ -21,7 +21,8 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "География и доставка",
     items: [
       { href: "/admin/cities", label: "Города", description: "Регион и click & collect" },
-      { href: "/admin/sources", label: "Источники отгрузки", description: "Склады и магазины" },
+      { href: "/admin/sources", label: "Источники отгрузки", description: "Склады и магазины (самовывоз)" },
+      { href: "/admin/pvz-points", label: "ПВЗ", description: "Пункты выдачи для способа ПВЗ" },
       { href: "/admin/delivery-methods", label: "Способы получения", description: "Курьер, ПВЗ, самовывоз" },
     ],
   },

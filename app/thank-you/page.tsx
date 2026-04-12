@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 type CheckoutPaymentMethod = "sbp" | "card" | "on_receipt";
 
 type Ty = {
+  recipientPhone?: string;
+  recipientName?: string;
   parts: {
     key: string;
     sourceName: string;
@@ -98,6 +100,14 @@ export default function ThankYouPage() {
         {data.paymentMethod ? (
           <p className="mt-3 text-sm text-neutral-700">
             Способ оплаты: <span className="font-medium">{paymentMethodLabel(data.paymentMethod)}</span>
+          </p>
+        ) : null}
+        {data.recipientName && data.recipientPhone ? (
+          <p className="mt-3 text-sm text-neutral-700">
+            Получатель:{" "}
+            <span className="font-medium">
+              {data.recipientName}, {data.recipientPhone}
+            </span>
           </p>
         ) : null}
       </div>

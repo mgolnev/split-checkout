@@ -288,6 +288,49 @@ export async function deleteSource(formData: FormData) {
   revalidatePath("/admin/sources");
 }
 
+export async function createPvzPoint(formData: FormData) {
+  await gate();
+  const name = String(formData.get("name") ?? "").trim();
+  const address = String(formData.get("address") ?? "").trim();
+  const cityId = String(formData.get("cityId") ?? "");
+  if (!name || !address || !cityId) return;
+  await prisma.pvzPoint.create({
+    data: {
+      name,
+      address,
+      cityId,
+      requiresPrepayment: toBool(formData.get("requiresPrepayment")),
+      isActive: toBool(formData.get("isActive")),
+    },
+  });
+  revalidatePath("/admin/pvz-points");
+}
+
+export async function updatePvzPoint(formData: FormData) {
+  await gate();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.pvzPoint.update({
+    where: { id },
+    data: {
+      name: String(formData.get("name") ?? "").trim(),
+      address: String(formData.get("address") ?? "").trim(),
+      cityId: String(formData.get("cityId") ?? ""),
+      requiresPrepayment: toBool(formData.get("requiresPrepayment")),
+      isActive: toBool(formData.get("isActive")),
+    },
+  });
+  revalidatePath("/admin/pvz-points");
+}
+
+export async function deletePvzPoint(formData: FormData) {
+  await gate();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.pvzPoint.delete({ where: { id } });
+  revalidatePath("/admin/pvz-points");
+}
+
 export async function upsertInventory(formData: FormData) {
   await gate();
   const productId = String(formData.get("productId") ?? "");

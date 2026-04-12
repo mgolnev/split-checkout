@@ -14,7 +14,13 @@ export default async function AdminSourcesPage() {
     <div>
       <h1>Источники отгрузки</h1>
       <p className="admin-page-lead">
-        Склады и магазины внутри города. Приоритет влияет на порядок в логике остатков и правил.
+        Склады (<code className="rounded bg-slate-100 px-1">warehouse</code>) и магазины (
+        <code className="rounded bg-slate-100 px-1">store</code>) — последние участвуют в самовывозе (reserve / click
+        collect). Пункты выдачи «чистого» ПВЗ настраиваются в разделе{" "}
+        <a href="/admin/pvz-points" className="font-medium text-slate-700 underline">
+          ПВЗ
+        </a>
+        . Приоритет влияет на порядок в логике остатков и правил.
       </p>
 
       <h2 className="mt-8">Добавить источник</h2>

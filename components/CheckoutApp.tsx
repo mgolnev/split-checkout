@@ -7,7 +7,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadCourierAddress, saveCourierAddress } from "@/lib/courier-address-storage";
 import { loadCheckoutCart } from "@/lib/checkout-cart-storage";
 import { loadLastPickupStoreId, saveLastPickupStore } from "@/lib/pickup-store-storage";
+import { loadLastPvzPointId, saveLastPvzPoint } from "@/lib/pvz-point-storage";
+import {
+  clearCheckoutRecipient,
+  loadCheckoutRecipient,
+  saveCheckoutRecipient,
+  type CheckoutRecipientPayload,
+} from "@/lib/checkout-recipient-storage";
 import type { AlternativeMethodOption, CartLine, RemainderResolution, ScenarioPart, ScenarioResult } from "@/lib/types";
+
+const DEMO_RECIPIENT_FULL_NAME = "Петрова-Водкина Елизавета Валерьяновна";
+
+function phoneHasMinDigits(value: string, min = 10): boolean {
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= min;
+}
 
 type Bootstrap = {
   cities: { id: string; name: string; hasClickCollect: boolean }[];
@@ -240,7 +254,8 @@ function pickupStoreStatusTitle(summary?: PickupStoreSummary) {
 }
 
 function pickupStoreStatusDetail(summary?: PickupStoreSummary) {
-  if (!summary || summary.availableUnits <= 0) return "Для этого магазина корзина недоступна.";
+  if (!summary || summary.availableUnits <= 0)
+    return "В этом магазине нельзя собрать выбранные позиции под самовывоз (нет остатка или только другой способ). Выберите другой магазин или способ доставки.";
   if (summary.hasFullCoverage && summary.collectUnits === 0) {
     return `Все ${summary.totalUnits} товаров готовы к выдаче в магазине.`;
   }
@@ -295,7 +310,8 @@ function pvzPointStatusTitle(summary?: MethodSummary) {
 
 function pvzPointStatusDetail(summary?: MethodSummary) {
   if (!summary || summary.totalUnits <= 0) return "Нет данных по текущей корзине.";
-  if (summary.availableUnits <= 0) return "Для этой корзины получение в ПВЗ недоступно.";
+  if (summary.availableUnits <= 0)
+    return "ПВЗ обслуживается со склада: для выбранных позиций нет остатка с отгрузкой в пункт (или товар есть только в магазинах — их ПВЗ не использует). Попробуйте курьера или самовывоз.";
   if (summary.availableUnits >= summary.totalUnits) {
     return `Все ${summary.totalUnits} товаров можно получить через пункт выдачи заказа.`;
   }
@@ -324,44 +340,70 @@ function pvzPointTone(summary?: MethodSummary) {
   };
 }
 
-/** Короткие подсказки до выбора способа: без дублирования текста из карточки способа. */
+/** Подсказка до выбора вкладки: что логичнее открыть первым (курьер / магазины / ПВЗ), без дублирования табов. */
 function getDeliveryGuidance(
   summaries: Bootstrap["methodSummaryByCity"][string] | undefined,
-): { badge: "Рекомендуем" | "К сведению" | null; lines: string[] } | null {
+): { badge: "Рекомендуем" | null; lines: string[] } | null {
   if (!summaries) return null;
   const { courier, pickup, pvz } = summaries;
   const total = Math.max(courier.totalUnits, pickup.totalUnits, pvz.totalUnits);
   if (total <= 0) return null;
 
-  const courierOneShipment = courier.availableUnits >= total && !courier.hasSplit;
+  const courierFullSingle = courier.availableUnits >= total && !courier.hasSplit;
   const storeVaries = pickup.fullStoreCount > 0 || pickup.hasSplit;
-  const pvzLimited = pvz.availableUnits < total && pvz.availableUnits > 0;
+  const pvzClosed = total > 0 && pvz.availableUnits <= 0;
+  const pvzOnlyPart = pvz.availableUnits > 0 && pvz.availableUnits < total;
 
-  if (courierOneShipment) {
-    const lines = ["Курьер — весь заказ одним отправлением."];
+  if (courierFullSingle) {
+    const lines = [
+      "Удобнее начать с доставки курьером: всё, что вы выбрали, можно получить одной посылкой.",
+    ];
     if (storeVaries) {
-      lines.push("В магазинах набор по точкам может отличаться.");
+      lines.push(
+        "Забрать сами? Зайдите в «Магазины GJ» — в разных точках состав может отличаться, подскажет карта. Пункт выдачи подойдёт, если вам так удобнее.",
+      );
+    } else {
+      lines.push(
+        "Если курьер не нужен — загляните в «Магазины GJ» или «ПВЗ»: там будут свои сроки и то, что реально можно выдать этим способом.",
+      );
     }
     return { badge: "Рекомендуем", lines };
   }
-  if (pvzLimited) {
+
+  if (pvzClosed) {
     return {
-      badge: "К сведению",
-      lines: ["В ПВЗ доступна часть корзины — для полного набора смотрите курьера или магазины."],
-    };
-  }
-  if (storeVaries) {
-    return {
-      badge: "К сведению",
+      badge: null,
       lines: [
-        `Не все ${total} позиций есть в каждом магазине.`,
-        "Сравните вкладки — так проще собрать заказ целиком.",
+        "Пункт выдачи сейчас не подойдёт под весь заказ — так устроена наша логистика. Зато курьер или самовывоз из магазина помогут взять всё разом.",
       ],
     };
   }
+
+  if (pvzOnlyPart) {
+    return {
+      badge: null,
+      lines: [
+        "Хотите забрать весь заказ без разбивки? Посмотрите сначала курьера или самовывоз из магазина.",
+        "Пункт выдачи оставьте на потом, если вам ок получить здесь только часть покупки — остальное можно добрать иначе.",
+      ],
+    };
+  }
+
+  if (storeVaries) {
+    return {
+      badge: null,
+      lines: [
+        "В магазинах на карте запасы разные — загляните в «Магазины GJ» и выберите точку, которая вам ближе по составу.",
+        "Нужен один понятный вариант без перебора точек — чаще проще курьер. Пункт выдачи — если хочется забрать не дома и вас устраивает, как мы это соберём.",
+      ],
+    };
+  }
+
   return {
     badge: null,
-    lines: ["Выберите способ — от него зависят отправления и сроки."],
+    lines: [
+      "Выберите способ выше — курьер, магазин или пункт выдачи. Мы покажем, что войдёт в доставку и когда это можно забрать.",
+    ],
   };
 }
 
@@ -408,47 +450,45 @@ function StepperCheckIcon() {
   );
 }
 
-/** Прогресс чекаута: линия + круги по макету (зелёный ✓ / текущий контур / будущие). */
-function Stepper({ step }: { step: number }) {
-  const labels = ["Доставка", "Получатель", "Способ оплаты", "Оформление"];
+/** Нелинейный прогресс: у каждого этапа свой статус — выполнено (зелёная галочка) или ещё нет (чёрная обводка, белый круг, без цифр). */
+function Stepper({
+  deliveryDone,
+  recipientDone,
+  paymentDone,
+  finalizeReady,
+}: {
+  deliveryDone: boolean;
+  recipientDone: boolean;
+  paymentDone: boolean;
+  finalizeReady: boolean;
+}) {
+  const items: { label: string; done: boolean }[] = [
+    { label: "Доставка", done: deliveryDone },
+    { label: "Получатель", done: recipientDone },
+    { label: "Способ оплаты", done: paymentDone },
+    { label: "Оформление", done: finalizeReady },
+  ];
   return (
     <nav className="mb-6" aria-label="Этапы оформления заказа">
       <div className="relative grid grid-cols-4">
-        {/* Линия между центрами первого и последнего круга */}
         <div
           className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-3 z-0 h-px bg-neutral-950"
           aria-hidden
         />
-        {labels.map((label, i) => {
-          const done = i < step;
-          const current = i === step;
-          return (
-            <div key={label} className="relative z-10 flex flex-col items-center gap-2">
-              <div
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
-                  done
-                    ? "border-emerald-600 bg-emerald-600 text-white"
-                    : current
-                      ? "border-neutral-900 bg-white"
-                      : "border-neutral-200 bg-white text-neutral-400"
-                }`}
-              >
-                {done ? (
-                  <StepperCheckIcon />
-                ) : current ? null : (
-                  <span className="text-[11px] font-semibold leading-none">{i + 1}</span>
-                )}
-              </div>
-              <span
-                className={`max-w-[5.5rem] text-center text-[10px] font-medium leading-tight sm:max-w-none sm:text-[11px] ${
-                  done || current ? "text-neutral-950" : "text-neutral-400"
-                }`}
-              >
-                {label}
-              </span>
+        {items.map(({ label, done }) => (
+          <div key={label} className="relative z-10 flex flex-col items-center gap-2">
+            <div
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+                done ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-900 bg-white"
+              }`}
+            >
+              {done ? <StepperCheckIcon /> : null}
             </div>
-          );
-        })}
+            <span className="max-w-[5.5rem] text-center text-[10px] font-medium leading-tight text-neutral-950 sm:max-w-none sm:text-[11px]">
+              {label}
+            </span>
+          </div>
+        ))}
       </div>
     </nav>
   );
@@ -482,7 +522,11 @@ function PickupStoreSelector({
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">Карта магазинов</p>
-            <p className="text-xs text-neutral-500">Схема доступности без точной географии.</p>
+            <p className="text-xs text-neutral-500">
+              Число на маркере — сколько единиц <span className="font-medium text-neutral-700">текущего заказа</span>{" "}
+              можно выдать из этой точки; 0 — в этом магазине выбранные позиции не собрать. Схема без точной
+              географии.
+            </p>
           </div>
           <span className="max-w-[55%] truncate rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-neutral-500 shadow-sm">
             {selectedStore?.name ?? "Не выбран"}
@@ -570,9 +614,11 @@ function PickupStoreSelector({
                 <span className="rounded-full bg-neutral-100 px-2 py-1">
                   Привезем: {store.summary?.collectUnits ?? 0}
                 </span>
-                <span className="rounded-full bg-neutral-100 px-2 py-1">
-                  Недоступно: {store.summary?.remainderUnits ?? 0}
-                </span>
+                {(store.summary?.remainderUnits ?? 0) > 0 ? (
+                  <span className="rounded-full bg-neutral-100 px-2 py-1">
+                    Недоступно: {store.summary?.remainderUnits ?? 0}
+                  </span>
+                ) : null}
               </div>
             </button>
           );
@@ -629,9 +675,11 @@ function PickupSelectedStoreCard({
         <span className={`rounded-full px-2 py-1 ${embedded ? "bg-neutral-100" : "bg-white/80"}`}>
           Привезем: {store.summary?.collectUnits ?? 0}
         </span>
-        <span className={`rounded-full px-2 py-1 ${embedded ? "bg-neutral-100" : "bg-white/80"}`}>
-          Недоступно: {store.summary?.remainderUnits ?? 0}
-        </span>
+        {(store.summary?.remainderUnits ?? 0) > 0 ? (
+          <span className={`rounded-full px-2 py-1 ${embedded ? "bg-neutral-100" : "bg-white/80"}`}>
+            Недоступно: {store.summary?.remainderUnits ?? 0}
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -640,11 +688,13 @@ function PickupSelectedStoreCard({
 function PvzPointSelector({
   points,
   selectedPointId,
+  lastChosenPointId,
   summary,
   onSelect,
 }: {
   points: PvzPointOption[];
   selectedPointId: string;
+  lastChosenPointId?: string | null;
   summary?: MethodSummary;
   onSelect: (pointId: string) => void;
 }) {
@@ -656,7 +706,7 @@ function PvzPointSelector({
     );
   }
 
-  const selectedPoint = points.find((point) => point.id === selectedPointId) ?? points[0]!;
+  const selectedPoint = selectedPointId ? points.find((point) => point.id === selectedPointId) : undefined;
   const tone = pvzPointTone(summary);
 
   return (
@@ -665,10 +715,13 @@ function PvzPointSelector({
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">Карта ПВЗ</p>
-            <p className="text-xs text-neutral-500">Схема пунктов выдачи без точной географии.</p>
+            <p className="text-xs text-neutral-500">
+              У всех пунктов одно число: в ПВЗ отгружаем со склада города (не из магазинов). 0 — для вашего
+              заказа нет подходящего остатка на складе под эту схему. Схема без точной географии.
+            </p>
           </div>
-          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-neutral-500 shadow-sm">
-            {selectedPoint.name}
+          <span className="max-w-[55%] truncate rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-neutral-500 shadow-sm">
+            {selectedPoint?.name ?? "Не выбран"}
           </span>
         </div>
         <div className="relative h-52 overflow-hidden rounded-xl border border-white/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]">
@@ -676,37 +729,51 @@ function PvzPointSelector({
           {points.map((point, index) => {
             const pos = PICKUP_MAP_POSITIONS[index % PICKUP_MAP_POSITIONS.length]!;
             const selected = selectedPointId === point.id;
+            const wasLastChoice = lastChosenPointId === point.id;
             return (
               <button
                 key={point.id}
                 type="button"
                 onClick={() => onSelect(point.id)}
-                className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-1 text-[11px] font-semibold shadow-sm transition ${tone.marker} ${selected ? "scale-110 ring-4 ring-black/10" : ""}`}
+                className={`relative absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-1 text-[11px] font-semibold shadow-sm transition ${tone.marker} ${selected ? "scale-110 ring-4 ring-black/10" : ""}`}
                 style={{ left: pos.left, top: pos.top }}
                 aria-pressed={selected}
                 aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
               >
+                {wasLastChoice ? (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white" title="Выбирали в прошлый раз">
+                    ↻
+                  </span>
+                ) : null}
                 {summary?.availableUnits ?? 0}/{summary?.totalUnits ?? 0}
               </button>
             );
           })}
         </div>
-        <div className="mt-3 rounded-xl bg-white/90 p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold">{selectedPoint.name}</p>
-            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
-              {pvzPointStatusTitle(summary)}
-            </span>
+        {selectedPoint ? (
+          <div className="mt-3 rounded-xl bg-white/90 p-3 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">{selectedPoint.name}</p>
+              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
+                {pvzPointStatusTitle(summary)}
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-neutral-900">{selectedPoint.address}</p>
+            <p className="mt-2 text-sm text-neutral-900">{pvzPointCountLabel(summary)}</p>
+            <p className="mt-1 text-xs text-neutral-500">{pvzPointStatusDetail(summary)}</p>
           </div>
-          <p className="mt-2 text-sm text-neutral-900">{selectedPoint.address}</p>
-          <p className="mt-2 text-sm text-neutral-900">{pvzPointCountLabel(summary)}</p>
-          <p className="mt-1 text-xs text-neutral-500">{pvzPointStatusDetail(summary)}</p>
-        </div>
+        ) : (
+          <div className="mt-3 rounded-xl bg-white/90 p-3 text-sm text-neutral-600 shadow-sm">
+            Выберите ПВЗ на карте или в списке ниже.
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
         {points.map((point) => {
           const selected = selectedPointId === point.id;
+          const wasLastChoice = lastChosenPointId === point.id;
+          const pvzUnavailableUnits = Math.max(0, (summary?.totalUnits ?? 0) - (summary?.availableUnits ?? 0));
           return (
             <button
               key={point.id}
@@ -717,7 +784,14 @@ function PvzPointSelector({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold">{point.name}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">{point.name}</span>
+                    {wasLastChoice ? (
+                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+                        Выбирали в прошлый раз
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-1 text-sm text-neutral-900">{point.address}</div>
                   <div className="mt-1 text-xs text-neutral-500">{pvzPointStatusDetail(summary)}</div>
                 </div>
@@ -727,9 +801,9 @@ function PvzPointSelector({
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
                 <span className="rounded-full bg-neutral-100 px-2 py-1">Доступно: {summary?.availableUnits ?? 0}</span>
-                <span className="rounded-full bg-neutral-100 px-2 py-1">
-                  Недоступно: {Math.max(0, (summary?.totalUnits ?? 0) - (summary?.availableUnits ?? 0))}
-                </span>
+                {pvzUnavailableUnits > 0 ? (
+                  <span className="rounded-full bg-neutral-100 px-2 py-1">Недоступно: {pvzUnavailableUnits}</span>
+                ) : null}
               </div>
             </button>
           );
@@ -756,6 +830,8 @@ function PvzSelectedPointCard({
     );
   }
 
+  const pvzUnavailableUnits = Math.max(0, (summary?.totalUnits ?? 0) - (summary?.availableUnits ?? 0));
+
   return (
     <div className="mt-3">
       <div className="flex items-start justify-between gap-3">
@@ -779,9 +855,9 @@ function PvzSelectedPointCard({
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
         <span className="rounded-full bg-neutral-100 px-2 py-1">Доступно: {summary?.availableUnits ?? 0}</span>
-        <span className="rounded-full bg-neutral-100 px-2 py-1">
-          Недоступно: {Math.max(0, (summary?.totalUnits ?? 0) - (summary?.availableUnits ?? 0))}
-        </span>
+        {pvzUnavailableUnits > 0 ? (
+          <span className="rounded-full bg-neutral-100 px-2 py-1">Недоступно: {pvzUnavailableUnits}</span>
+        ) : null}
       </div>
     </div>
   );
@@ -807,7 +883,7 @@ function CourierAddressCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">Адрес доставки</p>
-          <p className="mt-1 text-sm text-neutral-900">{address}</p>
+          <p className="mt-1 break-words text-sm leading-snug text-neutral-900">{address}</p>
           <p className="mt-1 text-xs text-neutral-500">Курьер привезет заказ по указанному адресу.</p>
         </div>
         <button
@@ -995,8 +1071,8 @@ function SecondarySelectionCard({
           </div>
         ) : null}
         {option.methodCode === "courier" ? (
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="min-w-0 truncate text-sm text-neutral-800">
+          <div className="mt-2 flex items-start justify-between gap-3">
+            <p className="min-w-0 flex-1 break-words text-sm leading-snug text-neutral-800">
               {courierAddress?.trim() ? courierAddress : "Укажите адрес доставки"}
             </p>
             <button
@@ -1257,7 +1333,7 @@ function SplitSelectionModal({
           <div className="mt-4 rounded-xl border border-neutral-200 p-4">
             <p className="text-sm font-semibold">Адрес для этой доставки</p>
             {courierAddress.trim() ? (
-              <p className="mt-2 text-sm text-neutral-900">{courierAddress}</p>
+              <p className="mt-2 break-words text-sm leading-snug text-neutral-900">{courierAddress}</p>
             ) : (
               <p className="mt-2 text-sm text-neutral-500">Укажите адрес, чтобы добавить курьерское отправление.</p>
             )}
@@ -1760,6 +1836,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [storeId, setStoreId] = useState<string>("");
   const [lastPickupMemoryId, setLastPickupMemoryId] = useState<string | null>(null);
   const [pvzId, setPvzId] = useState<string>("");
+  const [lastPvzMemoryId, setLastPvzMemoryId] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ScenarioResult | null>(null);
   const [remainderResolution, setRemainderResolution] = useState<RemainderResolution | null>(null);
   const [secondarySelections, setSecondarySelections] = useState<SecondarySelection[]>([]);
@@ -1773,7 +1850,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [promoApplied, setPromoApplied] = useState(false);
   const [bonusOn, setBonusOn] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>("sbp");
-  const [phone, setPhone] = useState("");
+  const [recipient, setRecipient] = useState<CheckoutRecipientPayload | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [phoneGateOpen, setPhoneGateOpen] = useState(false);
   const [courierAddress, setCourierAddress] = useState("");
   const [courierAddressModalTarget, setCourierAddressModalTarget] = useState<CourierAddressModalTarget | null>(null);
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
@@ -1784,6 +1863,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     const saved = loadCourierAddress();
     if (saved) setCourierAddress(saved);
     skipPersistCourierAddress.current = true;
+  }, []);
+
+  useEffect(() => {
+    const r = loadCheckoutRecipient();
+    if (r) {
+      setRecipient(r);
+      setPhoneDraft(r.phone);
+    }
   }, []);
 
   useEffect(() => {
@@ -1885,6 +1972,74 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     };
   }, [boot, cityId]);
 
+  const cartLinesSignature = useMemo(
+    () =>
+      cartDetail?.lines
+        ?.map((l) => `${l.productId}:${l.quantity}`)
+        .sort()
+        .join("|") ?? "",
+    [cartDetail?.lines],
+  );
+
+  const [cartScopedSummaries, setCartScopedSummaries] = useState<{
+    methodSummaries: Bootstrap["methodSummaryByCity"][string];
+    pickupSummaryByStore: Record<string, PickupStoreSummary>;
+  } | null>(null);
+
+  useEffect(() => {
+    setCartScopedSummaries(null);
+  }, [cityId]);
+
+  useEffect(() => {
+    if (!cityId || !cartDetail?.lines?.length) {
+      setCartScopedSummaries(null);
+      return;
+    }
+    setCartScopedSummaries(null);
+    let cancelled = false;
+    const lines = cartDetail.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
+
+    void (async () => {
+      try {
+        const r = await fetch("/api/cart-summaries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cityId, lines }),
+        });
+        const json = (await r.json()) as {
+          methodSummaries?: Bootstrap["methodSummaryByCity"][string];
+          pickupSummaryByStore?: Record<string, PickupStoreSummary>;
+        };
+        if (cancelled || !r.ok || !json.methodSummaries || !json.pickupSummaryByStore) return;
+        setCartScopedSummaries({
+          methodSummaries: json.methodSummaries,
+          pickupSummaryByStore: json.pickupSummaryByStore,
+        });
+      } catch {
+        if (!cancelled) setCartScopedSummaries(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cityId, cartLinesSignature, cartDetail?.lines]);
+
+  const methodSummariesForUi = useMemo(() => {
+    if (!boot || !cityId) return undefined;
+    if (cartDetail?.lines?.length) {
+      return cartScopedSummaries?.methodSummaries;
+    }
+    return boot.methodSummaryByCity[cityId];
+  }, [boot, cityId, cartDetail?.lines?.length, cartScopedSummaries?.methodSummaries]);
+
+  /** По сводке корзины: в ПВЗ нечего отгрузить (напр. только склад под ПВЗ, остатка нет). Вкладку не скрываем — приглушаем и поясняем. */
+  const isPvzUnavailableForCurrentOrder = useMemo(() => {
+    if (!cartDetail?.lines?.length || !methodSummariesForUi?.pvz) return false;
+    const s = methodSummariesForUi.pvz;
+    return s.totalUnits > 0 && s.availableUnits <= 0;
+  }, [cartDetail?.lines?.length, methodSummariesForUi]);
+
   const requestScenario = useCallback(
     async (params: {
       deliveryMethodCode: DeliveryMethodCode;
@@ -1940,6 +2095,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       setLoading(false);
       return;
     }
+    if (method === "pvz" && !pvzId.trim()) {
+      setScenario(null);
+      setRemainderResolution(null);
+      setSecondarySelections([]);
+      setSplitModalState(null);
+      setIncluded({});
+      setLoading(false);
+      return;
+    }
     const cartLinesPayload = cartDetail.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
     setLoading(true);
     try {
@@ -1958,19 +2122,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       if (latestScenarioRequestRef.current !== requestId) return;
       setLoading(false);
     }
-  }, [cityId, method, storeId, primaryCourierAddress, requestScenario, cartDetail]);
+  }, [cityId, method, storeId, pvzId, primaryCourierAddress, requestScenario, cartDetail]);
 
   useEffect(() => {
     void refreshScenario();
   }, [refreshScenario]);
-
-  useEffect(() => {
-    if (!boot || !cityId) return;
-    const pvz = (boot.pvzByCity[cityId] ?? []).filter((p) => !p.requiresPrepayment);
-    if (pvz.length && !pvz.find((p) => p.id === pvzId)) {
-      setPvzId(pvz[0]!.id);
-    }
-  }, [boot, cityId, pvzId]);
 
   const availableMethods = useMemo(() => {
     if (!boot || !cityId) return boot?.deliveryMethods ?? [];
@@ -1984,17 +2140,30 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     return [...boot.deliveryMethods].sort(
       (a, b) =>
         methodOrder[a.code as keyof typeof methodOrder] - methodOrder[b.code as keyof typeof methodOrder],
-    ).map((m) => ({
-      ...m,
-      enabled: allowed.has(m.code),
-      summary: boot.methodSummaryByCity[cityId]?.[m.code as "courier" | "pickup" | "pvz"],
-    }));
-  }, [boot, cityId]);
+    ).map((m) => {
+      const allowedInCity = allowed.has(m.code);
+      const blockPvzByCart = m.code === "pvz" && isPvzUnavailableForCurrentOrder;
+      return {
+        ...m,
+        enabled: allowedInCity && !blockPvzByCart,
+        /** В городе ПВЗ разрешён правилами, но текущий заказ через ПВЗ не оформить */
+        pvzUnavailableForOrder: m.code === "pvz" && isPvzUnavailableForCurrentOrder && allowedInCity,
+        summary:
+          cartDetail?.lines?.length && methodSummariesForUi
+            ? methodSummariesForUi[m.code as "courier" | "pickup" | "pvz"]
+            : !cartDetail?.lines?.length
+              ? boot.methodSummaryByCity[cityId]?.[m.code as "courier" | "pickup" | "pvz"]
+              : undefined,
+      };
+    });
+  }, [boot, cityId, cartDetail?.lines?.length, methodSummariesForUi, isPvzUnavailableForCurrentOrder]);
 
   const pickupStores = useMemo(() => {
     if (!boot) return [] as PickupStoreOption[];
     const rawStores = boot.storesByCity[cityId] ?? [];
-    const summaries = boot.pickupSummaryByStore[cityId] ?? {};
+    const summaries = cartDetail?.lines?.length
+      ? cartScopedSummaries?.pickupSummaryByStore ?? {}
+      : boot.pickupSummaryByStore[cityId] ?? {};
 
     return rawStores
       .map((store) => ({
@@ -2010,7 +2179,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         if (collectDiff !== 0) return collectDiff;
         return a.name.localeCompare(b.name, "ru");
       });
-  }, [boot, cityId]);
+  }, [boot, cityId, cartDetail?.lines?.length, cartScopedSummaries?.pickupSummaryByStore]);
 
   useEffect(() => {
     setLastPickupMemoryId(loadLastPickupStoreId(cityId));
@@ -2034,13 +2203,51 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const selectedPickupStore = pickupStores.find((store) => store.id === storeId);
   const pvzOptions = (boot?.pvzByCity[cityId] ?? []).filter((p) => !p.requiresPrepayment);
-  const selectedPvzPoint = pvzOptions.find((point) => point.id === pvzId);
-  const pvzSummary = boot?.methodSummaryByCity[cityId]?.pvz;
 
-  const deliveryGuide = useMemo(
-    () => (boot && cityId ? getDeliveryGuidance(boot.methodSummaryByCity[cityId]) : null),
-    [boot, cityId],
-  );
+  useEffect(() => {
+    setLastPvzMemoryId(loadLastPvzPointId(cityId));
+  }, [cityId]);
+
+  useEffect(() => {
+    if (method !== "pvz" || !cityId || !pvzId.trim()) return;
+    if (!pvzOptions.some((p) => p.id === pvzId)) return;
+    saveLastPvzPoint(cityId, pvzId);
+    setLastPvzMemoryId(pvzId);
+  }, [method, cityId, pvzId, pvzOptions]);
+
+  const pvzOptionsOrdered = useMemo(() => {
+    const hint = lastPvzMemoryId;
+    if (!hint) return pvzOptions;
+    const ix = pvzOptions.findIndex((p) => p.id === hint);
+    if (ix < 1) return pvzOptions;
+    const chosen = pvzOptions[ix]!;
+    return [chosen, ...pvzOptions.filter((_, i) => i !== ix)];
+  }, [pvzOptions, lastPvzMemoryId]);
+
+  useEffect(() => {
+    if (method !== "pvz") return;
+    if (!pvzOptions.length) {
+      if (pvzId) setPvzId("");
+      return;
+    }
+    if (pvzId && !pvzOptions.some((p) => p.id === pvzId)) {
+      setPvzId("");
+    }
+  }, [method, pvzOptions, pvzId]);
+
+  const selectedPvzPoint = pvzOptions.find((point) => point.id === pvzId);
+  const pvzSummary = cartDetail?.lines?.length
+    ? methodSummariesForUi?.pvz
+    : boot?.methodSummaryByCity[cityId]?.pvz;
+
+  const deliveryGuide = useMemo(() => {
+    if (!boot || !cityId) return null;
+    if (cartDetail?.lines?.length) {
+      if (!methodSummariesForUi) return null;
+      return getDeliveryGuidance(methodSummariesForUi);
+    }
+    return getDeliveryGuidance(boot.methodSummaryByCity[cityId]);
+  }, [boot, cityId, cartDetail?.lines?.length, methodSummariesForUi]);
 
   useEffect(() => {
     if (method && !availableMethods.some((m) => m.code === method)) {
@@ -2247,6 +2454,26 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setMethod(nextMethod);
   };
 
+  useEffect(() => {
+    if (method !== "pvz" || !isPvzUnavailableForCurrentOrder) return;
+    setPvzId("");
+    setPvzSelectorOpen(false);
+    const next = deliveryOptions.find((d) => d.enabled);
+    if (!next) {
+      setMethod(null);
+      return;
+    }
+    if (next.code === "courier") {
+      if (courierAddress.trim()) {
+        setMethod("courier");
+      } else {
+        setCourierAddressModalTarget({ kind: "primary" });
+      }
+    } else {
+      setMethod(next.code as DeliveryMethodCode);
+    }
+  }, [method, isPvzUnavailableForCurrentOrder, deliveryOptions, courierAddress]);
+
   const openCurrentSplitModal = () => {
     if (!activeRemainderResolution || activeRemainderResolution.lines.length === 0) return;
     setSplitModalState({ mode: "add", editIndex: null, resolution: activeRemainderResolution });
@@ -2321,8 +2548,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     [unresolvedLines, productsById],
   );
 
-  const submit = () => {
-    if (!boot || !scenario || !cartDetail || !method) return;
+  const completeCheckoutSubmit = (recOverride?: CheckoutRecipientPayload | null) => {
+    const rec = recOverride ?? recipient;
+    if (!boot || !scenario || !cartDetail || !method || !rec) return;
     const finalRemainderLines = [...manualExcludedLines];
     for (const line of currentRemainderLines) {
       const existing = finalRemainderLines.find((item) => item.productId === line.productId);
@@ -2359,9 +2587,52 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       storeId: method === "pickup" ? storeId : null,
       courierAddress: courierAddress.trim() ? courierAddress : null,
       paymentMethod,
+      recipientPhone: rec.phone,
+      recipientName: rec.fullName,
     };
     sessionStorage.setItem("thankyou", JSON.stringify(payload));
     router.push("/thank-you");
+  };
+
+  const submit = () => {
+    if (!boot || !scenario || !cartDetail || !method) return;
+    if (!recipient) {
+      setPhoneGateOpen(true);
+      return;
+    }
+    completeCheckoutSubmit();
+  };
+
+  const buildRecipientPayload = (raw: string): CheckoutRecipientPayload | null => {
+    const phone = raw.trim();
+    if (!phoneHasMinDigits(phone)) return null;
+    return { phone, fullName: DEMO_RECIPIENT_FULL_NAME };
+  };
+
+  const applyRecipientPayload = (p: CheckoutRecipientPayload) => {
+    saveCheckoutRecipient(p);
+    setRecipient(p);
+    setPhoneDraft(p.phone);
+  };
+
+  const confirmRecipientInline = () => {
+    const p = buildRecipientPayload(phoneDraft);
+    if (!p) return;
+    applyRecipientPayload(p);
+  };
+
+  const confirmRecipientFromGate = () => {
+    const p = buildRecipientPayload(phoneDraft);
+    if (!p) return;
+    applyRecipientPayload(p);
+    setPhoneGateOpen(false);
+    queueMicrotask(() => completeCheckoutSubmit(p));
+  };
+
+  const clearRecipient = () => {
+    clearCheckoutRecipient();
+    setRecipient(null);
+    setPhoneDraft("");
   };
 
   if (bootError) {
@@ -2393,12 +2664,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
+  const stepperFinalizeReady = !!scenario && includedParts.length > 0;
 
   const awaitingScenario =
     !!cityId &&
     !!method &&
     (method !== "courier" || primaryCourierAddress.trim().length > 0) &&
-    (method !== "pickup" || storeId.trim().length > 0);
+    (method !== "pickup" || storeId.trim().length > 0) &&
+    (method !== "pvz" || pvzId.trim().length > 0);
   const showScenarioSkeleton = loading && awaitingScenario;
 
   const renderScenarioMethodSummary = () => {
@@ -2422,8 +2695,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
         ) : null}
         {method === "courier" ? (
-          <div className="flex items-center justify-between gap-3">
-            <p className="min-w-0 truncate text-sm text-neutral-800">
+          <div className="flex items-start justify-between gap-3">
+            <p className="min-w-0 flex-1 break-words text-sm leading-snug text-neutral-800">
               {courierAddress.trim() ? courierAddress : "Укажите адрес доставки"}
             </p>
             <button
@@ -2467,7 +2740,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       </header>
 
       <div className="relative z-0 px-4 pt-4">
-        <Stepper step={2} />
+        <Stepper
+          deliveryDone={unifiedOrderBlock}
+          recipientDone={!!recipient}
+          paymentDone
+          finalizeReady={stepperFinalizeReady}
+        />
 
         <section className="mb-6">
           <div className="mb-3 flex items-center justify-between">
@@ -2495,11 +2773,20 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             {deliveryOptions.map((dm) => {
               const tabName = dm.code === "pickup" ? "Магазины GJ" : dm.name;
               const isSelected = method === dm.code;
+              const mutedPvz =
+                dm.code === "pvz" &&
+                "pvzUnavailableForOrder" in dm &&
+                (dm as { pvzUnavailableForOrder?: boolean }).pvzUnavailableForOrder;
               return (
                 <button
                   key={dm.id}
                   type="button"
                   disabled={!dm.enabled}
+                  title={
+                    mutedPvz
+                      ? "Этот заказ через ПВЗ не оформить: для выбранных позиций нет остатка на складе под отгрузку в пункт. Выберите курьера или магазин."
+                      : undefined
+                  }
                   onClick={() => {
                     if (!dm.enabled) return;
                     selectPrimaryMethod(dm.code as "courier" | "pickup" | "pvz");
@@ -2511,7 +2798,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                       ? "border-black bg-black text-white"
                       : dm.enabled
                         ? "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
-                        : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
+                        : mutedPvz
+                          ? "cursor-not-allowed border-amber-200/90 bg-amber-50/80 text-amber-900/80 opacity-95"
+                          : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
                   }`}
                 >
                   {tabName}
@@ -2519,6 +2808,18 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               );
             })}
           </div>
+          {deliveryOptions.some(
+            (d) =>
+              d.code === "pvz" &&
+              "pvzUnavailableForOrder" in d &&
+              (d as { pvzUnavailableForOrder?: boolean }).pvzUnavailableForOrder,
+          ) ? (
+            <p className="mt-2 rounded-lg border border-amber-100 bg-amber-50/90 px-3 py-2 text-xs leading-snug text-amber-950/85">
+              ПВЗ недоступен для текущего набора: отгрузка в пункт только со склада, под этот заказ остатка нет. Оформите{" "}
+              <span className="font-medium">курьером</span> или{" "}
+              <span className="font-medium">самовывозом из магазина</span>.
+            </p>
+          ) : null}
           {deliveryOptions.length === 0 ? (
             <p className="mt-2 text-xs text-neutral-500">
               Для выбранного города нет доступных способов получения по логистическим правилам.
@@ -2583,6 +2884,27 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                           summary={pvzSummary}
                           onChange={() => setPvzSelectorOpen(true)}
                         />
+                      ) : method === "pvz" ? (
+                        <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 p-3 text-sm text-neutral-700">
+                          <p className="font-medium text-neutral-900">Выберите ПВЗ</p>
+                          <p className="mt-1 text-xs text-neutral-600">
+                            {lastPvzMemoryId && pvzOptions.find((p) => p.id === lastPvzMemoryId) ? (
+                              <>
+                                В прошлый раз вы выбирали «{pvzOptions.find((p) => p.id === lastPvzMemoryId)!.name}» — он
+                                показан первым в списке.
+                              </>
+                            ) : (
+                              "Укажите пункт выдачи на карте или в списке."
+                            )}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setPvzSelectorOpen(true)}
+                            className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                          >
+                            Открыть выбор ПВЗ
+                          </button>
+                        </div>
                       ) : null}
                     </>
                   );
@@ -2597,9 +2919,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         {!method ? (
           <div className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4 text-neutral-500">
             {deliveryGuide && deliveryGuide.lines.length > 0 ? (
-              <div className="mb-3">
+              <div className="space-y-2">
                 {deliveryGuide.badge ? (
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
                     {deliveryGuide.badge}
                   </p>
                 ) : null}
@@ -2608,7 +2930,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     key={i}
                     className={
                       i === 0
-                        ? `text-xs leading-snug text-neutral-800 ${deliveryGuide.badge ? "mt-1.5" : ""}`
+                        ? "text-sm leading-snug text-neutral-800"
                         : "mt-1.5 text-xs leading-snug text-neutral-600"
                     }
                   >
@@ -2616,10 +2938,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   </p>
                 ))}
               </div>
-            ) : null}
-            <p className="text-sm text-neutral-500">
-              Выберите способ получения, чтобы увидеть доступные отправления и сроки.
-            </p>
+            ) : (
+              <p className="text-sm leading-snug text-neutral-600">
+                Сначала выберите способ получения — от этого зависят сроки и то, как мы соберём заказ.
+              </p>
+            )}
           </div>
         ) : null}
 
@@ -2849,21 +3172,46 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </section>
         ) : null}
 
-        <section className="mb-6">
-          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide">Мои данные</h2>
-          <p className="text-xs text-neutral-500">Введите номер телефона, чтобы оформить заказ</p>
-          <input
-            className="mt-2 w-full rounded-lg bg-neutral-100 px-3 py-3 text-base uppercase placeholder:text-neutral-400"
-            placeholder="Телефон"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-          <button
-            type="button"
-            className="mt-2 w-full rounded-lg bg-neutral-200 py-3 text-xs font-semibold uppercase"
-          >
-            Получить смс с кодом
-          </button>
+        <section className="mb-6" aria-labelledby="checkout-recipient-heading">
+          <h2 id="checkout-recipient-heading" className="mb-2 text-sm font-bold uppercase tracking-wide">
+            Мои данные
+          </h2>
+          {!recipient ? (
+            <>
+              <p className="text-xs text-neutral-500">Введите номер телефона, чтобы оформить заказ</p>
+              <input
+                className="mt-2 w-full rounded-lg bg-neutral-100 px-3 py-3 text-base placeholder:text-neutral-400"
+                placeholder="+7 (___) ___-__-__"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phoneDraft}
+                onChange={(e) => setPhoneDraft(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={!phoneHasMinDigits(phoneDraft)}
+                onClick={confirmRecipientInline}
+                className="mt-2 w-full rounded-lg bg-neutral-900 py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Получить смс с кодом
+              </button>
+              <p className="mt-2 text-[10px] text-neutral-400">
+                Для демо код не запрашиваем — после нажатия вы будете «авторизованы» с тестовым именем.
+              </p>
+            </>
+          ) : (
+            <div className="rounded-xl border border-neutral-200 bg-neutral-50/80 px-3 py-3">
+              <p className="text-sm font-semibold leading-snug text-neutral-900">{recipient.fullName}</p>
+              <p className="mt-1 text-sm text-neutral-600">{recipient.phone}</p>
+              <button
+                type="button"
+                onClick={clearRecipient}
+                className="mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 underline underline-offset-2"
+              >
+                Сменить номер
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="mb-6" aria-labelledby="checkout-payment-heading">
@@ -3024,7 +3372,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               return "Оформить заказ";
             })()}
           </button>
-          <p className="mt-2 text-center text-[10px] text-neutral-400">split-checkout.local</p>
         </div>
       </div>
 
@@ -3089,8 +3436,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               </button>
             </div>
             <PvzPointSelector
-              points={pvzOptions}
+              points={pvzOptionsOrdered}
               selectedPointId={pvzId}
+              lastChosenPointId={lastPvzMemoryId}
               summary={pvzSummary}
               onSelect={(nextPointId) => {
                 setPvzId(nextPointId);
@@ -3104,7 +3452,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <SplitSelectionModal
           resolution={splitModalState.resolution}
           productsById={productsById}
-          pvzPoints={pvzOptions}
+          pvzPoints={pvzOptionsOrdered}
           selectedPvzId={pvzId}
           onSelectPvz={setPvzId}
           courierAddress={courierAddress}
@@ -3123,6 +3471,45 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           onClose={() => setCourierAddressModalTarget(null)}
           onSave={handleCourierAddressSave}
         />
+      ) : null}
+      {phoneGateOpen ? (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+          <button
+            type="button"
+            aria-label="Закрыть окно телефона"
+            className="absolute inset-0"
+            onClick={() => setPhoneGateOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
+            <h3 className="text-lg font-semibold text-neutral-900">Подтвердите телефон</h3>
+            <p className="mt-1 text-sm text-neutral-500">
+              Чтобы оформить заказ, укажите номер и нажмите «Получить смс с кодом» — в демо переходим без ввода кода.
+            </p>
+            <input
+              className="mt-4 w-full rounded-lg border border-neutral-200 px-3 py-3 text-base"
+              placeholder="+7 (___) ___-__-__"
+              inputMode="tel"
+              autoComplete="tel"
+              value={phoneDraft}
+              onChange={(e) => setPhoneDraft(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={!phoneHasMinDigits(phoneDraft)}
+              onClick={confirmRecipientFromGate}
+              className="mt-3 w-full rounded-lg bg-black py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-40"
+            >
+              Получить смс с кодом
+            </button>
+            <button
+              type="button"
+              onClick={() => setPhoneGateOpen(false)}
+              className="mt-2 w-full rounded-lg border border-neutral-200 py-2.5 text-sm text-neutral-700"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );

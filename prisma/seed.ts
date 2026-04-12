@@ -4,7 +4,7 @@ import { defaultDisclaimerRows } from "../lib/disclaimers";
 const prisma = new PrismaClient();
 
 /** Локальный плейсхолдер — не зависит от внешних CDN (picsum / GJ могут быть недоступны из сети) */
-const IMG = (_n: number) => "/product-placeholder.svg";
+const IMG = () => "/product-placeholder.svg";
 
 async function main() {
   /** Одним запросом: на Supabase pooler цепочка deleteMany() часто даёт P1017 (соединение рвётся). */
@@ -77,7 +77,7 @@ async function main() {
         name: "Футболка базовая",
         sku: "TSH-001",
         price: 999,
-        image: IMG(1),
+        image: IMG(),
         isActive: true,
       },
     }),
@@ -87,7 +87,7 @@ async function main() {
         name: "Джинсы slim",
         sku: "JNS-002",
         price: 3499,
-        image: IMG(2),
+        image: IMG(),
         isActive: true,
       },
     }),
@@ -97,7 +97,7 @@ async function main() {
         name: "Куртка демисезон",
         sku: "JKT-003",
         price: 5999,
-        image: IMG(3),
+        image: IMG(),
         isActive: true,
       },
     }),
@@ -107,7 +107,7 @@ async function main() {
         name: "Кроссовки",
         sku: "SNK-004",
         price: 4299,
-        image: IMG(4),
+        image: IMG(),
         isActive: true,
       },
     }),
@@ -117,7 +117,7 @@ async function main() {
         name: "Платье",
         sku: "DRS-005",
         price: 2799,
-        image: IMG(5),
+        image: IMG(),
         isActive: true,
       },
     }),
