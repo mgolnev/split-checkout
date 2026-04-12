@@ -14,6 +14,7 @@ import {
   saveCheckoutRecipient,
   type CheckoutRecipientPayload,
 } from "@/lib/checkout-recipient-storage";
+import { commonDisclaimer } from "@/lib/disclaimers";
 import type { AlternativeMethodOption, CartLine, RemainderResolution, ScenarioPart, ScenarioResult } from "@/lib/types";
 
 const DEMO_RECIPIENT_FULL_NAME = "Петрова-Водкина Елизавета Валерьяновна";
@@ -132,7 +133,7 @@ function checkoutPaymentMethodLabel(method: CheckoutPaymentMethod): string {
   const labels: Record<CheckoutPaymentMethod, string> = {
     sbp: "СБП",
     card: "Банковской картой онлайн",
-    on_receipt: "При получении",
+    on_receipt: "При получении (картой или наличными)",
   };
   return labels[method];
 }
@@ -141,6 +142,25 @@ const MOCK_DATES = ["Завтра, 9 апр.", "10 апр.", "11 апр.", "12 �
 const MOCK_SLOTS = ["9:00–12:00", "12:00–15:00", "15:00–18:00"];
 /** В шапке карточки курьерской доставки — перевозчик, а не склад/магазин отгрузки */
 const COURIER_CARRIER_LABEL = "СДЭК";
+
+function stripStoreNameForCaption(name: string) {
+  return name.replace(/^\s*Магазин\s+/i, "").trim() || name;
+}
+
+function stripWarehouseNameForCaption(name: string) {
+  return name.replace(/^\s*Склад\s+/i, "").trim() || name;
+}
+
+/** Откуда едет курьерская посылка — чтобы различать два одинаковых «СДЭК» при сплите. */
+function courierOriginCaption(part: ScenarioPart): string {
+  if (part.mode !== "courier") return "";
+  const raw = part.sourceName.trim();
+  if (part.sourceType === "warehouse") {
+    return raw ? `Со склада · ${stripWarehouseNameForCaption(raw)}` : "Со склада";
+  }
+  const place = raw ? stripStoreNameForCaption(raw) : "магазина";
+  return `Из магазина «${place}»`;
+}
 /** Самовывоз GJ: в заголовке — срок готовности, а не название точки отгрузки */
 const PICKUP_RESERVE_TITLE = "Соберём за 30 минут";
 const PICKUP_COLLECT_TITLE = "Доставим в магазин";
@@ -231,6 +251,11 @@ function methodSummaryLabel(
   if (!summary.hasSplit) return "";
   if (summary.availableUnits <= 0) return `0 из ${summary.totalUnits} товаров`;
   return `${summary.availableUnits} из ${summary.totalUnits} товаров`;
+}
+
+function optionCoverageLabel(summary?: MethodSummary) {
+  if (!summary || summary.totalUnits <= 0) return "Нет данных";
+  return `${summary.availableUnits} из ${summary.totalUnits} ${pluralizeProducts(summary.totalUnits)}`;
 }
 
 function pickupStoreRank(summary?: PickupStoreSummary) {
@@ -337,73 +362,6 @@ function pvzPointTone(summary?: MethodSummary) {
     marker: "border-amber-500 bg-amber-500 text-white",
     accent: "bg-amber-100 text-amber-800",
     card: "border-amber-200 bg-amber-50/60",
-  };
-}
-
-/** Подсказка до выбора вкладки: что логичнее открыть первым (курьер / магазины / ПВЗ), без дублирования табов. */
-function getDeliveryGuidance(
-  summaries: Bootstrap["methodSummaryByCity"][string] | undefined,
-): { badge: "Рекомендуем" | null; lines: string[] } | null {
-  if (!summaries) return null;
-  const { courier, pickup, pvz } = summaries;
-  const total = Math.max(courier.totalUnits, pickup.totalUnits, pvz.totalUnits);
-  if (total <= 0) return null;
-
-  const courierFullSingle = courier.availableUnits >= total && !courier.hasSplit;
-  const storeVaries = pickup.fullStoreCount > 0 || pickup.hasSplit;
-  const pvzClosed = total > 0 && pvz.availableUnits <= 0;
-  const pvzOnlyPart = pvz.availableUnits > 0 && pvz.availableUnits < total;
-
-  if (courierFullSingle) {
-    const lines = [
-      "Удобнее начать с доставки курьером: всё, что вы выбрали, можно получить одной посылкой.",
-    ];
-    if (storeVaries) {
-      lines.push(
-        "Забрать сами? Зайдите в «Магазины GJ» — в разных точках состав может отличаться, подскажет карта. Пункт выдачи подойдёт, если вам так удобнее.",
-      );
-    } else {
-      lines.push(
-        "Если курьер не нужен — загляните в «Магазины GJ» или «ПВЗ»: там будут свои сроки и то, что реально можно выдать этим способом.",
-      );
-    }
-    return { badge: "Рекомендуем", lines };
-  }
-
-  if (pvzClosed) {
-    return {
-      badge: null,
-      lines: [
-        "Пункт выдачи сейчас не подойдёт под весь заказ — так устроена наша логистика. Зато курьер или самовывоз из магазина помогут взять всё разом.",
-      ],
-    };
-  }
-
-  if (pvzOnlyPart) {
-    return {
-      badge: null,
-      lines: [
-        "Хотите забрать весь заказ без разбивки? Посмотрите сначала курьера или самовывоз из магазина.",
-        "Пункт выдачи оставьте на потом, если вам ок получить здесь только часть покупки — остальное можно добрать иначе.",
-      ],
-    };
-  }
-
-  if (storeVaries) {
-    return {
-      badge: null,
-      lines: [
-        "В магазинах на карте запасы разные — загляните в «Магазины GJ» и выберите точку, которая вам ближе по составу.",
-        "Нужен один понятный вариант без перебора точек — чаще проще курьер. Пункт выдачи — если хочется забрать не дома и вас устраивает, как мы это соберём.",
-      ],
-    };
-  }
-
-  return {
-    badge: null,
-    lines: [
-      "Выберите способ выше — курьер, магазин или пункт выдачи. Мы покажем, что войдёт в доставку и когда это можно забрать.",
-    ],
   };
 }
 
@@ -1531,7 +1489,7 @@ function PartCard({
       : part.mode === "click_collect"
         ? PICKUP_COLLECT_TITLE
         : part.sourceName;
-  /** В шапке курьера окно доставки — только в свёртке; в развёрнутом виде даты в чипах */
+  /** Под миниатюрами: окно доставки только в свёртке; в развёрнутом виде даты в чипах */
   const showCourierSlotInHeader = isCourier && !expanded && Boolean(leadLabel);
 
   return (
@@ -1579,9 +1537,7 @@ function PartCard({
           ) : isCourier ? (
             <div className="min-w-0">
               <p className="text-sm font-semibold leading-snug text-neutral-900">{COURIER_CARRIER_LABEL}</p>
-              {showCourierSlotInHeader ? (
-                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">{leadLabel}</p>
-              ) : null}
+              <p className="mt-0.5 text-xs font-normal leading-snug text-neutral-600">{courierOriginCaption(part)}</p>
               <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--gj-muted)]">курьер</p>
             </div>
           ) : isPvz ? (
@@ -1626,9 +1582,40 @@ function PartCard({
             ) : null}
           </div>
 
+          {showCourierSlotInHeader ? (
+            collapsible ? (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                aria-expanded={expanded}
+                title="Выбрать дату и время доставки"
+                className="mt-3 flex w-full max-w-full items-center justify-between gap-2 py-1 text-left text-sm font-semibold leading-snug text-neutral-900 transition active:opacity-90 hover:opacity-90"
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="min-w-0">{leadLabel}</span>
+                  <svg
+                    className="h-4 w-4 shrink-0 text-neutral-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </span>
+                <span className="shrink-0 text-xs font-medium text-neutral-600">Изменить</span>
+              </button>
+            ) : (
+              <p className="mt-3 text-sm font-semibold leading-snug text-neutral-900">{leadLabel}</p>
+            )
+          ) : null}
+
           <div className="mt-3 flex w-full items-baseline justify-between gap-3">
             <span className="text-base font-semibold tabular-nums text-neutral-900">{fmt(sub + ship)}</span>
-            {collapsible ? (
+            {collapsible && !(isCourier && showCourierSlotInHeader) ? (
               <button
                 type="button"
                 onClick={onToggleExpand}
@@ -2240,14 +2227,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     ? methodSummariesForUi?.pvz
     : boot?.methodSummaryByCity[cityId]?.pvz;
 
-  const deliveryGuide = useMemo(() => {
-    if (!boot || !cityId) return null;
-    if (cartDetail?.lines?.length) {
-      if (!methodSummariesForUi) return null;
-      return getDeliveryGuidance(methodSummariesForUi);
-    }
-    return getDeliveryGuidance(boot.methodSummaryByCity[cityId]);
-  }, [boot, cityId, cartDetail?.lines?.length, methodSummariesForUi]);
+  const recommendedMethodCode = useMemo<DeliveryMethodCode | null>(() => {
+    const full = deliveryOptions.filter((option) => {
+      if (!option.enabled || !option.summary || option.summary.totalUnits <= 0) return false;
+      return option.summary.availableUnits >= option.summary.totalUnits;
+    });
+    if (full.length !== 1) return null;
+    return full[0]!.code as DeliveryMethodCode;
+  }, [deliveryOptions]);
 
   useEffect(() => {
     if (method && !availableMethods.some((m) => m.code === method)) {
@@ -2336,6 +2323,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [allDisplayParts, included, promoFactor]);
 
   const payOnDeliveryOnlyEffective = includedParts.length > 1;
+
+  const payOnDeliveryDisclaimerText = useMemo(() => commonDisclaimer("payOnDeliveryOnly"), []);
+
+  const scenarioInformersForBanner = useMemo(() => {
+    if (!scenario?.informers?.length) return [];
+    if (!payOnDeliveryOnlyEffective) return scenario.informers;
+    return scenario.informers.filter((t) => t.trim() !== payOnDeliveryDisclaimerText.trim());
+  }, [scenario?.informers, payOnDeliveryOnlyEffective, payOnDeliveryDisclaimerText]);
 
   useEffect(() => {
     if (payOnDeliveryOnlyEffective) {
@@ -2769,10 +2764,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </div>
           </div>
           {/* Горизонтальные вкладки */}
-          <div className="flex gap-3">
+          <div className="flex items-stretch gap-3">
             {deliveryOptions.map((dm) => {
               const tabName = dm.code === "pickup" ? "Магазины GJ" : dm.name;
               const isSelected = method === dm.code;
+              const isRecommended = recommendedMethodCode === dm.code;
+              const coverage = optionCoverageLabel(dm.summary);
               const mutedPvz =
                 dm.code === "pvz" &&
                 "pvzUnavailableForOrder" in dm &&
@@ -2793,33 +2790,33 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     if (dm.code === "pickup") setPickupSelectorOpen(true);
                     if (dm.code === "pvz") setPvzSelectorOpen(true);
                   }}
-                  className={`flex-1 rounded-xl border py-3 text-sm font-semibold transition ${
+                  className={`flex min-h-[75px] flex-1 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition ${
                     isSelected
                       ? "border-black bg-black text-white"
                       : dm.enabled
-                        ? "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
+                        ? "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
                         : mutedPvz
                           ? "cursor-not-allowed border-amber-200/90 bg-amber-50/80 text-amber-900/80 opacity-95"
                           : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
                   }`}
                 >
-                  {tabName}
+                  <span className="text-xs font-semibold leading-tight">{tabName}</span>
+                  <p className={`text-[11px] leading-tight ${isSelected ? "text-white/95" : "text-neutral-800"}`}>
+                    {coverage}
+                  </p>
+                  {isRecommended ? (
+                    <span
+                      className={`inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                        isSelected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      Рекомендуем
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
-          {deliveryOptions.some(
-            (d) =>
-              d.code === "pvz" &&
-              "pvzUnavailableForOrder" in d &&
-              (d as { pvzUnavailableForOrder?: boolean }).pvzUnavailableForOrder,
-          ) ? (
-            <p className="mt-2 rounded-lg border border-amber-100 bg-amber-50/90 px-3 py-2 text-xs leading-snug text-amber-950/85">
-              ПВЗ недоступен для текущего набора: отгрузка в пункт только со склада, под этот заказ остатка нет. Оформите{" "}
-              <span className="font-medium">курьером</span> или{" "}
-              <span className="font-medium">самовывозом из магазина</span>.
-            </p>
-          ) : null}
           {deliveryOptions.length === 0 ? (
             <p className="mt-2 text-xs text-neutral-500">
               Для выбранного города нет доступных способов получения по логистическим правилам.
@@ -2916,45 +2913,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : null}
         </section>
 
-        {!method ? (
-          <div className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4 text-neutral-500">
-            {deliveryGuide && deliveryGuide.lines.length > 0 ? (
-              <div className="space-y-2">
-                {deliveryGuide.badge ? (
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
-                    {deliveryGuide.badge}
-                  </p>
-                ) : null}
-                {deliveryGuide.lines.map((line, i) => (
-                  <p
-                    key={i}
-                    className={
-                      i === 0
-                        ? "text-sm leading-snug text-neutral-800"
-                        : "mt-1.5 text-xs leading-snug text-neutral-600"
-                    }
-                  >
-                    {line}
-                  </p>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm leading-snug text-neutral-600">
-                Сначала выберите способ получения — от этого зависят сроки и то, как мы соберём заказ.
-              </p>
-            )}
-          </div>
-        ) : null}
-
         {method === "courier" && !courierAddress.trim() ? (
           <div className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
             Для курьерской доставки нужен адрес. После ввода покажем доступные отправления.
           </div>
         ) : null}
 
-        {!showScenarioSkeleton && scenario?.informers?.length ? (
+        {!showScenarioSkeleton && scenarioInformersForBanner.length ? (
           <div className="mb-4 space-y-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-950">
-            {scenario.informers.map((t, i) => (
+            {scenarioInformersForBanner.map((t, i) => (
               <p key={i}>{t}</p>
             ))}
           </div>
@@ -3270,6 +3237,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               );
             })}
           </div>
+          {payOnDeliveryOnlyEffective ? (
+            <p className="mt-3 text-xs leading-snug text-neutral-600">{payOnDeliveryDisclaimerText}</p>
+          ) : null}
         </section>
 
         <section className="mb-6 flex flex-wrap gap-2 border-t border-neutral-100 pt-4">

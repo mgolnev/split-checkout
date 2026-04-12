@@ -39,7 +39,7 @@ function paymentMethodLabel(m: CheckoutPaymentMethod): string {
   const labels: Record<CheckoutPaymentMethod, string> = {
     sbp: "СБП",
     card: "Банковской картой онлайн",
-    on_receipt: "При получении",
+    on_receipt: "При получении (картой или наличными)",
   };
   return labels[m];
 }
