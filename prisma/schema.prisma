@@ -75,6 +75,12 @@ model ShippingRule {
   storePickupHoldDays   Int            @default(3)
   clickCollectHoldDays  Int            @default(8)
   pvzHoldDays           Int            @default(5)
+  /// Мин. число календарных дней от «сегодня» до готовности в ПВЗ (заголовок в чекауте).
+  pvzDeliveryMinDays    Int            @default(3)
+  /// Макс. число календарных дней (диапазон с min; при min=max — одна дата).
+  pvzDeliveryMaxDays    Int            @default(5)
+  /// Если задана — показываем только эту дату в заголовке ПВЗ, без расчёта от сегодня.
+  pvzReadyFixedAt       DateTime?      @db.Date
   leadTimeDays          Int            @default(1)
   leadTimeLabel         String         @default("")
   requiresPrepayment    Boolean        @default(false)

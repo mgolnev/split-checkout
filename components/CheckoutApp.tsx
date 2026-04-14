@@ -1858,8 +1858,8 @@ function PartCard({
       : part.mode === "click_collect"
         ? PICKUP_COLLECT_TITLE
         : part.sourceName;
-  /** Под миниатюрами: окно доставки только в свёртке; в развёрнутом виде даты в чипах */
-  const showCourierSlotInHeader = isCourier && !expanded && Boolean(leadLabel);
+  /** Строка даты/окна курьера: «Изменить» открывает слоты, «Свернуть» закрывает (без отдельной кнопки у суммы). */
+  const showCourierDeliveryRow = isCourier && Boolean(leadLabel);
 
   return (
     <div
@@ -1972,19 +1972,19 @@ function PartCard({
             ) : null}
           </div>
 
-          {showCourierSlotInHeader ? (
+          {showCourierDeliveryRow ? (
             collapsible ? (
               <button
                 type="button"
                 onClick={onToggleExpand}
                 aria-expanded={expanded}
-                title="Выбрать дату и время доставки"
+                title={expanded ? "Свернуть выбор времени" : "Выбрать дату и время доставки"}
                 className="mt-3 flex w-full max-w-full items-center justify-between gap-2 py-1 text-left text-sm font-semibold leading-snug text-neutral-900 transition active:opacity-90 hover:opacity-90"
               >
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="min-w-0">{leadLabel}</span>
                   <svg
-                    className="h-4 w-4 shrink-0 text-neutral-500"
+                    className={`h-4 w-4 shrink-0 text-neutral-500 transition ${expanded ? "rotate-180" : ""}`}
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -1996,24 +1996,17 @@ function PartCard({
                     <path d="M6 9l6 6 6-6" />
                   </svg>
                 </span>
-                <span className="shrink-0 text-xs font-medium text-neutral-600">Изменить</span>
+                <span className="shrink-0 text-xs font-medium text-neutral-600">
+                  {expanded ? "Свернуть" : "Изменить"}
+                </span>
               </button>
             ) : (
               <p className="mt-3 text-sm font-semibold leading-snug text-neutral-900">{leadLabel}</p>
             )
           ) : null}
 
-          <div className="mt-3 flex w-full items-baseline justify-between gap-3">
+          <div className="mt-3">
             <span className="text-base font-semibold tabular-nums text-neutral-900">{fmt(sub + ship)}</span>
-            {collapsible && !(isCourier && showCourierSlotInHeader) ? (
-              <button
-                type="button"
-                onClick={onToggleExpand}
-                className="shrink-0 text-xs font-medium text-neutral-500 underline decoration-neutral-300 underline-offset-2"
-              >
-                {expanded ? "Свернуть" : "Подробнее"}
-              </button>
-            ) : null}
           </div>
           {expanded && isCourier ? (
             <div className="mt-3 space-y-2">
@@ -2047,25 +2040,8 @@ function PartCard({
               </div>
             </div>
           ) : null}
-          {expanded && showRemainderHint && remainderKeepHint ? (
+          {showRemainderHint && remainderKeepHint ? (
             <p className="mt-2 text-xs text-neutral-500">{remainderKeepHint}</p>
-          ) : null}
-          {expanded ? (
-            <>
-              <div className="mt-3 space-y-1 text-xs text-neutral-500">
-                <div className="flex justify-between gap-3">
-                  <span>Товары</span>
-                  <span>{fmt(sub)}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span>Доставка</span>
-                  <span>{ship > 0 ? fmt(ship) : "Бесплатно"}</span>
-                </div>
-                {ship > 0 && part.freeDeliveryThreshold > 0 ? (
-                  <p>Бесплатная доставка от {fmt(part.freeDeliveryThreshold)}</p>
-                ) : null}
-              </div>
-            </>
           ) : null}
         </div>
       </div>
@@ -3169,12 +3145,27 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
   /** Счётчик «В заказе X из Y» при разбиении на части / остатке — одинаково для магазина, ПВЗ и курьера */
   const showOrderUnitsCountBadge = hasSplit && units > 0;
-  /** Нумерация только среди включённых в заказ отправлений (снятое с галочки не занимает номер). */
+  /**
+   * Стабильная нумерация «Отправление N» по порядку в сценарии среди видимых карточек.
+   * Снятие галочки не сдвигает номера и не убирает подпись у соседних блоков (иначе UI прыгает).
+   * Вторичные сценарии нумеруются отдельно внутри каждого блока добора.
+   */
   const shipmentOrdinalForPartKey = (key: string) => {
-    const includedOrdered = allDisplayParts.filter((p) => included[p.key] !== false);
-    if (includedOrdered.length <= 1) return undefined;
-    const ix = includedOrdered.findIndex((p) => p.key === key);
-    return ix >= 0 ? ix + 1 : undefined;
+    const primaryVisible = (scenario?.parts ?? []).filter(
+      (p) => !primaryPartKeysSupersededBySecondary.has(p.key),
+    );
+    const pi = primaryVisible.findIndex((p) => p.key === key);
+    if (pi >= 0) {
+      return primaryVisible.length > 1 ? pi + 1 : undefined;
+    }
+    for (const sel of secondaryDisplaySelections) {
+      const parts = sel.parts;
+      const si = parts.findIndex((p) => p.key === key);
+      if (si >= 0) {
+        return parts.length > 1 ? si + 1 : undefined;
+      }
+    }
+    return undefined;
   };
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
   const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
@@ -3782,39 +3773,35 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <section className="mb-6 space-y-3 border-t border-neutral-100 pt-4">
           <div className="flex w-full items-stretch gap-2 rounded-xl bg-neutral-100 p-1.5 pl-3">
             <input
-              className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
+              type="search"
+              name="promo"
+              autoComplete="off"
+              enterKeyHint="done"
+              aria-label="Промокод"
+              className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-sm uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
               placeholder="Промокод"
               value={promo}
               onChange={(e) => {
                 const next = e.target.value;
                 setPromo(next);
-                if (promoApplied && next.trim().toUpperCase() !== "APP20") {
+                if (!next.trim()) {
+                  setPromoApplied(false);
+                } else if (promoApplied && next.trim().toUpperCase() !== "APP20") {
                   setPromoApplied(false);
                 }
               }}
               disabled={bonusOn}
             />
-            {promoApplied && !bonusOn ? (
+            {promo.trim().length > 0 && !promoApplied ? (
               <button
                 type="button"
-                aria-label="Убрать промокод"
-                className="shrink-0 rounded-lg border border-neutral-900 bg-white px-2.5 py-2 text-sm font-semibold text-neutral-900"
-                onClick={() => {
-                  setPromo("");
-                  setPromoApplied(false);
-                }}
+                className="shrink-0 rounded-lg bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-sm"
+                onClick={handlePromo}
+                disabled={bonusOn}
               >
-                ×
+                Применить
               </button>
             ) : null}
-            <button
-              type="button"
-              className="shrink-0 rounded-lg bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-sm"
-              onClick={handlePromo}
-              disabled={bonusOn}
-            >
-              Добавить
-            </button>
           </div>
           {promoApplied ? <p className="text-xs text-emerald-700">Применён промокод APP20 (−20%)</p> : null}
           {recipient ? (

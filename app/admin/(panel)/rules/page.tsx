@@ -52,6 +52,47 @@ function RuleFlags({
   );
 }
 
+function PvzDeliveryWindowFields({
+  defaults,
+}: {
+  defaults?: {
+    pvzDeliveryMinDays?: number;
+    pvzDeliveryMaxDays?: number;
+    pvzReadyFixedAt?: Date | null;
+  };
+}) {
+  const min = defaults?.pvzDeliveryMinDays ?? 3;
+  const max = defaults?.pvzDeliveryMaxDays ?? 5;
+  const fixedAt = defaults?.pvzReadyFixedAt;
+  const fixedValue =
+    fixedAt instanceof Date && !Number.isNaN(fixedAt.getTime()) ? fixedAt.toISOString().slice(0, 10) : "";
+
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200/80 bg-slate-50/90 p-3">
+      <p className="text-xs font-semibold text-slate-700">ПВЗ: срок готовности к выдаче</p>
+      <p className="text-[11px] leading-snug text-slate-600">
+        В чекауте показывается заголовок «Доставим в пункт выдачи …» с датами. Интервал считается от сегодня по
+        календарю (Москва). Если указана фиксированная дата — показываем только её (без расчёта от «сегодня»).
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="space-y-1">
+          <span className="text-xs text-slate-600">Мин. дней от сегодня</span>
+          <input name="pvzDeliveryMinDays" type="number" min={1} defaultValue={min} className="w-full" />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs text-slate-600">Макс. дней от сегодня</span>
+          <input name="pvzDeliveryMaxDays" type="number" min={1} defaultValue={max} className="w-full" />
+        </label>
+      </div>
+      <label className="block space-y-1">
+        <span className="text-xs text-slate-600">Фиксированная дата готовности (необязательно)</span>
+        <input name="pvzReadyFixedAt" type="date" defaultValue={fixedValue} className="w-full max-w-xs" />
+        <span className="block text-[10px] text-slate-500">Очистите поле, чтобы снова использовать интервал дней.</span>
+      </label>
+    </div>
+  );
+}
+
 function HoldDaysFields({
   defaults,
 }: {
@@ -158,6 +199,8 @@ export default async function AdminRulesPage() {
 
         <HoldDaysFields />
 
+        <PvzDeliveryWindowFields />
+
         <RuleFlags />
 
         <AdminSubmitButton variant="primary" className="w-full" pendingLabel="Добавляем правило…">
@@ -219,6 +262,14 @@ export default async function AdminRulesPage() {
                   storePickupHoldDays: r.storePickupHoldDays,
                   clickCollectHoldDays: r.clickCollectHoldDays,
                   pvzHoldDays: r.pvzHoldDays,
+                }}
+              />
+
+              <PvzDeliveryWindowFields
+                defaults={{
+                  pvzDeliveryMinDays: r.pvzDeliveryMinDays,
+                  pvzDeliveryMaxDays: r.pvzDeliveryMaxDays,
+                  pvzReadyFixedAt: r.pvzReadyFixedAt,
                 }}
               />
 

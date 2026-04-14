@@ -179,4 +179,26 @@ body {
   .checkout-ui .cu-total-final-row {
     @apply flex justify-between text-sm font-semibold tabular-nums text-neutral-900;
   }
+
+  /**
+   * Промокод: type="search" — встроенная кнопка очистки (WebKit/Chromium; в Firefox — с поддержкой ::search-cancel-button).
+   * Убираем оформление «поля поиска» у полосы, сам крестик остаётся нативным.
+   */
+  .checkout-ui input.cu-promo-input[type="search"] {
+    appearance: none;
+  }
+  .checkout-ui input.cu-promo-input[type="search"]::-webkit-search-cancel-button {
+    cursor: pointer;
+    opacity: 0.55;
+  }
+  .checkout-ui input.cu-promo-input[type="search"]::-webkit-search-cancel-button:hover {
+    opacity: 0.95;
+  }
+  .checkout-ui input.cu-promo-input[type="search"]::-search-cancel-button {
+    cursor: pointer;
+    opacity: 0.55;
+  }
+  .checkout-ui input.cu-promo-input[type="search"]::-search-cancel-button:hover {
+    opacity: 0.95;
+  }
 }

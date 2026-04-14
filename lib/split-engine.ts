@@ -11,6 +11,7 @@ import {
   systemDisclaimer,
 } from "./disclaimers";
 import type { DisclaimerTextMap } from "./disclaimers";
+import { buildPvzDeliveryHeadline } from "./pvz-delivery-headline";
 
 type ProductRow = {
   id: string;
@@ -38,6 +39,9 @@ type RuleRow = {
   storePickupHoldDays: number;
   clickCollectHoldDays: number;
   pvzHoldDays: number;
+  pvzDeliveryMinDays?: number;
+  pvzDeliveryMaxDays?: number;
+  pvzReadyFixedAt?: Date | null;
   leadTimeDays: number;
   leadTimeLabel: string;
   deliveryPrice: number;
@@ -813,7 +817,13 @@ function pvzScenario(ctx: EngineInput): ScenarioResult {
   const take = allocateFromSource(need, wh.id, stock);
   const remainder = subtractLines(need, take).remaining;
 
-  const part = buildPart("pvz_wh", wh, "pvz", take, products, rule, rule.leadTimeLabel || "Дата уточняется при выборе ПВЗ");
+  const r = rule!;
+  const pvzLead = buildPvzDeliveryHeadline({
+    pvzDeliveryMinDays: r.pvzDeliveryMinDays ?? 3,
+    pvzDeliveryMaxDays: r.pvzDeliveryMaxDays ?? 5,
+    pvzReadyFixedAt: r.pvzReadyFixedAt ?? null,
+  });
+  const part = buildPart("pvz_wh", wh, "pvz", take, products, rule, pvzLead);
   const parts = part ? [part] : [];
 
   if (remainder.length > 0) {

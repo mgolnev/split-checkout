@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { computeScenario } from "../lib/split-engine";
+import { buildPvzDeliveryHeadline } from "../lib/pvz-delivery-headline";
 
 type Inv = {
   productId: string;
@@ -158,6 +159,21 @@ function main() {
     ["wh", "s1", "s2", "s3"],
   );
   assert.equal(c6.remainder.length, 0);
+
+  assert.equal(
+    buildPvzDeliveryHeadline(
+      { pvzDeliveryMinDays: 3, pvzDeliveryMaxDays: 5, pvzReadyFixedAt: null },
+      new Date("2026-04-11T12:00:00+03:00"),
+    ),
+    "Доставим в пункт выдачи 14–16 апреля",
+  );
+  assert.equal(
+    buildPvzDeliveryHeadline(
+      { pvzDeliveryMinDays: 5, pvzDeliveryMaxDays: 5, pvzReadyFixedAt: null },
+      new Date("2026-04-11T12:00:00+03:00"),
+    ),
+    "Доставим в пункт выдачи 16 апреля",
+  );
 
   console.log("Split engine checks passed.");
 }

@@ -124,6 +124,22 @@ const toInt = (v: FormDataEntryValue | null, fallback = 0) => {
   return Number.isFinite(n) ? Math.round(n) : fallback;
 };
 
+/** Окно готовности в ПВЗ: дни от «сегодня» (Москва) или фиксированная дата в заголовке чекаута. */
+function parsePvzDeliveryWindow(formData: FormData) {
+  const min = Math.max(1, toInt(formData.get("pvzDeliveryMinDays"), 3));
+  let max = Math.max(1, toInt(formData.get("pvzDeliveryMaxDays"), 5));
+  if (max < min) max = min;
+  const rawFixed = String(formData.get("pvzReadyFixedAt") ?? "").trim();
+  let pvzReadyFixedAt: Date | null = null;
+  if (rawFixed) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawFixed);
+    if (m) {
+      pvzReadyFixedAt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    }
+  }
+  return { pvzDeliveryMinDays: min, pvzDeliveryMaxDays: max, pvzReadyFixedAt };
+}
+
 /** Карточка товара (название, SKU, цена, картинка, активность) + остатки по всем источникам — одна форма. */
 export async function saveProductFull(formData: FormData) {
   await gate();
@@ -389,6 +405,7 @@ export async function createRule(formData: FormData) {
       storePickupHoldDays: Math.max(1, toInt(formData.get("storePickupHoldDays"), 3)),
       clickCollectHoldDays: Math.max(1, toInt(formData.get("clickCollectHoldDays"), 8)),
       pvzHoldDays: Math.max(1, toInt(formData.get("pvzHoldDays"), 5)),
+      ...parsePvzDeliveryWindow(formData),
       leadTimeDays: toInt(formData.get("leadTimeDays"), 1),
       leadTimeLabel: String(formData.get("leadTimeLabel") ?? "").trim(),
       requiresPrepayment: toBool(formData.get("requiresPrepayment")),
@@ -453,6 +470,7 @@ export async function updateRule(formData: FormData) {
       storePickupHoldDays: Math.max(1, toInt(formData.get("storePickupHoldDays"), 3)),
       clickCollectHoldDays: Math.max(1, toInt(formData.get("clickCollectHoldDays"), 8)),
       pvzHoldDays: Math.max(1, toInt(formData.get("pvzHoldDays"), 5)),
+      ...parsePvzDeliveryWindow(formData),
       leadTimeDays: toInt(formData.get("leadTimeDays"), 1),
       leadTimeLabel: String(formData.get("leadTimeLabel") ?? "").trim(),
       requiresPrepayment: toBool(formData.get("requiresPrepayment")),
