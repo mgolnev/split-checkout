@@ -1148,7 +1148,7 @@ function CourierAddressModal({
         role="dialog"
         aria-modal="true"
         aria-label="Куда доставить"
-        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-3xl"
+        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
       >
         <div className="relative flex h-11 shrink-0 items-center justify-center border-b border-neutral-100 px-3">
           <button
@@ -1164,12 +1164,12 @@ function CourierAddressModal({
           <h2 className="cu-section-title pointer-events-none px-10 text-center">Куда доставить</h2>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-none sm:max-h-[min(85vh,36rem)]">
           <div
             className={
               showSelectAddressCta && layoutNarrow
                 ? "flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-2 pb-[5.75rem]"
-                : "flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-2"
+                : "flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-2 sm:flex-none sm:overflow-y-auto"
             }
           >
             <form
@@ -1212,7 +1212,7 @@ function CourierAddressModal({
               <div
                 role="listbox"
                 aria-label="Подсказки адреса"
-                className="mt-2 min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain"
+                className="mt-2 min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain sm:max-h-[min(50vh,20rem)] sm:flex-none sm:basis-auto"
               >
                 {hints.map((addr) => (
                   <AddressSuggestRow
@@ -1567,7 +1567,7 @@ function SplitSelectionModal({
         role="dialog"
         aria-modal="true"
         aria-label="Выберите способ получения"
-        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-3xl"
+        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
       >
         <div className="shrink-0 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
           <div className="flex items-start justify-between gap-3">
@@ -1584,7 +1584,7 @@ function SplitSelectionModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:px-5 sm:pb-4 sm:pt-3">
+        <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:max-h-[calc(90vh-10rem)] sm:flex-none sm:basis-auto sm:px-5 sm:pb-4 sm:pt-3">
         <div className="rounded-xl bg-neutral-50 p-3">
           <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
         </div>
@@ -1729,7 +1729,7 @@ function SplitSelectionModal({
             role="dialog"
             aria-modal="true"
             aria-label="Выберите магазин"
-            className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-3xl"
+            className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
           >
             <div className="shrink-0 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
               <div className="flex items-start justify-between gap-3">
@@ -1749,7 +1749,7 @@ function SplitSelectionModal({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
+            <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:max-h-[calc(90vh-10rem)] sm:flex-none sm:basis-auto sm:px-5 sm:pb-5">
             <input
               type="text"
               value={pickupSearch}
@@ -2848,6 +2848,39 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     return [...map.values()].filter((r) => r.quantity > 0);
   }, [allDisplayParts, included, secondarySelections]);
 
+  /**
+   * Первичное отправление снято с галочки, но те же строки уже оформлены вторичным блоком —
+   * карточку скрываем, иначе можно снова включить и задвоить позиции в заказе.
+   */
+  const primaryPartKeysSupersededBySecondary = useMemo(() => {
+    const parts = scenario?.parts;
+    if (!parts?.length || !secondarySelections.length) return new Set<string>();
+
+    const pool = new Map<string, number>();
+    for (const sel of secondarySelections) {
+      for (const line of sel.inputLines) {
+        pool.set(line.productId, (pool.get(line.productId) ?? 0) + line.quantity);
+      }
+    }
+    const poolMut = new Map(pool);
+    const hidden = new Set<string>();
+
+    for (const part of parts) {
+      if (included[part.key] !== false) continue;
+      let ok = true;
+      for (const item of part.items) {
+        const have = poolMut.get(item.productId) ?? 0;
+        if (have < item.quantity) {
+          ok = false;
+          break;
+        }
+        poolMut.set(item.productId, have - item.quantity);
+      }
+      if (ok) hidden.add(part.key);
+    }
+    return hidden;
+  }, [scenario?.parts, secondarySelections, included]);
+
   useEffect(() => {
     if (manualExcludedLines.length === 0) {
       setManualRemainderResolution(null);
@@ -3464,7 +3497,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
             <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
             {renderPrimarySplitContextBar("unified")}
-            {scenario?.parts.map((p, partIndex) => (
+            {(scenario?.parts ?? [])
+              .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
+              .map((p, partIndex) => (
               <PartCard
                 key={p.key}
                 inGroup
@@ -3487,7 +3522,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   }))
                 }
                 showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
-                remainderKeepHint={scenario.remainderKeepHint}
+                remainderKeepHint={scenario?.remainderKeepHint}
                 selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
                 selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
                 onDateChange={(dateIx) =>
@@ -3510,7 +3545,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             {renderPrimarySplitContextBar("stacked")}
 
             <section className="mb-6 space-y-3">
-              {scenario?.parts.map((p, partIndex) => (
+              {(scenario?.parts ?? [])
+                .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
+                .map((p, partIndex) => (
                 <PartCard
                   key={p.key}
                   shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
@@ -3532,7 +3569,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     }))
                   }
                   showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
-                  remainderKeepHint={scenario.remainderKeepHint}
+                  remainderKeepHint={scenario?.remainderKeepHint}
                   selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
                   selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
                   onDateChange={(dateIx) =>
