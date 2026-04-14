@@ -23,6 +23,10 @@ type Ty = {
     promoDiscount: number;
     bonusUsed: number;
   }[];
+  /** Скидка по заказу целиком (раньше могла быть разнесена по частям) */
+  orderPromoDiscount?: number;
+  /** Списание бонусов по заказу целиком */
+  orderBonusUsed?: number;
   total: number;
   payOnDeliveryOnly: boolean;
   method: string;
@@ -84,6 +88,9 @@ export default function ThankYouPage() {
   }
 
   const multi = data.parts.length > 1;
+  const orderPromoDiscount =
+    data.orderPromoDiscount ?? data.parts.reduce((s, p) => s + (p.promoDiscount ?? 0), 0);
+  const orderBonusUsed = data.orderBonusUsed ?? data.parts.reduce((s, p) => s + (p.bonusUsed ?? 0), 0);
 
   return (
     <main className="mx-auto max-w-md px-4 py-12">
@@ -147,9 +154,7 @@ export default function ThankYouPage() {
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-sm font-medium">
-              {fmt(p.subtotal + p.deliveryPrice - p.bonusUsed)}
-            </p>
+            <p className="mt-2 text-sm font-medium">{fmt(p.subtotal + p.deliveryPrice)}</p>
             <div className="mt-1 space-y-1 text-xs text-neutral-500">
               <div className="flex justify-between gap-3">
                 <span>Товары</span>
@@ -163,11 +168,22 @@ export default function ThankYouPage() {
                 <p>Бесплатная доставка от {fmt(p.freeDeliveryThreshold)}</p>
               ) : null}
             </div>
-            {p.promoDiscount > 0 ? <p className="text-xs text-red-600">Скидка: − {fmt(p.promoDiscount)}</p> : null}
-            {p.bonusUsed > 0 ? <p className="text-xs text-red-600">Бонусы: − {fmt(p.bonusUsed)}</p> : null}
           </div>
         ))}
       </section>
+
+      {orderPromoDiscount > 0 ? (
+        <div className="mt-4 flex justify-between text-sm text-red-600">
+          <span>Скидка</span>
+          <span className="tabular-nums">− {fmt(orderPromoDiscount)}</span>
+        </div>
+      ) : null}
+      {orderBonusUsed > 0 ? (
+        <div className="mt-1 flex justify-between text-sm text-red-600">
+          <span>Бонусы</span>
+          <span className="tabular-nums">− {fmt(orderBonusUsed)}</span>
+        </div>
+      ) : null}
 
       <div className="mt-6 flex justify-between border-t border-neutral-200 pt-4 text-base font-semibold">
         <span>Итого</span>

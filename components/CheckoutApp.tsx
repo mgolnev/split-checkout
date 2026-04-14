@@ -15,9 +15,16 @@ import {
   saveCheckoutRecipient,
   type CheckoutRecipientPayload,
 } from "@/lib/checkout-recipient-storage";
-import { commonDisclaimer } from "@/lib/disclaimers";
+import { commonDisclaimer, unresolvedBlockCopy } from "@/lib/disclaimers";
 import type { CartMethodSummariesResult } from "@/lib/cart-method-summaries";
-import type { AlternativeMethodOption, CartLine, RemainderResolution, ScenarioPart, ScenarioResult } from "@/lib/types";
+import type {
+  AlternativeMethodOption,
+  CartLine,
+  RemainderLine,
+  RemainderResolution,
+  ScenarioPart,
+  ScenarioResult,
+} from "@/lib/types";
 
 const DEMO_RECIPIENT_FULL_NAME = "Петрова-Водкина Елизавета Валерьяновна";
 
@@ -26,10 +33,12 @@ function phoneHasMinDigits(value: string, min = 10): boolean {
   return digits.length >= min;
 }
 
+type CheckoutCopy = ReturnType<typeof unresolvedBlockCopy>;
+
 type Bootstrap = {
   cities: { id: string; name: string; hasClickCollect: boolean }[];
   deliveryMethods: { id: string; code: string; name: string }[];
-  products: { id: string; name: string; price: number; image: string; sku: string }[];
+  products: { id: string; name: string; price: number; image: string; sku: string; sizeLabel?: string | null }[];
   storesByCity: Record<string, { id: string; name: string }[]>;
   pvzByCity: Record<
     string,
@@ -61,6 +70,8 @@ type Bootstrap = {
       }
     >
   >;
+  /** Тексты UI чекаута из DisclaimerTemplate (см. common.unresolvedBlock*) */
+  checkoutCopy?: CheckoutCopy;
 };
 
 type MethodSummary = Bootstrap["methodSummaryByCity"][string]["courier"];
@@ -325,12 +336,9 @@ function methodSummaryLabel(
   if (!summary) return "";
   if (summary.totalUnits <= 0) return "";
   if (code === "pickup") {
-    if (summary.fullStoreCount > 0) {
-      return "Доступность по магазинам разная — выберите точку ниже.";
-    }
     if (!summary.hasSplit) return "";
     if (summary.availableUnits <= 0) return `0 из ${summary.totalUnits} товаров`;
-    return `До ${summary.availableUnits} из ${summary.totalUnits} товаров зависит от магазина`;
+    return "";
   }
   if (!summary.hasSplit) return "";
   if (summary.availableUnits <= 0) return `0 из ${summary.totalUnits} товаров`;
@@ -762,9 +770,7 @@ function PickupSelectedStoreCard({
             e.stopPropagation();
             onChange();
           }}
-          className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-medium ${
-            embedded ? "border-neutral-300 bg-white" : "border-neutral-300 bg-white"
-          }`}
+          className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
         >
           Изменить
         </button>
@@ -951,7 +957,7 @@ function PvzSelectedPointCard({
             e.stopPropagation();
             onChange();
           }}
-          className="shrink-0 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium"
+          className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
         >
           Изменить
         </button>
@@ -996,7 +1002,7 @@ function CourierAddressCard({
             e.stopPropagation();
             onChange();
           }}
-          className="shrink-0 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium"
+          className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
         >
           Изменить
         </button>
@@ -1206,7 +1212,7 @@ function CourierAddressModal({
               <div
                 role="listbox"
                 aria-label="Подсказки адреса"
-                className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
+                className="mt-2 min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain"
               >
                 {hints.map((addr) => (
                   <AddressSuggestRow
@@ -1260,14 +1266,66 @@ function CourierAddressModal({
   );
 }
 
+/** Горизонтальный ряд превью 3:4 как в PartCard: без подписи, бейдж количества при ≥ 2 шт. */
+function RemainderLinesThumbStrip({
+  lines,
+  productsById,
+}: {
+  lines: RemainderLine[];
+  productsById: Record<string, Bootstrap["products"][number]>;
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-1">
+      {lines.map((line, lineIx) => {
+        const sizeLabel = productsById[line.productId]?.sizeLabel?.trim();
+        return (
+          <div key={`${line.productId}-${lineIx}`} className="flex w-10 shrink-0 flex-col items-center gap-0.5">
+            <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-neutral-100">
+              <SafeProductImage
+                src={productsById[line.productId]?.image ?? ""}
+                alt=""
+                fill
+                className="object-cover"
+                sizes="40px"
+              />
+              {line.quantity >= 2 ? (
+                <span
+                  className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-[7px] font-semibold leading-none tabular-nums text-white ring-1 ring-white/35"
+                  aria-label={`${line.quantity} шт.`}
+                >
+                  {line.quantity}
+                </span>
+              ) : null}
+            </div>
+            {sizeLabel ? (
+              <span className="w-full text-center text-[10px] font-medium leading-none text-neutral-600">
+                {sizeLabel}
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function UnresolvedItemsBlock({
   resolution,
   productsById,
   onChoose,
+  copy,
+  ctaDisabled,
+  suppressEmptyOptionsHint,
 }: {
   resolution: RemainderResolution;
   productsById: Record<string, Bootstrap["products"][number]>;
   onChoose: () => void;
+  copy: CheckoutCopy;
+  /** Пока грузим варианты доставки для строк */
+  ctaDisabled?: boolean;
+  /** Не показывать плашку «нет способов», пока options ещё не подтянулись */
+  suppressEmptyOptionsHint?: boolean;
 }) {
   const totalUnits = countUnits(resolution.lines);
 
@@ -1275,10 +1333,8 @@ function UnresolvedItemsBlock({
     <div className="rounded-xl border border-neutral-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold">Как получить остальные товары</p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Можно выбрать удобный вариант для этих товаров сейчас или оставить их в корзине.
-          </p>
+          <p className="text-sm font-semibold">{copy.title}</p>
+          <p className="mt-1 text-xs text-neutral-500">{copy.subtitle}</p>
         </div>
         <span className="inline-flex min-w-[2.75rem] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-semibold tabular-nums uppercase text-neutral-600">
           {totalUnits} шт
@@ -1286,30 +1342,9 @@ function UnresolvedItemsBlock({
       </div>
 
       <div className="mt-4 rounded-xl bg-neutral-50 p-3">
-        <p className="text-sm font-semibold">Эти товары пока не вошли в заказ</p>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          {resolution.lines.map((line) => (
-            <div
-              key={line.productId}
-              className="flex min-w-[108px] shrink-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5"
-            >
-              <div className="relative h-10 w-10 overflow-hidden rounded-md bg-neutral-100">
-                <SafeProductImage
-                  src={productsById[line.productId]?.image ?? ""}
-                  alt={productsById[line.productId]?.name ?? line.productId}
-                  fill
-                  className="object-cover"
-                  sizes="40px"
-                />
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-[11px] font-medium text-neutral-800">
-                  {productsById[line.productId]?.name ?? line.productId}
-                </p>
-                <p className="text-[10px] text-neutral-500">× {line.quantity}</p>
-              </div>
-            </div>
-          ))}
+        <p className="text-sm font-semibold">{copy.linesTitle}</p>
+        <div className="mt-3">
+          <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
         </div>
       </div>
 
@@ -1317,15 +1352,16 @@ function UnresolvedItemsBlock({
         <button
           type="button"
           onClick={onChoose}
-          className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white"
+          disabled={ctaDisabled}
+          className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-40"
         >
-          Выбрать способ получения
+          {copy.cta}
         </button>
       </div>
 
-      {resolution.options.length === 0 ? (
+      {resolution.options.length === 0 && !suppressEmptyOptionsHint ? (
         <div className="mt-3 rounded-xl border border-dashed border-neutral-300 p-3 text-xs text-neutral-500">
-          Для этих товаров сейчас не нашли других способов оформления.
+          {copy.noAlternatives}
         </div>
       ) : null}
     </div>
@@ -1361,7 +1397,7 @@ function SecondarySelectionCard({
             <button
               type="button"
               onClick={onEdit}
-              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
             >
               Изменить
             </button>
@@ -1375,7 +1411,7 @@ function SecondarySelectionCard({
             <button
               type="button"
               onClick={onEdit}
-              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
             >
               Изменить
             </button>
@@ -1390,7 +1426,7 @@ function SecondarySelectionCard({
             <button
               type="button"
               onClick={onEdit}
-              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
             >
               Изменить
             </button>
@@ -1416,7 +1452,7 @@ function SecondarySelectionCard({
               <button
                 type="button"
                 onClick={onEdit}
-                className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium"
+                className="rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
               >
                 Изменить
               </button>
@@ -1530,9 +1566,10 @@ function SplitSelectionModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+        aria-label="Выберите способ получения"
+        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-3xl"
       >
-        <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+        <div className="shrink-0 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="cu-sheet-title">Выберите способ получения</h3>
@@ -1540,39 +1577,16 @@ function SplitSelectionModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+              className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
             >
               Закрыть
             </button>
           </div>
         </div>
 
-        <div className="px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
+        <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:px-5 sm:pb-4 sm:pt-3">
         <div className="rounded-xl bg-neutral-50 p-3">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {resolution.lines.map((line) => (
-              <div
-                key={line.productId}
-                className="flex min-w-[108px] shrink-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5"
-              >
-                <div className="relative h-10 w-10 overflow-hidden rounded-md bg-neutral-100">
-                  <SafeProductImage
-                    src={productsById[line.productId]?.image ?? ""}
-                    alt={productsById[line.productId]?.name ?? line.productId}
-                    fill
-                    className="object-cover"
-                    sizes="40px"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-[11px] font-medium text-neutral-800">
-                    {productsById[line.productId]?.name ?? line.productId}
-                  </p>
-                  <p className="text-[10px] text-neutral-500">× {line.quantity}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
         </div>
 
         <div className="mt-4 space-y-2">
@@ -1626,7 +1640,7 @@ function SplitSelectionModal({
             <button
               type="button"
               onClick={() => setPickupSelectorOpen(true)}
-              className="mt-3 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-medium"
+              className="mt-3 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
             >
               {selectedPickupOption ? "Изменить магазин" : "Выбрать магазин"}
             </button>
@@ -1644,7 +1658,7 @@ function SplitSelectionModal({
             <button
               type="button"
               onClick={() => courierOption && onEditCourierAddress(courierOption)}
-              className="mt-3 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-medium"
+              className="mt-3 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
             >
               {courierAddress.trim() ? "Изменить адрес" : "Указать адрес"}
             </button>
@@ -1681,24 +1695,26 @@ function SplitSelectionModal({
             })}
           </div>
         ) : null}
-
-        <div className="mt-5 flex gap-2">
-          <button
-            type="button"
-            onClick={() => selectedOption && onConfirm(selectedOption)}
-            disabled={confirmDisabled}
-            className="flex-1 rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            {saving ? "Добавляем…" : "Добавить отправление"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-neutral-200 px-4 py-3 text-sm font-medium"
-          >
-            Отмена
-          </button>
         </div>
+
+        <div className="shrink-0 border-t border-neutral-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => selectedOption && onConfirm(selectedOption)}
+              disabled={confirmDisabled}
+              className="flex-1 rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              {saving ? "Добавляем…" : "Добавить отправление"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-neutral-900 bg-white px-4 py-3 text-sm font-medium text-neutral-900"
+            >
+              Отмена
+            </button>
+          </div>
         </div>
       </div>
       {pickupSelectorOpen ? (
@@ -1712,9 +1728,10 @@ function SplitSelectionModal({
           <div
             role="dialog"
             aria-modal="true"
-            className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+            aria-label="Выберите магазин"
+            className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-3xl"
           >
-            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+            <div className="shrink-0 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h4 className="cu-sheet-title">Выберите магазин</h4>
@@ -1725,14 +1742,14 @@ function SplitSelectionModal({
                 <button
                   type="button"
                   onClick={() => setPickupSelectorOpen(false)}
-                  className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+                  className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
                 >
                   Закрыть
                 </button>
               </div>
             </div>
 
-            <div className="px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
+            <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
             <input
               type="text"
               value={pickupSearch}
@@ -1790,11 +1807,8 @@ function PartCard({
   expanded,
   collapsible,
   onToggleExpand,
-  promoFactor,
   showRemainderHint,
   remainderKeepHint,
-  partPromoDiscount,
-  partBonusUsed,
   selectedDateIx,
   selectedSlotIx,
   onDateChange,
@@ -1810,12 +1824,9 @@ function PartCard({
   expanded: boolean;
   collapsible: boolean;
   onToggleExpand: () => void;
-  promoFactor: number;
   /** Показываем подсказку только если реально есть remainder и текст не отключён в админке. */
   showRemainderHint: boolean;
   remainderKeepHint?: string;
-  partPromoDiscount: number;
-  partBonusUsed: number;
   selectedDateIx?: number;
   selectedSlotIx?: number;
   onDateChange?: (dateIx: number) => void;
@@ -1828,7 +1839,7 @@ function PartCard({
 }) {
   const visible = part.items.slice(0, 5);
   const extra = part.items.reduce((s, i) => s + i.quantity, 0) - visible.reduce((s, i) => s + i.quantity, 0);
-  const sub = Math.round(part.subtotal * promoFactor);
+  const sub = Math.round(part.subtotal);
   const ship = included ? part.deliveryPrice : 0;
   const isCourier = part.mode === "courier";
   const deliveryDate = isCourier ? MOCK_DATES[selectedDateIx ?? 0] : null;
@@ -1900,7 +1911,11 @@ function PartCard({
           ) : isCourier ? (
             <div className="min-w-0">
               <p className="text-sm font-semibold leading-snug text-neutral-900">{courierPartHeadline(part)}</p>
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">курьер</p>
+              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">
+                {part.deliveryPrice <= 0
+                  ? "курьер / бесплатная доставка"
+                  : `курьер / доставка ${fmt(part.deliveryPrice)}`}
+              </p>
             </div>
           ) : isPvz ? (
             <div className="min-w-0">
@@ -2052,18 +2067,6 @@ function PartCard({
               </div>
             </>
           ) : null}
-          {expanded && partPromoDiscount > 0 ? (
-            <div className="mt-1 flex justify-between text-xs text-red-600">
-              <span>Скидка по части</span>
-              <span>− {fmt(partPromoDiscount)}</span>
-            </div>
-          ) : null}
-          {expanded && partBonusUsed > 0 ? (
-            <div className="mt-1 flex justify-between text-xs text-red-600">
-              <span>Бонусы по части</span>
-              <span>− {fmt(partBonusUsed)}</span>
-            </div>
-          ) : null}
         </div>
       </div>
     </div>
@@ -2208,6 +2211,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [lastPvzMemoryId, setLastPvzMemoryId] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ScenarioResult | null>(null);
   const [remainderResolution, setRemainderResolution] = useState<RemainderResolution | null>(null);
+  /** Варианты доставки для позиций, снятых с отправления (чекбокс) — тот же контракт, что у API-остатка */
+  const [manualRemainderResolution, setManualRemainderResolution] = useState<RemainderResolution | null>(null);
+  const [manualRemainderFetchPending, setManualRemainderFetchPending] = useState(false);
   const [secondarySelections, setSecondarySelections] = useState<SecondarySelection[]>([]);
   const [splitModalState, setSplitModalState] = useState<SplitModalState | null>(null);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
@@ -2258,12 +2264,17 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     courierAddressModalTarget !== null ||
     phoneGateOpen;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!checkoutSheetOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const { style } = document.body;
+    const previousOverflow = style.overflow;
+    style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previousOverflow;
+      if (previousOverflow) {
+        style.overflow = previousOverflow;
+      } else {
+        style.removeProperty("overflow");
+      }
     };
   }, [checkoutSheetOpen]);
 
@@ -2679,7 +2690,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const units = cartDetail?.units ?? 0;
   const promoFactor = promoApplied ? 0.8 : 1;
-  const [distribution, setDistribution] = useState<Record<string, { promoDiscount: number; bonusUsed: number }>>({});
 
   const secondaryDisplaySelections = useMemo<DisplaySecondarySelection[]>(
     () =>
@@ -2767,36 +2777,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         : Math.round(cartGoodsSubtotal * promoFactor);
 
   useEffect(() => {
-    const next: Record<string, { promoDiscount: number; bonusUsed: number }> = {};
-    if (!includedParts.length) {
-      setDistribution(next);
-      return;
-    }
-    for (const p of includedParts) {
-      next[p.key] = {
-        promoDiscount: promoApplied ? p.subtotal - Math.round(p.subtotal * 0.8) : 0,
-        bonusUsed: 0,
-      };
-    }
-    if (bonusOn) {
-      const maxBonus = Math.min(GJ_LOYALTY_MAX_SPEND_RUB, includedMerch);
-      let used = 0;
-      for (let i = 0; i < includedParts.length; i += 1) {
-        const p = includedParts[i]!;
-        const remaining = maxBonus - used;
-        if (remaining <= 0) break;
-        const partShare =
-          i === includedParts.length - 1
-            ? remaining
-            : Math.min(remaining, Math.floor((maxBonus * p.subtotal) / Math.max(1, includedMerch)));
-        next[p.key] = { ...next[p.key], bonusUsed: partShare };
-        used += partShare;
-      }
-    }
-    setDistribution(next);
-  }, [includedParts, bonusOn, includedMerch, promoApplied]);
-
-  useEffect(() => {
     setIncluded((prev) => {
       const next: Record<string, boolean> = {};
       for (const part of allDisplayParts) {
@@ -2835,6 +2815,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     });
   }, [allDisplayParts]);
 
+  /**
+   * Позиции с отправлений с снятой галочкой, для которых ещё нет добора через «другое отправление».
+   * Вторичные отправления хранят те же строки в `inputLines` — иначе блок «Как получить остальные товары»
+   * дублирует уже оформленное во вторичном сценарии.
+   */
   const manualExcludedLines = useMemo(() => {
     const map = new Map<string, { productId: string; quantity: number; name: string }>();
     for (const part of allDisplayParts) {
@@ -2852,8 +2837,60 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         }
       }
     }
-    return [...map.values()];
-  }, [allDisplayParts, included]);
+    for (const sel of secondarySelections) {
+      for (const line of sel.inputLines) {
+        const cur = map.get(line.productId);
+        if (!cur) continue;
+        const dec = Math.min(cur.quantity, line.quantity);
+        cur.quantity -= dec;
+      }
+    }
+    return [...map.values()].filter((r) => r.quantity > 0);
+  }, [allDisplayParts, included, secondarySelections]);
+
+  useEffect(() => {
+    if (manualExcludedLines.length === 0) {
+      setManualRemainderResolution(null);
+      setManualRemainderFetchPending(false);
+      return;
+    }
+    if (!cityId || !method) {
+      setManualRemainderResolution(null);
+      setManualRemainderFetchPending(false);
+      return;
+    }
+    const lines = manualExcludedLines.map(({ productId, quantity }) => ({ productId, quantity }));
+    setManualRemainderResolution({ lines, options: [] });
+    setManualRemainderFetchPending(true);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/checkout/remainder-resolution", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cityId,
+            deliveryMethodCode: method,
+            selectedStoreId: method === "pickup" ? storeId || null : null,
+            lines,
+          }),
+        });
+        const text = await res.text();
+        const j = JSON.parse(text) as { remainderResolution?: RemainderResolution; error?: string };
+        if (!res.ok) throw new Error(j.error ?? text);
+        if (!cancelled) {
+          setManualRemainderResolution(j.remainderResolution ?? { lines, options: [] });
+        }
+      } catch {
+        if (!cancelled) setManualRemainderResolution({ lines, options: [] });
+      } finally {
+        if (!cancelled) setManualRemainderFetchPending(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [manualExcludedLines, cityId, method, storeId]);
 
   const handlePromo = () => {
     if (promo.trim().toUpperCase() === "APP20") {
@@ -2898,6 +2935,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     if (!activeRemainderResolution || activeRemainderResolution.lines.length === 0) return;
     setSplitModalState({ mode: "add", editIndex: null, resolution: activeRemainderResolution });
   };
+
+  const openManualRemainderSplitModal = useCallback(() => {
+    if (!manualRemainderResolution?.lines.length) return;
+    setSplitModalState({ mode: "add", editIndex: null, resolution: manualRemainderResolution });
+  }, [manualRemainderResolution]);
 
   const openSplitEditModal = (selectionIndex: number) => {
     const baseResolution = selectionIndex === 0 ? remainderResolution : secondarySelections[selectionIndex - 1]?.nextResolution;
@@ -2985,19 +3027,22 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         });
       }
     }
+    const orderBonusUsed = bonusOn ? Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi) : 0;
     const payload = {
       parts: includedParts
         .map((p) => ({
           ...p,
           methodLabel: modeLabel(p.mode),
           items: p.items,
-          subtotal: Math.round(p.subtotal * promoFactor),
+          subtotal: Math.round(p.subtotal),
           deliveryPrice: p.deliveryPrice,
-          promoDiscount: distribution[p.key]?.promoDiscount ?? 0,
-          bonusUsed: distribution[p.key]?.bonusUsed ?? 0,
+          promoDiscount: 0,
+          bonusUsed: 0,
           selectedDate: p.mode === "courier" ? MOCK_DATES[partSchedules[p.key]?.dateIx ?? 0] : undefined,
           selectedSlot: p.mode === "courier" ? MOCK_SLOTS[partSchedules[p.key]?.slotIx ?? 0] : undefined,
         })),
+      orderPromoDiscount: promoDiscount,
+      orderBonusUsed,
       remainder: finalRemainderLines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
       payOnDeliveryOnly: payOnDeliveryOnlyEffective,
       informers: scenario.informers,
@@ -3089,11 +3134,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }
 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
-  /** Бейдж только когда сплит и часть отправлений снята — иначе дублирует строку покрытия и не информирует */
-  const showSplitOrderUnitsBadge = hasSplit && units > 0 && includedOrderUnits < units;
+  /** Счётчик «В заказе X из Y» при разбиении на части / остатке — одинаково для магазина, ПВЗ и курьера */
+  const showOrderUnitsCountBadge = hasSplit && units > 0;
+  /** Нумерация только среди включённых в заказ отправлений (снятое с галочки не занимает номер). */
   const shipmentOrdinalForPartKey = (key: string) => {
-    if (allDisplayParts.length <= 1) return undefined;
-    const ix = allDisplayParts.findIndex((p) => p.key === key);
+    const includedOrdered = allDisplayParts.filter((p) => included[p.key] !== false);
+    if (includedOrdered.length <= 1) return undefined;
+    const ix = includedOrdered.findIndex((p) => p.key === key);
     return ix >= 0 ? ix + 1 : undefined;
   };
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
@@ -3115,6 +3162,35 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     (method !== "pickup" || storeId.trim().length > 0) &&
     (method !== "pvz" || pvzId.trim().length > 0);
   const showScenarioSkeleton = loading && awaitingScenario;
+
+  const primarySplitContextBarVisible =
+    !showScenarioSkeleton && !!scenario && (scenarioInformersForBanner.length > 0 || showOrderUnitsCountBadge);
+
+  const renderPrimarySplitContextBar = (variant: "unified" | "stacked") => {
+    if (!primarySplitContextBarVisible) return null;
+    const hasInformerText = scenarioInformersForBanner.length > 0;
+    const wrapClass =
+      variant === "unified"
+        ? "flex w-full items-start gap-3 bg-white px-3 py-2"
+        : "mb-4 flex w-full items-start gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2.5";
+    const justifyEnd = !hasInformerText && showOrderUnitsCountBadge;
+    return (
+      <div className={`${wrapClass}${justifyEnd ? " justify-end" : ""}`}>
+        {hasInformerText ? (
+          <div className="min-w-0 flex-1 space-y-1 border-l-2 border-amber-400/70 pl-2.5 text-xs leading-snug text-neutral-800">
+            {scenarioInformersForBanner.map((t, i) => (
+              <p key={i}>{t}</p>
+            ))}
+          </div>
+        ) : null}
+        {showOrderUnitsCountBadge ? (
+          <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
+            В заказе {includedOrderUnits} из {units} шт
+          </span>
+        ) : null}
+      </div>
+    );
+  };
 
   const renderScenarioMethodSummary = () => {
     if (!method || !scenario) return null;
@@ -3142,7 +3218,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <button
               type="button"
               onClick={() => setPickupSelectorOpen(true)}
-              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
             >
               Изменить
             </button>
@@ -3156,7 +3232,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <button
               type="button"
               onClick={() => setCourierAddressModalTarget({ kind: "primary" })}
-              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
             >
               Изменить
             </button>
@@ -3171,7 +3247,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <button
               type="button"
               onClick={() => setPvzSelectorOpen(true)}
-              className="shrink-0 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium"
+              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
             >
               Изменить
             </button>
@@ -3382,26 +3458,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
         ) : null}
 
-        {!showScenarioSkeleton && scenarioInformersForBanner.length ? (
-          <div className="mb-4 space-y-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-950">
-            {scenarioInformersForBanner.map((t, i) => (
-              <p key={i}>{t}</p>
-            ))}
-          </div>
-        ) : null}
-
         {showScenarioSkeleton ? (
           <ScenarioOrderSkeleton variant={unifiedOrderBlock ? "unified" : "stacked"} />
         ) : unifiedOrderBlock ? (
           <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
             <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
-            {showSplitOrderUnitsBadge ? (
-              <div className="flex justify-end border-t border-neutral-100 px-3 py-2">
-                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
-                  В заказе {includedOrderUnits} из {units} шт
-                </span>
-              </div>
-            ) : null}
+            {renderPrimarySplitContextBar("unified")}
             {scenario?.parts.map((p, partIndex) => (
               <PartCard
                 key={p.key}
@@ -3424,9 +3486,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     [p.key]: !prev[p.key],
                   }))
                 }
-                promoFactor={promoFactor}
-                partPromoDiscount={distribution[p.key]?.promoDiscount ?? 0}
-                partBonusUsed={distribution[p.key]?.bonusUsed ?? 0}
                 showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
                 remainderKeepHint={scenario.remainderKeepHint}
                 selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
@@ -3448,13 +3507,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </section>
         ) : (
           <>
-            {scenario && showSplitOrderUnitsBadge ? (
-              <div className="mb-3 flex justify-end">
-                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
-                  В заказе {includedOrderUnits} из {units} шт
-                </span>
-              </div>
-            ) : null}
+            {renderPrimarySplitContextBar("stacked")}
 
             <section className="mb-6 space-y-3">
               {scenario?.parts.map((p, partIndex) => (
@@ -3478,9 +3531,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                       [p.key]: !prev[p.key],
                     }))
                   }
-                  promoFactor={promoFactor}
-                  partPromoDiscount={distribution[p.key]?.promoDiscount ?? 0}
-                  partBonusUsed={distribution[p.key]?.bonusUsed ?? 0}
                   showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
                   remainderKeepHint={scenario.remainderKeepHint}
                   selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
@@ -3540,9 +3590,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     [part.key]: !prev[part.key],
                   }))
                 }
-                promoFactor={promoFactor}
-                partPromoDiscount={distribution[part.key]?.promoDiscount ?? 0}
-                partBonusUsed={distribution[part.key]?.bonusUsed ?? 0}
                 showRemainderHint={false}
                 remainderKeepHint={undefined}
                 selectedDateIx={partSchedules[part.key]?.dateIx ?? 0}
@@ -3570,22 +3617,21 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               resolution={activeRemainderResolution}
               productsById={productsById}
               onChoose={openCurrentSplitModal}
+              copy={boot.checkoutCopy ?? unresolvedBlockCopy()}
             />
           </section>
         ) : null}
 
-        {manualExcludedLines.length > 0 ? (
-          <section className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4">
-            <h3 className="text-sm font-semibold text-neutral-900">Останется в корзине</h3>
-            <ul className="cu-muted mt-2">
-              {manualExcludedLines.map((r) => {
-                return (
-                  <li key={r.productId}>
-                    {r.name} × {r.quantity}
-                  </li>
-                );
-              })}
-            </ul>
+        {manualRemainderResolution && manualRemainderResolution.lines.length > 0 ? (
+          <section className="mb-6">
+            <UnresolvedItemsBlock
+              resolution={manualRemainderResolution}
+              productsById={productsById}
+              onChoose={openManualRemainderSplitModal}
+              copy={boot.checkoutCopy ?? unresolvedBlockCopy()}
+              ctaDisabled={manualRemainderFetchPending}
+              suppressEmptyOptionsHint={manualRemainderFetchPending}
+            />
           </section>
         ) : null}
 
@@ -3715,7 +3761,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <button
                 type="button"
                 aria-label="Убрать промокод"
-                className="shrink-0 rounded-lg border border-neutral-200/80 bg-white px-2.5 py-2 text-sm font-semibold text-neutral-600"
+                className="shrink-0 rounded-lg border border-neutral-900 bg-white px-2.5 py-2 text-sm font-semibold text-neutral-900"
                 onClick={() => {
                   setPromo("");
                   setPromoApplied(false);
@@ -3833,7 +3879,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 <button
                   type="button"
                   onClick={dismissPickupSelector}
-                  className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+                  className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
                 >
                   Закрыть
                 </button>
@@ -3878,7 +3924,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 <button
                   type="button"
                   onClick={dismissPvzSelector}
-                  className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+                  className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
                 >
                   Закрыть
                 </button>
@@ -3964,7 +4010,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <button
                 type="button"
                 onClick={() => setPhoneGateOpen(false)}
-                className="mt-2 w-full rounded-lg border border-neutral-200 py-2.5 text-sm text-neutral-700"
+                className="mt-2 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-sm font-medium text-neutral-900"
               >
                 Отмена
               </button>

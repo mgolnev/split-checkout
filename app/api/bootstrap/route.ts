@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildScenario } from "@/lib/build-scenario";
+import { unresolvedBlockCopy, type DisclaimerTextMap } from "@/lib/disclaimers";
 import { prisma } from "@/lib/prisma";
 
 type MethodCode = "courier" | "pickup" | "pvz";
@@ -46,7 +47,7 @@ function unitsForMode(
 
 export async function GET() {
   try {
-  const [cities, methods, products, rules] = await Promise.all([
+  const [cities, methods, products, rules, disclaimerRows] = await Promise.all([
     prisma.city.findMany({ orderBy: { name: "asc" } }),
     prisma.deliveryMethod.findMany({
       where: { isActive: true },
@@ -59,7 +60,16 @@ export async function GET() {
     prisma.shippingRule.findMany({
       include: { deliveryMethod: true },
     }),
+    prisma.disclaimerTemplate.findMany({
+      select: { code: true, text: true, isActive: true },
+    }),
   ]);
+
+  const disclaimerMap = Object.fromEntries(
+    disclaimerRows.map((r) => [r.code, r.isActive ? r.text : null]),
+  ) as DisclaimerTextMap;
+
+  const checkoutCopy = unresolvedBlockCopy(disclaimerMap);
 
   const storesByCity: Record<string, { id: string; name: string }[]> = {};
   const pvzByCity: Record<string, { id: string; name: string; address: string; requiresPrepayment: boolean }[]> =
@@ -181,6 +191,7 @@ export async function GET() {
     allowedMethodsByCity,
     methodSummaryByCity,
     pickupSummaryByStore,
+    checkoutCopy,
   });
   } catch (e) {
     console.error("[bootstrap]", e);

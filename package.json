@@ -16,6 +16,7 @@
     "test:autocheck": "node scripts/autotest.mjs",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
+    "db:seed:export": "tsx scripts/export-seed-snapshot.ts",
     "db:seed:remote": "node scripts/run-seed-remote.mjs",
     "db:studio": "prisma studio",
     "supabase:urls": "node scripts/supabase-urls.mjs",

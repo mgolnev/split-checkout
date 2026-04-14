@@ -35,6 +35,8 @@ yarn-error.log*
 !.env.example
 /prisma/dev.db
 /prisma/prisma/dev.db
+# Снимок БД для сида (`npm run db:seed:export`); раскоммитьте файл вручную, если нужен общий демо-набор в репо
+/prisma/seed-snapshot.json
 
 # vercel
 .vercel

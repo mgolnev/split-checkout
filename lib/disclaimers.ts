@@ -2,47 +2,50 @@ export type DeliveryMethodCode = "courier" | "pickup" | "pvz";
 
 const COMMON = {
   splitApplied:
-    "Мы разделили заказ на несколько частей, чтобы оформить максимум доступных товаров.",
+    "Несколько отправлений — так из корзины попадает в заказ больше позиций.",
   payOnDeliveryOnly:
-    "Для заказа из нескольких частей доступна только оплата при получении.",
+    "Два и более отправления: оплата только при получении.",
   remainderUnavailable:
-    "Часть товаров недоступна выбранным способом и останется в корзине.",
+    "Часть позиций при текущем выборе не входит в это оформление.",
   remainderKeep:
-    "Остальные товары сохраним в корзине, вы сможете оформить их отдельным заказом.",
-  oneShipmentPartial: "Оформим доступную часть заказа одним отправлением.",
+    "Их можно оформить вторым отправлением ниже или оставить в корзине.",
+  oneShipmentPartial: "Одно отправление — всё, что доступно по этому способу.",
+  /** Блок «остаток корзины» на чекауте (остаётся в админке как common.*) */
+  unresolvedBlockTitle: "Как получить остальные товары",
+  unresolvedBlockSubtitle:
+    "Добавьте второе отправление или оставьте без оформления — позиции останутся в корзине.",
+  unresolvedBlockLinesTitle: "Эти товары пока не вошли в заказ",
+  unresolvedBlockCta: "Выбрать способ получения",
+  unresolvedBlockNoAlternatives:
+    "Для этих товаров сейчас не нашли других способов оформления.",
 };
 
 const SYSTEM = {
   cityNotFound: "Город не найден.",
-  deliveryMethodUnavailable: "Способ получения недоступен.",
-  noActiveProductsForMethod:
-    "Нет активных товаров с остатками для выбранного способа получения.",
-  noRuleForCityAndMethod:
-    "Для выбранного города и способа отсутствует логистическое правило.",
-  methodDisabledByRule: "Выбранный способ получения отключён логистическим правилом.",
+  deliveryMethodUnavailable: "Этот способ получения сейчас недоступен.",
+  noActiveProductsForMethod: "По этому способу нет товаров с остатками.",
+  noRuleForCityAndMethod: "Для города и способа нет настроенного правила доставки.",
+  methodDisabledByRule: "Способ отключён правилом для этого города.",
   unknownMethod: "Неизвестный способ получения.",
 };
 
 const BY_METHOD = {
   courier: {
-    disabledByRule: "Курьерская доставка для этого города недоступна по правилам.",
-    fullWarehouse: "Все выбранные товары доставим одной отправкой со склада.",
-    fullStore: "Все товары доставим одной отправкой из магазина.",
-    noShipmentBySteps: "Не удалось подобрать отправления по настроенным шагам правила.",
-    noSimpleShipment:
-      "Не удалось подобрать простую курьерскую отправку для этой корзины.",
+    disabledByRule: "Курьер для этого города отключён правилами.",
+    fullWarehouse: "Всё повезём одной отправкой со склада.",
+    fullStore: "Всё повезём одной отправкой из магазина.",
+    noShipmentBySteps: "Не удалось собрать отправления по шагам правила.",
+    noSimpleShipment: "Для этой корзины не удалось подобрать курьерскую отправку.",
   },
   pickup: {
-    chooseStore: "Выберите магазин, чтобы мы рассчитали доступность товаров.",
-    storeNotFound: "Магазин не найден для выбранного города.",
-    clickCollectUnavailable:
-      "В этом регионе недоступна доставка со склада в магазин (click & collect).",
+    chooseStore: "Выберите магазин — покажем, что можно забрать.",
+    storeNotFound: "Магазин для этого города не найден.",
+    clickCollectUnavailable: "Доставка со склада в магазин (click & collect) здесь недоступна.",
     remainderUnavailableInStore:
-      "Часть товаров нельзя получить в этом магазине и она останется в корзине.",
+      "В этом магазине не всё из заказа оформляется сразу — часть уйдёт в остаток.",
   },
   pvz: {
-    intro:
-      "Пункт выдачи получает только складскую часть заказа; товары только из магазинов в ПВЗ не передаём.",
+    intro: "В ПВЗ едут только позиции со склада под этот пункт.",
     disabledByRule: "ПВЗ для этого города отключён правилами.",
     noWarehouseInCity: "В городе нет склада для отгрузки в ПВЗ.",
   },
@@ -66,6 +69,11 @@ const CODE_TITLES: Record<string, string> = {
   "common.remainderUnavailable": "Общий: часть товаров недоступна",
   "common.remainderKeep": "Общий: остаток остаётся в корзине",
   "common.oneShipmentPartial": "Общий: оформляем доступную часть",
+  "common.unresolvedBlockTitle": "Чекаут: заголовок блока остатка",
+  "common.unresolvedBlockSubtitle": "Чекаут: подзаголовок блока остатка",
+  "common.unresolvedBlockLinesTitle": "Чекаут: подпись списка позиций",
+  "common.unresolvedBlockCta": "Чекаут: кнопка выбора способа",
+  "common.unresolvedBlockNoAlternatives": "Чекаут: нет вариантов доставки",
   "system.cityNotFound": "Система: город не найден",
   "system.deliveryMethodUnavailable": "Система: способ получения недоступен",
   "system.noActiveProductsForMethod": "Система: нет товаров для способа",
@@ -136,4 +144,15 @@ export function defaultDisclaimerRows() {
     title: CODE_TITLES[code] ?? code,
     text,
   }));
+}
+
+/** Тексты блока «как получить остаток» на чекауте (из админки или дефолты). */
+export function unresolvedBlockCopy(overrides?: DisclaimerTextMap) {
+  return {
+    title: commonDisclaimer("unresolvedBlockTitle", overrides),
+    subtitle: commonDisclaimer("unresolvedBlockSubtitle", overrides),
+    linesTitle: commonDisclaimer("unresolvedBlockLinesTitle", overrides),
+    cta: commonDisclaimer("unresolvedBlockCta", overrides),
+    noAlternatives: commonDisclaimer("unresolvedBlockNoAlternatives", overrides),
+  };
 }
