@@ -1,5 +1,6 @@
 import { buildScenario } from "@/lib/build-scenario";
 import { prisma } from "@/lib/prisma";
+import type { ScenarioPart } from "@/lib/types";
 
 export type MethodCode = "courier" | "pickup" | "pvz";
 
@@ -10,6 +11,9 @@ export type MethodSummary = {
   hasSplit: boolean;
 };
 
+/** Сжатая строка корзины для превью в UI (магазин / ПВЗ). */
+export type ProductQtyPreview = { productId: string; quantity: number };
+
 export type PickupStoreSummary = {
   totalUnits: number;
   availableUnits: number;
@@ -18,13 +22,34 @@ export type PickupStoreSummary = {
   remainderUnits: number;
   hasFullCoverage: boolean;
   hasSplit: boolean;
+  /** По сценарию самовывоза в эту точку — для миниатюр в модалке */
+  immediateLines?: ProductQtyPreview[];
+  laterLines?: ProductQtyPreview[];
+  unavailableLines?: ProductQtyPreview[];
 };
 
 export type CartMethodSummariesResult = {
   orderTotalUnits: number;
   methodSummaries: Record<MethodCode, MethodSummary>;
   pickupSummaryByStore: Record<string, PickupStoreSummary>;
+  /** Общий для всех ПВЗ города разрез «в пункте / остаток заказа» по текущим строкам корзины */
+  pvzLinePreview?: {
+    available: ProductQtyPreview[];
+    unavailable: ProductQtyPreview[];
+  };
 };
+
+function mergeProductQty(lines: { productId: string; quantity: number }[]): ProductQtyPreview[] {
+  const m = new Map<string, number>();
+  for (const l of lines) {
+    m.set(l.productId, (m.get(l.productId) ?? 0) + l.quantity);
+  }
+  return [...m.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+}
+
+function itemsFromPartsByModes(parts: ScenarioPart[], modes: ScenarioPart["mode"][]): ProductQtyPreview[] {
+  return mergeProductQty(parts.filter((p) => modes.includes(p.mode)).flatMap((p) => p.items));
+}
 
 function availableUnitsForScenario(scenario: Awaited<ReturnType<typeof buildScenario>>) {
   return scenario.parts.reduce(
@@ -77,6 +102,7 @@ export async function computeCartMethodSummaries(
         pvz: { ...EMPTY_METHOD },
       },
       pickupSummaryByStore: {},
+      pvzLinePreview: { available: [], unavailable: [] },
     };
   }
 
@@ -90,6 +116,7 @@ export async function computeCartMethodSummaries(
         pvz: { ...EMPTY_METHOD, totalUnits: orderTotalUnits },
       },
       pickupSummaryByStore: {},
+      pvzLinePreview: { available: [], unavailable: [] },
     };
   }
 
@@ -113,6 +140,11 @@ export async function computeCartMethodSummaries(
       lines: linePayload,
     }),
   ]);
+
+  const pvzLinePreview = {
+    available: itemsFromPartsByModes(pvzScenario.parts, ["pvz"]),
+    unavailable: mergeProductQty(pvzScenario.remainder),
+  };
 
   const methodSummaries: Record<MethodCode, MethodSummary> = {
     courier: {
@@ -162,6 +194,9 @@ export async function computeCartMethodSummaries(
       remainderUnits,
       hasFullCoverage,
       hasSplit,
+      immediateLines: itemsFromPartsByModes(pickupScenario.parts, ["click_reserve"]),
+      laterLines: itemsFromPartsByModes(pickupScenario.parts, ["click_collect"]),
+      unavailableLines: mergeProductQty(pickupScenario.remainder),
     };
 
     bestPickupUnits = Math.max(bestPickupUnits, availableUnits);
@@ -177,5 +212,6 @@ export async function computeCartMethodSummaries(
     orderTotalUnits,
     methodSummaries,
     pickupSummaryByStore,
+    pvzLinePreview,
   };
 }

@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadCourierAddress, saveCourierAddress } from "@/lib/courier-address-storage";
 import { loadCheckoutCart } from "@/lib/checkout-cart-storage";
 import { loadLastPickupStoreId, saveLastPickupStore } from "@/lib/pickup-store-storage";
@@ -15,6 +16,7 @@ import {
   type CheckoutRecipientPayload,
 } from "@/lib/checkout-recipient-storage";
 import { commonDisclaimer } from "@/lib/disclaimers";
+import type { CartMethodSummariesResult } from "@/lib/cart-method-summaries";
 import type { AlternativeMethodOption, CartLine, RemainderResolution, ScenarioPart, ScenarioResult } from "@/lib/types";
 
 const DEMO_RECIPIENT_FULL_NAME = "Петрова-Водкина Елизавета Валерьяновна";
@@ -53,6 +55,9 @@ type Bootstrap = {
         remainderUnits: number;
         hasFullCoverage: boolean;
         hasSplit: boolean;
+        immediateLines?: { productId: string; quantity: number }[];
+        laterLines?: { productId: string; quantity: number }[];
+        unavailableLines?: { productId: string; quantity: number }[];
       }
     >
   >;
@@ -111,14 +116,6 @@ function pluralizeDays(n: number) {
   if (mod10 === 1 && mod100 !== 11) return "день";
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "дня";
   return "дней";
-}
-
-function pluralizeShipments(n: number) {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "отправление";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "отправления";
-  return "отправлений";
 }
 
 function pluralizeProducts(n: number) {
@@ -230,26 +227,23 @@ const MOCK_DATES = ["Завтра, 9 апр.", "10 апр.", "11 апр.", "12 �
 const MOCK_SLOTS = ["9:00–12:00", "12:00–15:00", "15:00–18:00"];
 /** Демо: лимит списания с карты лояльности и сумма в подписи «Списать с карты GJ …» */
 const GJ_LOYALTY_MAX_SPEND_RUB = 1000;
-/** В шапке карточки курьерской доставки — перевозчик, а не склад/магазин отгрузки */
+/** Имя перевозчика в составе заголовка курьерской карточки */
 const COURIER_CARRIER_LABEL = "СДЭК";
 
 function stripStoreNameForCaption(name: string) {
   return name.replace(/^\s*Магазин\s+/i, "").trim() || name;
 }
 
-function stripWarehouseNameForCaption(name: string) {
-  return name.replace(/^\s*Склад\s+/i, "").trim() || name;
-}
-
-/** Откуда едет курьерская посылка — чтобы различать два одинаковых «СДЭК» при сплите. */
-function courierOriginCaption(part: ScenarioPart): string {
-  if (part.mode !== "courier") return "";
+/** Одна строка в шапке карточки: перевозчик + откуда отгрузка (для сплита и читаемости на тестах). */
+function courierPartHeadline(part: ScenarioPart): string {
+  if (part.mode !== "courier") return COURIER_CARRIER_LABEL;
   const raw = part.sourceName.trim();
   if (part.sourceType === "warehouse") {
-    return raw ? `Со склада · ${stripWarehouseNameForCaption(raw)}` : "Со склада";
+    /** Без названия склада: в данных оно может быть длинным и не нести ценности для покупателя. */
+    return `${COURIER_CARRIER_LABEL} со склада`;
   }
-  const place = raw ? stripStoreNameForCaption(raw) : "магазина";
-  return `Из магазина «${place}»`;
+  const place = raw ? stripStoreNameForCaption(raw) : "";
+  return place ? `${COURIER_CARRIER_LABEL} из магазина ${place}` : `${COURIER_CARRIER_LABEL} из магазина`;
 }
 /** Самовывоз GJ: в заголовке — срок готовности, а не название точки отгрузки */
 const PICKUP_RESERVE_TITLE = "Соберём за 30 минут";
@@ -486,11 +480,11 @@ function SafeProductImage({
 
 function StepperCheckIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden className="text-white">
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden className="text-white">
       <path
         d="M3 7L6 10L11 4"
         stroke="currentColor"
-        strokeWidth="1.75"
+        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -516,16 +510,16 @@ function Stepper({
     { label: "Оформление", done: false },
   ];
   return (
-    <nav className="mb-6" aria-label="Этапы оформления заказа">
+    <nav className="mb-0" aria-label="Этапы оформления заказа">
       <div className="relative grid grid-cols-4">
         <div
-          className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-3 z-0 h-px bg-neutral-950"
+          className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-2 z-0 h-px bg-neutral-950"
           aria-hidden
         />
         {items.map(({ label, done }) => (
-          <div key={label} className="relative z-10 flex flex-col items-center gap-2">
+          <div key={label} className="relative z-10 flex flex-col items-center gap-1">
             <div
-              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
                 done ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-900 bg-white"
               }`}
             >
@@ -539,16 +533,57 @@ function Stepper({
   );
 }
 
+type SheetProductRef = { image: string; name?: string };
+
+function SheetThumbLabeledRow({
+  label,
+  items,
+  productsById,
+}: {
+  label: string;
+  items: { productId: string; quantity: number }[];
+  productsById: Record<string, SheetProductRef>;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">{label}</p>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {items.map((it, ix) => (
+          <div key={`${it.productId}-${ix}`} className="flex flex-col items-center gap-0.5">
+            <div className="relative aspect-[3/4] w-9 overflow-hidden rounded-md bg-neutral-100">
+              <SafeProductImage
+                src={productsById[it.productId]?.image ?? ""}
+                alt={productsById[it.productId]?.name ?? ""}
+                fill
+                className="object-cover"
+                sizes="36px"
+              />
+              {it.quantity >= 2 ? (
+                <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[2px] text-[7px] font-semibold leading-none text-white ring-1 ring-white/30">
+                  {it.quantity}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PickupStoreSelector({
   stores,
   selectedStoreId,
   lastChosenStoreId,
+  productsById,
   onSelect,
 }: {
   stores: PickupStoreOption[];
   selectedStoreId: string;
   /** Подсказка «выбирали в прошлый раз» — без автоподстановки выбора */
   lastChosenStoreId?: string | null;
+  productsById: Record<string, SheetProductRef>;
   onSelect: (storeId: string) => void;
 }) {
   if (stores.length === 0) {
@@ -652,6 +687,27 @@ function PickupStoreSelector({
                   {pickupStoreStatusTitle(store.summary)}
                 </span>
               </div>
+              {store.summary?.immediateLines?.length ||
+              store.summary?.laterLines?.length ||
+              store.summary?.unavailableLines?.length ? (
+                <div className="mt-2 space-y-2 border-t border-neutral-100 pt-2">
+                  <SheetThumbLabeledRow
+                    label="Сразу в магазине"
+                    items={store.summary?.immediateLines ?? []}
+                    productsById={productsById}
+                  />
+                  <SheetThumbLabeledRow
+                    label="Привезём в магазин"
+                    items={store.summary?.laterLines ?? []}
+                    productsById={productsById}
+                  />
+                  <SheetThumbLabeledRow
+                    label="Недоступно здесь"
+                    items={store.summary?.unavailableLines ?? []}
+                    productsById={productsById}
+                  />
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
                 <span className="rounded-full bg-neutral-100 px-2 py-1">
                   Сразу: {store.summary?.reserveUnits ?? 0}
@@ -735,12 +791,16 @@ function PvzPointSelector({
   selectedPointId,
   lastChosenPointId,
   summary,
+  linePreview,
+  productsById,
   onSelect,
 }: {
   points: PvzPointOption[];
   selectedPointId: string;
   lastChosenPointId?: string | null;
   summary?: MethodSummary;
+  linePreview?: CartMethodSummariesResult["pvzLinePreview"];
+  productsById: Record<string, SheetProductRef>;
   onSelect: (pointId: string) => void;
 }) {
   if (points.length === 0) {
@@ -795,23 +855,11 @@ function PvzPointSelector({
             );
           })}
         </div>
-        {selectedPoint ? (
-          <div className="mt-3 rounded-xl bg-white/90 p-3 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold">{selectedPoint.name}</p>
-              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
-                {pvzPointStatusTitle(summary)}
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-neutral-900">{selectedPoint.address}</p>
-            <p className="mt-2 text-sm text-neutral-900">{pvzPointCountLabel(summary)}</p>
-            <p className="mt-1 text-xs text-neutral-500">{pvzPointStatusDetail(summary)}</p>
-          </div>
-        ) : (
+        {!selectedPoint ? (
           <div className="mt-3 rounded-xl bg-white/90 p-3 text-sm text-neutral-600 shadow-sm">
             Выберите ПВЗ на карте или в списке ниже.
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -844,6 +892,16 @@ function PvzPointSelector({
                   {pvzPointCountLabel(summary)}
                 </span>
               </div>
+              {linePreview && (linePreview.available.length > 0 || linePreview.unavailable.length > 0) ? (
+                <div className="mt-2 space-y-2 border-t border-neutral-100 pt-2">
+                  <SheetThumbLabeledRow label="В пункте выдачи" items={linePreview.available} productsById={productsById} />
+                  <SheetThumbLabeledRow
+                    label="Другим способом"
+                    items={linePreview.unavailable}
+                    productsById={productsById}
+                  />
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
                 <span className="rounded-full bg-neutral-100 px-2 py-1">Доступно: {summary?.availableUnits ?? 0}</span>
                 {pvzUnavailableUnits > 0 ? (
@@ -947,6 +1005,75 @@ function CourierAddressCard({
   );
 }
 
+/** Прототип: подсказки адреса без внешнего API (после 3+ символов в поле). */
+const MOCK_COURIER_ADDRESS_HINTS = [
+  "г Москва, Пролетарский пр-кт",
+  "г Москва, ул Правды",
+  "г Москва, ул Правобережная",
+  "г Москва, ул Прасковьина",
+  "г Москва, ул Преображенская",
+  "г Москва, Преображенская наб",
+  "г Москва, Пресненская наб",
+  "г Москва, ул Пречистенка",
+  "г Москва, Пречистенская наб",
+  "г Москва, ул Красная Пресня",
+  "г Москва, ул Преображенский Вал",
+  "г Москва, ул Тверская",
+  "г Москва, ул Арбат",
+  "г Москва, Ленинский пр-кт",
+  "г Москва, ул Большая Дмитровка",
+  "г Москва, наб Космодамианская",
+  "г Москва, ул Никольская",
+  "г Москва, Кутузовский пр-кт",
+] as const;
+
+const ADDRESS_HINT_MAX = 15;
+
+function filterAddressHints(query: string): string[] {
+  const q = query.trim();
+  if (q.length < 3) return [];
+  const low = q.toLowerCase();
+  return MOCK_COURIER_ADDRESS_HINTS.filter((a) => a.toLowerCase().includes(low)).slice(0, ADDRESS_HINT_MAX);
+}
+
+function highlightStreetFragment(street: string, query: string): ReactNode {
+  const q = query.trim();
+  if (!q) return street;
+  const idx = street.toLowerCase().indexOf(q.toLowerCase());
+  if (idx < 0) return street;
+  return (
+    <>
+      {street.slice(0, idx)}
+      <span className="font-medium text-sky-600">{street.slice(idx, idx + q.length)}</span>
+      {street.slice(idx + q.length)}
+    </>
+  );
+}
+
+function AddressSuggestRow({ address, query, onPick }: { address: string; query: string; onPick: () => void }) {
+  const m = address.match(/^(г\s+)(Москва)(,\s*)(.*)$/i);
+  const label = m ? (
+    <span className="text-left text-sm leading-snug text-neutral-900">
+      {m[1]}
+      <span className="text-sky-600">{m[2]}</span>
+      {m[3]}
+      {highlightStreetFragment(m[4] ?? "", query)}
+    </span>
+  ) : (
+    <span className="text-left text-sm text-neutral-900">{address}</span>
+  );
+
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className="w-full border-b border-neutral-100 px-0 py-2 text-left transition last:border-b-0 hover:bg-neutral-50 active:bg-neutral-100"
+    >
+      {label}
+    </button>
+  );
+}
+
 function CourierAddressModal({
   initialValue,
   target,
@@ -959,51 +1086,176 @@ function CourierAddressModal({
   onSave: (address: string, target: CourierAddressModalTarget) => void;
 }) {
   const [value, setValue] = useState(initialValue);
+  const [pickedFromHints, setPickedFromHints] = useState(false);
+  /** Окно открыто с уже заполненным адресом; сбрасывается, если пользователь стёр поле целиком */
+  const [prefillSubmitAllowed, setPrefillSubmitAllowed] = useState(() => !!initialValue.trim());
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const [layoutNarrow, setLayoutNarrow] = useState(true);
+  /** Отступ снизу до нижней границы visualViewport (клавиатура), px — только узкая вёрстка */
+  const [keyboardOverlapPx, setKeyboardOverlapPx] = useState(0);
+
+  useEffect(() => {
+    const el = addressInputRef.current;
+    if (!el) return;
+    el.focus();
+    const t = window.setTimeout(() => el.focus(), 150);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  useLayoutEffect(() => {
+    const mq = window.matchMedia("(max-width: 639.9px)");
+    const syncNarrow = () => setLayoutNarrow(mq.matches);
+    syncNarrow();
+    mq.addEventListener("change", syncNarrow);
+    return () => mq.removeEventListener("change", syncNarrow);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!layoutNarrow) {
+      setKeyboardOverlapPx(0);
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const syncKeyboard = () => {
+      setKeyboardOverlapPx(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    };
+    syncKeyboard();
+    vv.addEventListener("resize", syncKeyboard);
+    vv.addEventListener("scroll", syncKeyboard);
+    return () => {
+      vv.removeEventListener("resize", syncKeyboard);
+      vv.removeEventListener("scroll", syncKeyboard);
+    };
+  }, [layoutNarrow]);
+
+  const hints = useMemo(() => filterAddressHints(value), [value]);
+  const manualAddressPath = value.trim().length >= 3 && hints.length === 0;
+  const showSelectAddressCta =
+    value.trim().length > 0 &&
+    (pickedFromHints || prefillSubmitAllowed || manualAddressPath);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
       <button type="button" aria-label="Закрыть ввод адреса" className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h3 className="cu-sheet-title">Куда доставить?</h3>
-            <p className="mt-1 text-sm text-neutral-500">
-              Укажите адрес, чтобы мы могли показать и оформить курьерскую доставку.
-            </p>
-          </div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Куда доставить"
+        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[95vh] sm:rounded-3xl"
+      >
+        <div className="relative flex h-11 shrink-0 items-center justify-center border-b border-neutral-100 px-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+            aria-label="Закрыть"
+            className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-100"
           >
-            Закрыть
+            <span className="text-2xl font-light leading-none" aria-hidden>
+              ×
+            </span>
           </button>
+          <h2 className="cu-section-title pointer-events-none px-10 text-center">Куда доставить</h2>
         </div>
-        <label className="block text-xs font-medium text-neutral-500">Адрес</label>
-        <textarea
-          className="mt-2 min-h-24 w-full rounded-xl border border-neutral-200 px-3 py-3 text-base text-neutral-900 placeholder:text-neutral-400"
-          placeholder="Москва, улица, дом, подъезд, квартира"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={() => onSave(value.trim(), target)}
-            disabled={!value.trim()}
-            className="flex-1 rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            className={
+              showSelectAddressCta && layoutNarrow
+                ? "flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-2 pb-[5.75rem]"
+                : "flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-2"
+            }
           >
-            Подтвердить адрес
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-neutral-200 px-4 py-3 text-sm font-medium"
-          >
-            Отмена
-          </button>
+            <form
+              autoComplete="off"
+              onSubmit={(e) => {
+                e.preventDefault();
+              }}
+              className="contents"
+            >
+              <label htmlFor="courier-address-input" className="sr-only">
+                Адрес доставки
+              </label>
+              <input
+                id="courier-address-input"
+                ref={addressInputRef}
+                type="text"
+                name="gj-courier-address-demo"
+                enterKeyHint="done"
+                autoComplete="off"
+                inputMode="text"
+                autoCorrect="off"
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                className="min-h-[2.75rem] w-full border-0 border-b border-neutral-200 bg-transparent py-2 text-base text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none focus:ring-0"
+                placeholder="Укажите адрес доставки"
+                value={value}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setValue(v);
+                  if (!v.trim()) {
+                    setPickedFromHints(false);
+                    setPrefillSubmitAllowed(false);
+                  }
+                }}
+              />
+            </form>
+
+            {hints.length > 0 ? (
+              <div
+                role="listbox"
+                aria-label="Подсказки адреса"
+                className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
+              >
+                {hints.map((addr) => (
+                  <AddressSuggestRow
+                    key={addr}
+                    address={addr}
+                    query={value.trim()}
+                    onPick={() => {
+                      setValue(addr);
+                      setPickedFromHints(true);
+                      requestAnimationFrame(() => addressInputRef.current?.focus());
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1" aria-hidden />
+            )}
+          </div>
+
+          {showSelectAddressCta && !layoutNarrow ? (
+            <div className="shrink-0 border-t border-neutral-100 bg-white px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+              <button
+                type="button"
+                onClick={() => onSave(value.trim(), target)}
+                className="w-full rounded-2xl bg-neutral-900 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2"
+              >
+                Выбрать адрес
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
+
+      {showSelectAddressCta && layoutNarrow ? (
+        <div
+          className="pointer-events-auto fixed left-1/2 z-[120] w-full max-w-lg -translate-x-1/2 border-t border-neutral-100 bg-white px-4 py-2 shadow-[0_-6px_24px_rgba(0,0,0,0.08)]"
+          style={{ bottom: keyboardOverlapPx }}
+        >
+          <div className="pb-[max(0.25rem,env(safe-area-inset-bottom,0px))]">
+            <button
+              type="button"
+              onClick={() => onSave(value.trim(), target)}
+              className="w-full rounded-2xl bg-neutral-900 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2"
+            >
+              Выбрать адрес
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1273,22 +1525,29 @@ function SplitSelectionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
       <button type="button" aria-label="Закрыть выбор способа получения" className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h3 className="cu-sheet-title">Выберите способ получения</h3>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+      >
+        <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="cu-sheet-title">Выберите способ получения</h3>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+            >
+              Закрыть
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
-          >
-            Закрыть
-          </button>
         </div>
 
+        <div className="px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
         <div className="rounded-xl bg-neutral-50 p-3">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {resolution.lines.map((line) => (
@@ -1440,32 +1699,40 @@ function SplitSelectionModal({
             Отмена
           </button>
         </div>
+        </div>
       </div>
       {pickupSelectorOpen ? (
-        <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
           <button
             type="button"
             aria-label="Закрыть выбор магазина"
             className="absolute inset-0"
             onClick={() => setPickupSelectorOpen(false)}
           />
-          <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h4 className="cu-sheet-title">Выберите магазин</h4>
-                <p className="mt-1 text-sm text-neutral-500">
-                  Для большого списка удобнее искать магазин по названию и сразу видеть покрытие товаров.
-                </p>
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+          >
+            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="cu-sheet-title">Выберите магазин</h4>
+                  <p className="mt-1 text-sm text-neutral-500">
+                    Для большого списка удобнее искать магазин по названию и сразу видеть покрытие товаров.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPickupSelectorOpen(false)}
+                  className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+                >
+                  Закрыть
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setPickupSelectorOpen(false)}
-                className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
-              >
-                Закрыть
-              </button>
             </div>
 
+            <div className="px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
             <input
               type="text"
               value={pickupSearch}
@@ -1507,6 +1774,7 @@ function SplitSelectionModal({
                 </div>
               ) : null}
             </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1532,6 +1800,7 @@ function PartCard({
   onDateChange,
   onSlotChange,
   badgeLabel,
+  shipmentOrdinal,
   inGroup = false,
 }: {
   part: ScenarioPart;
@@ -1552,6 +1821,8 @@ function PartCard({
   onDateChange?: (dateIx: number) => void;
   onSlotChange?: (slotIx: number) => void;
   badgeLabel?: string;
+  /** Номер отправления при сплите (1, 2, …); подпись в стиле `cu-block-heading` */
+  shipmentOrdinal?: number;
   /** Без отдельной рамки — внутри общего блока заказа */
   inGroup?: boolean;
 }) {
@@ -1599,7 +1870,7 @@ function PartCard({
             onClick={onToggle}
             role="checkbox"
             aria-checked={included}
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] border-2 text-[11px] font-bold leading-none ${
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-bold leading-none ${
               included ? "border-black bg-black text-white" : "border-neutral-400 bg-white text-transparent"
             } ${part.canToggle ? "" : "opacity-40"}`}
           >
@@ -1607,6 +1878,11 @@ function PartCard({
           </button>
         ) : null}
         <div className="min-w-0 flex-1">
+          {shipmentOrdinal != null ? (
+            <p className="cu-block-heading mb-2">
+              Отправление {shipmentOrdinal}
+            </p>
+          ) : null}
           {isGjStorePickup ? (
             <div className="min-w-0">
               <p className="text-sm font-semibold leading-snug text-neutral-900">{gjPickupHeadline}</p>
@@ -1623,8 +1899,7 @@ function PartCard({
             </div>
           ) : isCourier ? (
             <div className="min-w-0">
-              <p className="text-sm font-semibold leading-snug text-neutral-900">{COURIER_CARRIER_LABEL}</p>
-              <p className="mt-0.5 text-xs font-normal leading-snug text-neutral-600">{courierOriginCaption(part)}</p>
+              <p className="text-sm font-semibold leading-snug text-neutral-900">{courierPartHeadline(part)}</p>
               <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">курьер</p>
             </div>
           ) : isPvz ? (
@@ -1795,11 +2070,19 @@ function PartCard({
   );
 }
 
-function ScenarioPartCardSkeleton({ inGroup }: { inGroup?: boolean }) {
+function ScenarioPartCardSkeleton({
+  inGroup,
+  showShipmentHeading,
+}: {
+  inGroup?: boolean;
+  /** Плейсхолдер строки «Отправление N» как в PartCard при сплите */
+  showShipmentHeading?: boolean;
+}) {
   const inner = (
     <div className="flex items-start gap-3">
-      <div className="mt-0.5 h-5 w-5 shrink-0 rounded-[4px] bg-neutral-200" />
+      <div className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-neutral-200" />
       <div className="min-w-0 flex-1 space-y-3">
+        {showShipmentHeading ? <div className="h-3.5 w-36 max-w-[14rem] rounded bg-neutral-200/85" /> : null}
         <div className="space-y-2">
           <div className="h-4 w-[72%] max-w-[260px] rounded-md bg-neutral-200" />
           <div className="h-3 w-[40%] max-w-[140px] rounded-md bg-neutral-100" />
@@ -1836,10 +2119,10 @@ function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) 
       >
         <span className="sr-only">Считаем доступные отправления и сроки.</span>
         <div className="animate-pulse">
-          <ScenarioPartCardSkeleton />
+          <ScenarioPartCardSkeleton showShipmentHeading />
         </div>
         <div className="animate-pulse">
-          <ScenarioPartCardSkeleton />
+          <ScenarioPartCardSkeleton showShipmentHeading />
         </div>
       </div>
     );
@@ -1857,15 +2140,11 @@ function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) 
         <div className="h-3 w-full max-w-sm rounded bg-neutral-100" />
         <div className="h-4 w-[85%] max-w-xs rounded bg-neutral-200/80" />
       </div>
-      <div className="animate-pulse flex items-center justify-between px-3 py-3">
-        <div className="h-3.5 w-44 rounded bg-neutral-200/90" />
-        <div className="h-7 w-[7.5rem] rounded-full bg-neutral-200/80" />
+      <div className="animate-pulse">
+        <ScenarioPartCardSkeleton inGroup showShipmentHeading />
       </div>
       <div className="animate-pulse">
-        <ScenarioPartCardSkeleton inGroup />
-      </div>
-      <div className="animate-pulse">
-        <ScenarioPartCardSkeleton inGroup />
+        <ScenarioPartCardSkeleton inGroup showShipmentHeading />
       </div>
     </section>
   );
@@ -1971,6 +2250,22 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     saveCourierAddress(courierAddress);
   }, [courierAddress]);
   const primaryCourierAddress = method === "courier" ? courierAddress : "";
+
+  const checkoutSheetOpen =
+    pickupSelectorOpen ||
+    pvzSelectorOpen ||
+    splitModalState !== null ||
+    courierAddressModalTarget !== null ||
+    phoneGateOpen;
+
+  useEffect(() => {
+    if (!checkoutSheetOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [checkoutSheetOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2081,6 +2376,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [cartScopedSummaries, setCartScopedSummaries] = useState<{
     methodSummaries: Bootstrap["methodSummaryByCity"][string];
     pickupSummaryByStore: Record<string, PickupStoreSummary>;
+    pvzLinePreview?: CartMethodSummariesResult["pvzLinePreview"];
   } | null>(null);
 
   useEffect(() => {
@@ -2103,14 +2399,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cityId, lines }),
         });
-        const json = (await r.json()) as {
-          methodSummaries?: Bootstrap["methodSummaryByCity"][string];
-          pickupSummaryByStore?: Record<string, PickupStoreSummary>;
-        };
+        const json = (await r.json()) as CartMethodSummariesResult;
         if (cancelled || !r.ok || !json.methodSummaries || !json.pickupSummaryByStore) return;
         setCartScopedSummaries({
           methodSummaries: json.methodSummaries,
           pickupSummaryByStore: json.pickupSummaryByStore,
+          pvzLinePreview: json.pvzLinePreview,
         });
       } catch {
         if (!cancelled) setCartScopedSummaries(null);
@@ -2431,6 +2725,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
     return { includedMerch: merch, partsTotal: t, includedParts: parts };
   }, [allDisplayParts, included, promoFactor]);
+
+  /** Сумма единиц товара во включённых отправлениях (для бейджа «в заказе X из Y») */
+  const includedOrderUnits = useMemo(
+    () => includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0),
+    [includedParts],
+  );
 
   const cartGoodsSubtotal = cartDetail?.subtotal ?? 0;
   /** Пока нет сценария доставки — берём сумму корзины; иначе из включённых частей */
@@ -2755,6 +3055,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setPhoneDraft("");
   };
 
+  /** Закрыли выбор магазина/ПВЗ без подтверждения точки — убираем способ, иначе остаётся плейсхолдер «Выберите…». */
+  const dismissPickupSelector = () => {
+    setPickupSelectorOpen(false);
+    if (!storeId.trim()) setMethod(null);
+  };
+  const dismissPvzSelector = () => {
+    setPvzSelectorOpen(false);
+    if (!pvzId.trim()) setMethod(null);
+  };
+
   if (bootError) {
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col gap-3 bg-white px-4 py-8 text-sm text-neutral-800">
@@ -2779,6 +3089,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }
 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
+  /** Бейдж только когда сплит и часть отправлений снята — иначе дублирует строку покрытия и не информирует */
+  const showSplitOrderUnitsBadge = hasSplit && units > 0 && includedOrderUnits < units;
+  const shipmentOrdinalForPartKey = (key: string) => {
+    if (allDisplayParts.length <= 1) return undefined;
+    const ix = allDisplayParts.findIndex((p) => p.key === key);
+    return ix >= 0 ? ix + 1 : undefined;
+  };
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
   const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
   const displayGoodsSubtotal =
@@ -2803,7 +3120,19 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     if (!method || !scenario) return null;
     const dm = deliveryOptions.find((d) => d.code === method);
     if (!dm) return null;
-    const summaryText = methodSummaryLabel(dm.code as "courier" | "pickup" | "pvz", dm.summary, dm.enabled);
+    let summaryText = methodSummaryLabel(dm.code as "courier" | "pickup" | "pvz", dm.summary, dm.enabled);
+    const s = dm.summary;
+    if (
+      summaryText &&
+      s &&
+      s.hasSplit &&
+      (method === "courier" || method === "pvz") &&
+      summaryText === `${s.availableUnits} из ${s.totalUnits} товаров` &&
+      includedOrderUnits === s.availableUnits &&
+      units === s.totalUnits
+    ) {
+      summaryText = "";
+    }
     return (
       <>
         {summaryText ? <p className="cu-muted mb-2">{summaryText}</p> : null}
@@ -2854,18 +3183,22 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   return (
     <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-white pb-28">
-      <header className="sticky top-0 z-50 border-b border-neutral-100 bg-white px-4 py-3 shadow-sm">
-        <div className="flex items-center gap-3">
-          <Link href="/cart" className="text-xl text-neutral-700" aria-label="Назад в корзину">
-            ←
-          </Link>
-          <h1 className="cu-page-title flex-1 text-center">Оформление заказа</h1>
-          <span className="w-6" />
+      <div className="sticky top-0 z-50 mb-6 border-b border-neutral-100 bg-white shadow-sm">
+        <header className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Link href="/cart" className="text-xl text-neutral-700" aria-label="Назад в корзину">
+              ←
+            </Link>
+            <h1 className="cu-page-title flex-1 text-center">Оформление заказа</h1>
+            <span className="w-6" />
+          </div>
+        </header>
+        <div className="px-4 pb-3 pt-1">
+          <Stepper deliveryDone={unifiedOrderBlock} recipientDone={!!recipient} paymentDone />
         </div>
-      </header>
+      </div>
 
       <div className="relative z-0 px-4 pt-4">
-        <Stepper deliveryDone={unifiedOrderBlock} recipientDone={!!recipient} paymentDone />
 
         <section className="mb-6">
           <div className="mb-3 flex items-center justify-between">
@@ -2942,6 +3275,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               );
             })}
           </div>
+          {deliveryOptions.length > 0 && !method ? (
+            <p className="mx-auto mt-3 max-w-[17rem] text-center text-[11px] font-normal leading-snug text-neutral-500">
+              Выберите способ получения.
+            </p>
+          ) : null}
           {deliveryOptions.length === 0 ? (
             <p className="mt-2 text-xs text-neutral-500">
               Для выбранного города нет доступных способов получения по логистическим правилам.
@@ -3057,25 +3395,18 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : unifiedOrderBlock ? (
           <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
             <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
-            {hasSplit ? (
-              <div className="flex items-center justify-between px-3 py-3">
-                <p className="cu-block-heading">
-                  {allDisplayParts.length > 1
-                    ? `Ваш заказ · ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
-                    : "Ваш заказ"}
-                </p>
-                {units > 0 ? (
-                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
-                    В заказе {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из{" "}
-                    {units} шт
-                  </span>
-                ) : null}
+            {showSplitOrderUnitsBadge ? (
+              <div className="flex justify-end border-t border-neutral-100 px-3 py-2">
+                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
+                  В заказе {includedOrderUnits} из {units} шт
+                </span>
               </div>
             ) : null}
             {scenario?.parts.map((p, partIndex) => (
               <PartCard
                 key={p.key}
                 inGroup
+                shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
                 part={p}
                 included={included[p.key] !== false}
                 onToggle={() =>
@@ -3117,19 +3448,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </section>
         ) : (
           <>
-            {scenario && hasSplit ? (
-              <div className="mb-4 flex items-center justify-between">
-                <p className="cu-block-heading">
-                  {allDisplayParts.length > 1
-                    ? `Ваш заказ · ${allDisplayParts.length} ${pluralizeShipments(allDisplayParts.length)}`
-                    : "Ваш заказ"}
-                </p>
-                {units > 0 ? (
-                  <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
-                    В заказе {includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0)} из{" "}
-                    {units} шт
-                  </span>
-                ) : null}
+            {scenario && showSplitOrderUnitsBadge ? (
+              <div className="mb-3 flex justify-end">
+                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
+                  В заказе {includedOrderUnits} из {units} шт
+                </span>
               </div>
             ) : null}
 
@@ -3137,6 +3460,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               {scenario?.parts.map((p, partIndex) => (
                 <PartCard
                   key={p.key}
+                  shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
                   part={p}
                   included={included[p.key] !== false}
                   onToggle={() =>
@@ -3198,6 +3522,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <PartCard
                 key={part.key}
                 inGroup
+                shipmentOrdinal={shipmentOrdinalForPartKey(part.key)}
                 part={part}
                 included={included[part.key] !== false}
                 onToggle={() =>
@@ -3264,7 +3589,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </section>
         ) : null}
 
-        <section className="mb-6" aria-labelledby="checkout-recipient-heading">
+        <section
+          className="mb-6 border-t border-neutral-100 pt-5"
+          aria-labelledby="checkout-recipient-heading"
+        >
           <h2 id="checkout-recipient-heading" className="cu-section-title mb-2">
             Мои данные
           </h2>
@@ -3482,75 +3810,94 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       </div>
 
       {pickupSelectorOpen && method === "pickup" ? (
-        <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
           <button
             type="button"
             aria-label="Закрыть выбор магазина"
             className="absolute inset-0"
-            onClick={() => setPickupSelectorOpen(false)}
+            onClick={dismissPickupSelector}
           />
-          <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h3 className="cu-sheet-title">Самовывоз из магазина</h3>
-                <p className="cu-sheet-lead mt-1">
-                  Выберите магазин и посмотрите, сколько товаров доступны сразу, а сколько привезем позже.
-                </p>
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+          >
+            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="cu-sheet-title">Самовывоз из магазина</h3>
+                  <p className="cu-sheet-lead mt-1">
+                    Выберите магазин и посмотрите, сколько товаров доступны сразу, а сколько привезем позже.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={dismissPickupSelector}
+                  className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+                >
+                  Закрыть
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setPickupSelectorOpen(false)}
-                className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
-              >
-                Закрыть
-              </button>
             </div>
-            <PickupStoreSelector
-              stores={pickupStoresOrdered}
-              selectedStoreId={storeId}
-              lastChosenStoreId={lastPickupMemoryId}
-              onSelect={(nextStoreId) => {
-                setStoreId(nextStoreId);
-                setPickupSelectorOpen(false);
-              }}
-            />
+            <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
+              <PickupStoreSelector
+                stores={pickupStoresOrdered}
+                selectedStoreId={storeId}
+                lastChosenStoreId={lastPickupMemoryId}
+                productsById={productsById}
+                onSelect={(nextStoreId) => {
+                  setStoreId(nextStoreId);
+                  setPickupSelectorOpen(false);
+                }}
+              />
+            </div>
           </div>
         </div>
       ) : null}
       {pvzSelectorOpen && method === "pvz" ? (
-        <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
           <button
             type="button"
             aria-label="Закрыть выбор ПВЗ"
             className="absolute inset-0"
-            onClick={() => setPvzSelectorOpen(false)}
+            onClick={dismissPvzSelector}
           />
-          <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h3 className="cu-sheet-title">Пункт выдачи заказа</h3>
-                <p className="cu-sheet-lead mt-1">
-                  Выберите удобный ПВЗ на карте и сразу увидите его данные в карточке способа получения.
-                </p>
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+          >
+            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="cu-sheet-title">Пункт выдачи заказа</h3>
+                  <p className="cu-sheet-lead mt-1">
+                    Выберите удобный ПВЗ на карте и сразу увидите его данные в карточке способа получения.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={dismissPvzSelector}
+                  className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
+                >
+                  Закрыть
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setPvzSelectorOpen(false)}
-                className="rounded-full border border-neutral-200 px-3 py-1 text-sm"
-              >
-                Закрыть
-              </button>
             </div>
-            <PvzPointSelector
-              points={pvzOptionsOrdered}
-              selectedPointId={pvzId}
-              lastChosenPointId={lastPvzMemoryId}
-              summary={pvzSummary}
-              onSelect={(nextPointId) => {
-                setPvzId(nextPointId);
-                setPvzSelectorOpen(false);
-              }}
-            />
+            <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
+              <PvzPointSelector
+                points={pvzOptionsOrdered}
+                selectedPointId={pvzId}
+                lastChosenPointId={lastPvzMemoryId}
+                summary={pvzSummary}
+                linePreview={cartDetail?.lines?.length ? cartScopedSummaries?.pvzLinePreview : undefined}
+                productsById={productsById}
+                onSelect={(nextPointId) => {
+                  setPvzId(nextPointId);
+                  setPvzSelectorOpen(false);
+                }}
+              />
+            </div>
           </div>
         </div>
       ) : null}
@@ -3579,41 +3926,49 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         />
       ) : null}
       {phoneGateOpen ? (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
           <button
             type="button"
             aria-label="Закрыть окно телефона"
             className="absolute inset-0"
             onClick={() => setPhoneGateOpen(false)}
           />
-          <div className="relative z-10 w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
-            <h3 className="cu-sheet-title">Подтвердите телефон</h3>
-            <p className="cu-sheet-lead mt-1">
-              Чтобы оформить заказ, укажите номер и нажмите «Получить смс с кодом» — в демо переходим без ввода кода.
-            </p>
-            <input
-              className="mt-4 w-full rounded-lg border border-neutral-200 px-3 py-3 text-base"
-              placeholder="+7 (___) ___-__-__"
-              inputMode="tel"
-              autoComplete="tel"
-              value={phoneDraft}
-              onChange={(e) => setPhoneDraft(e.target.value)}
-            />
-            <button
-              type="button"
-              disabled={!phoneHasMinDigits(phoneDraft)}
-              onClick={confirmRecipientFromGate}
-              className="mt-3 w-full rounded-lg bg-black py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-40"
-            >
-              Получить смс с кодом
-            </button>
-            <button
-              type="button"
-              onClick={() => setPhoneGateOpen(false)}
-              className="mt-2 w-full rounded-lg border border-neutral-200 py-2.5 text-sm text-neutral-700"
-            >
-              Отмена
-            </button>
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 max-h-[95dvh] w-full max-w-md overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+          >
+            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-5 pb-3 pt-5">
+              <h3 className="cu-sheet-title">Подтвердите телефон</h3>
+              <p className="cu-sheet-lead mt-1">
+                Чтобы оформить заказ, укажите номер и нажмите «Получить смс с кодом» — в демо переходим без ввода кода.
+              </p>
+            </div>
+            <div className="px-5 pb-5 pt-3">
+              <input
+                className="w-full rounded-lg border border-neutral-200 px-3 py-3 text-base"
+                placeholder="+7 (___) ___-__-__"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phoneDraft}
+                onChange={(e) => setPhoneDraft(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={!phoneHasMinDigits(phoneDraft)}
+                onClick={confirmRecipientFromGate}
+                className="mt-3 w-full rounded-lg bg-black py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-40"
+              >
+                Получить смс с кодом
+              </button>
+              <button
+                type="button"
+                onClick={() => setPhoneGateOpen(false)}
+                className="mt-2 w-full rounded-lg border border-neutral-200 py-2.5 text-sm text-neutral-700"
+              >
+                Отмена
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
