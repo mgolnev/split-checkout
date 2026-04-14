@@ -2483,6 +2483,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       return;
     }
     const cartLinesPayload = cartDetail.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
+    /** Сразу убираем прошлый сценарий, иначе один кадр показывает старые PartCard до скелетона. */
+    setScenario(null);
+    setRemainderResolution(null);
     setLoading(true);
     try {
       const data = await requestScenario({
@@ -2502,7 +2505,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
   }, [cityId, method, storeId, pvzId, primaryCourierAddress, requestScenario, cartDetail]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     void refreshScenario();
   }, [refreshScenario]);
 
@@ -3386,8 +3389,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </p>
           ) : null}
 
-          {/* Детали способа: отдельная «кирпичная» карточка только если заказ ниже ещё не собран в единый блок */}
-          {method && !unifiedOrderBlock ? (
+          {/* Детали способа: «кирпич» только до сборки единого блока; во время запроса сценария не показываем — иначе мелькает упрощённый UI перед PartCard */}
+          {method && !unifiedOrderBlock && !showScenarioSkeleton ? (
             <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
               {!scenario ? (
                 (() => {
@@ -3483,7 +3486,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : null}
 
         {showScenarioSkeleton ? (
-          <ScenarioOrderSkeleton variant={unifiedOrderBlock ? "unified" : "stacked"} />
+          <ScenarioOrderSkeleton variant="unified" />
         ) : unifiedOrderBlock ? (
           <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
             <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
@@ -3690,9 +3693,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               >
                 Получить смс с кодом
               </button>
-              <p className="cu-muted mt-2">
-                Для демо код не запрашиваем — после нажатия вы будете «авторизованы» с тестовым именем.
-              </p>
             </>
           ) : (
             <div className="rounded-xl border border-neutral-200 px-3 py-3">

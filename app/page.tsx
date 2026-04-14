@@ -26,6 +26,12 @@ export default function Home() {
         >
           Админка
         </Link>
+        <Link
+          className="rounded-lg border border-dashed border-neutral-300 px-4 py-3 text-center text-sm font-medium text-neutral-600"
+          href="/ui-kit"
+        >
+          UI kit (дизайн)
+        </Link>
       </div>
     </main>
   );
