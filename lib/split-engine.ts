@@ -11,6 +11,7 @@ import {
   systemDisclaimer,
 } from "./disclaimers";
 import type { DisclaimerTextMap } from "./disclaimers";
+import { buildClickCollectDeliveryHeadline } from "./click-collect-delivery-headline";
 import { buildPvzDeliveryHeadline } from "./pvz-delivery-headline";
 
 type ProductRow = {
@@ -733,6 +734,7 @@ function pickupScenario(ctx: EngineInput): ScenarioResult {
   if (canCc && afterReserve.length > 0 && wh) {
     const collectTake = allocateFromSource(afterReserve, wh.id, stockWh);
     if (collectTake.length > 0) {
+      const clickCollectLeadDays = rule?.leadTimeDays && rule.leadTimeDays > 0 ? rule.leadTimeDays : 3;
       const p = buildPart(
         "collect",
         wh,
@@ -740,7 +742,7 @@ function pickupScenario(ctx: EngineInput): ScenarioResult {
         collectTake,
         products,
         rule,
-        "Доставим в магазин через 3 дня",
+        buildClickCollectDeliveryHeadline(clickCollectLeadDays),
       );
       if (p) {
         p.deliveryPrice = 0;

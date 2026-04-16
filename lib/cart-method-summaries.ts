@@ -1,6 +1,7 @@
 import { buildScenario } from "@/lib/build-scenario";
+import { formatHoldNoticeForPart } from "@/lib/hold-display";
 import { prisma } from "@/lib/prisma";
-import type { ScenarioPart } from "@/lib/types";
+import type { ScenarioPart, ScenarioResult } from "@/lib/types";
 
 export type MethodCode = "courier" | "pickup" | "pvz";
 
@@ -14,6 +15,9 @@ export type MethodSummary = {
 /** Сжатая строка корзины для превью в UI (магазин / ПВЗ). */
 export type ProductQtyPreview = { productId: string; quantity: number };
 
+/** Подписи срока доставки и хранения под миниатюрами в модалке выбора точки */
+export type SheetThumbMeta = { leadText?: string; holdText?: string };
+
 export type PickupStoreSummary = {
   totalUnits: number;
   availableUnits: number;
@@ -26,6 +30,9 @@ export type PickupStoreSummary = {
   immediateLines?: ProductQtyPreview[];
   laterLines?: ProductQtyPreview[];
   unavailableLines?: ProductQtyPreview[];
+  reserveThumb?: SheetThumbMeta;
+  collectThumb?: SheetThumbMeta;
+  unavailableThumb?: SheetThumbMeta;
 };
 
 export type CartMethodSummariesResult = {
@@ -37,6 +44,8 @@ export type CartMethodSummariesResult = {
     available: ProductQtyPreview[];
     unavailable: ProductQtyPreview[];
   };
+  /** Сроки под блоками «в пункте выдачи» / «другим способом» в модалке ПВЗ */
+  pvzSheetThumbMeta?: { atPoint: SheetThumbMeta; other: SheetThumbMeta };
 };
 
 function mergeProductQty(lines: { productId: string; quantity: number }[]): ProductQtyPreview[] {
@@ -45,6 +54,55 @@ function mergeProductQty(lines: { productId: string; quantity: number }[]): Prod
     m.set(l.productId, (m.get(l.productId) ?? 0) + l.quantity);
   }
   return [...m.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+}
+
+/** Тексты под миниатюрами товаров (как lead + hold в карточке отправления). */
+export function sheetThumbMetaFromPart(part: ScenarioPart | undefined): SheetThumbMeta {
+  if (!part) return {};
+  const leadText = part.leadTimeLabel?.trim() || undefined;
+  const holdText = formatHoldNoticeForPart(part.mode, part.holdDays) ?? undefined;
+  const o: SheetThumbMeta = {};
+  if (leadText) o.leadText = leadText;
+  if (holdText) o.holdText = holdText;
+  return o;
+}
+
+function pickupThumbExtras(
+  pickupScenario: ScenarioResult,
+  courierScenario?: ScenarioResult | null,
+): Pick<PickupStoreSummary, "reserveThumb" | "collectThumb" | "unavailableThumb"> {
+  const reserveThumb = sheetThumbMetaFromPart(
+    pickupScenario.parts.find((p) => p.mode === "click_reserve"),
+  );
+  const collectThumb = sheetThumbMetaFromPart(
+    pickupScenario.parts.find((p) => p.mode === "click_collect"),
+  );
+  let unavailableThumb: SheetThumbMeta | undefined;
+  if (pickupScenario.remainder.length > 0) {
+    unavailableThumb = sheetThumbMetaFromPart(
+      pickupScenario.parts.find((p) => p.mode === "courier") ??
+        courierScenario?.parts.find((p) => p.mode === "courier"),
+    );
+    if (!unavailableThumb.leadText && !unavailableThumb.holdText) unavailableThumb = undefined;
+  }
+  return {
+    ...(Object.keys(reserveThumb).length ? { reserveThumb } : {}),
+    ...(Object.keys(collectThumb).length ? { collectThumb } : {}),
+    ...(unavailableThumb ? { unavailableThumb } : {}),
+  };
+}
+
+/** Мета для модалки ПВЗ: срок по складу ПВЗ и по курьеру для остатка заказа. */
+export function buildPvzSheetThumbMeta(
+  pvzScenario: ScenarioResult,
+  courierScenario?: ScenarioResult | null,
+): { atPoint: SheetThumbMeta; other: SheetThumbMeta } {
+  const atPoint = sheetThumbMetaFromPart(pvzScenario.parts.find((p) => p.mode === "pvz"));
+  if (pvzScenario.remainder.length === 0) {
+    return { atPoint, other: {} };
+  }
+  const courierPart = courierScenario?.parts.find((p) => p.mode === "courier");
+  return { atPoint, other: sheetThumbMetaFromPart(courierPart) };
 }
 
 function itemsFromPartsByModes(parts: ScenarioPart[], modes: ScenarioPart["mode"][]): ProductQtyPreview[] {
@@ -103,6 +161,7 @@ export async function computeCartMethodSummaries(
       },
       pickupSummaryByStore: {},
       pvzLinePreview: { available: [], unavailable: [] },
+      pvzSheetThumbMeta: { atPoint: {}, other: {} },
     };
   }
 
@@ -117,6 +176,7 @@ export async function computeCartMethodSummaries(
       },
       pickupSummaryByStore: {},
       pvzLinePreview: { available: [], unavailable: [] },
+      pvzSheetThumbMeta: { atPoint: {}, other: {} },
     };
   }
 
@@ -145,6 +205,7 @@ export async function computeCartMethodSummaries(
     available: itemsFromPartsByModes(pvzScenario.parts, ["pvz"]),
     unavailable: mergeProductQty(pvzScenario.remainder),
   };
+  const pvzSheetThumbMeta = buildPvzSheetThumbMeta(pvzScenario, courierScenario);
 
   const methodSummaries: Record<MethodCode, MethodSummary> = {
     courier: {
@@ -197,6 +258,7 @@ export async function computeCartMethodSummaries(
       immediateLines: itemsFromPartsByModes(pickupScenario.parts, ["click_reserve"]),
       laterLines: itemsFromPartsByModes(pickupScenario.parts, ["click_collect"]),
       unavailableLines: mergeProductQty(pickupScenario.remainder),
+      ...pickupThumbExtras(pickupScenario, courierScenario),
     };
 
     bestPickupUnits = Math.max(bestPickupUnits, availableUnits);
@@ -213,5 +275,37 @@ export async function computeCartMethodSummaries(
     methodSummaries,
     pickupSummaryByStore,
     pvzLinePreview,
+    pvzSheetThumbMeta,
+  };
+}
+
+/**
+ * Сводка для карты/списка магазинов по уже посчитанному сценарию самовывоза (остаток, добор отправления и т.д.).
+ * Совпадает по полям с {@link computeCartMethodSummaries} для одной точки.
+ */
+export function pickupSummaryFromScenario(
+  orderTotalUnits: number,
+  scenario: ScenarioResult,
+  /** Для подписей к «недоступно здесь»: остаток обычно уходит курьером */
+  courierScenario?: ScenarioResult | null,
+): PickupStoreSummary {
+  const availableUnits = availableUnitsForScenario(scenario);
+  const reserveUnits = unitsForMode(scenario, "click_reserve");
+  const collectUnits = unitsForMode(scenario, "click_collect");
+  const remainderUnits = scenario.remainder.reduce((sum, line) => sum + line.quantity, 0);
+  const hasSplit = scenario.parts.length > 1 || scenario.remainder.length > 0;
+  const hasFullCoverage = availableUnits >= orderTotalUnits && remainderUnits === 0;
+  return {
+    totalUnits: orderTotalUnits,
+    availableUnits,
+    reserveUnits,
+    collectUnits,
+    remainderUnits,
+    hasFullCoverage,
+    hasSplit,
+    immediateLines: itemsFromPartsByModes(scenario.parts, ["click_reserve"]),
+    laterLines: itemsFromPartsByModes(scenario.parts, ["click_collect"]),
+    unavailableLines: mergeProductQty(scenario.remainder),
+    ...pickupThumbExtras(scenario, courierScenario),
   };
 }

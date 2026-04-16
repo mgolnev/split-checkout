@@ -16,7 +16,13 @@ import {
   type CheckoutRecipientPayload,
 } from "@/lib/checkout-recipient-storage";
 import { commonDisclaimer, unresolvedBlockCopy } from "@/lib/disclaimers";
-import type { CartMethodSummariesResult } from "@/lib/cart-method-summaries";
+import {
+  buildPvzSheetThumbMeta,
+  pickupSummaryFromScenario,
+  type CartMethodSummariesResult,
+  type PickupStoreSummary,
+} from "@/lib/cart-method-summaries";
+import { formatHoldNoticeForPart } from "@/lib/hold-display";
 import type {
   AlternativeMethodOption,
   CartLine,
@@ -52,30 +58,12 @@ type Bootstrap = {
       { totalUnits: number; availableUnits: number; fullStoreCount: number; hasSplit: boolean }
     >
   >;
-  pickupSummaryByStore: Record<
-    string,
-    Record<
-      string,
-      {
-        totalUnits: number;
-        availableUnits: number;
-        reserveUnits: number;
-        collectUnits: number;
-        remainderUnits: number;
-        hasFullCoverage: boolean;
-        hasSplit: boolean;
-        immediateLines?: { productId: string; quantity: number }[];
-        laterLines?: { productId: string; quantity: number }[];
-        unavailableLines?: { productId: string; quantity: number }[];
-      }
-    >
-  >;
+  pickupSummaryByStore: Record<string, Record<string, PickupStoreSummary>>;
   /** Тексты UI чекаута из DisclaimerTemplate (см. common.unresolvedBlock*) */
   checkoutCopy?: CheckoutCopy;
 };
 
 type MethodSummary = Bootstrap["methodSummaryByCity"][string]["courier"];
-type PickupStoreSummary = Bootstrap["pickupSummaryByStore"][string][string];
 type PickupStoreOption = {
   id: string;
   name: string;
@@ -234,8 +222,39 @@ function BonusAuthBar() {
   );
 }
 
-const MOCK_DATES = ["Завтра, 9 апр.", "10 апр.", "11 апр.", "12 апр."];
 const MOCK_SLOTS = ["9:00–12:00", "12:00–15:00", "15:00–18:00"];
+
+function startOfStableCalendarDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(12, 0, 0, 0);
+  return x;
+}
+
+function addCalendarDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function formatRuShortDayMonth(d: Date): string {
+  const s = d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return s.replace(/\s*г\.?\s*$/i, "").trim();
+}
+
+/** Четыре ближайших календарных дня: «Завтра, …» и три следующих даты (относительно сегодня). */
+function buildCourierDateLabels(reference: Date = new Date()): string[] {
+  const base = startOfStableCalendarDay(reference);
+  const tomorrow = addCalendarDays(base, 1);
+  const d2 = addCalendarDays(base, 2);
+  const d3 = addCalendarDays(base, 3);
+  const d4 = addCalendarDays(base, 4);
+  return [
+    `Завтра, ${formatRuShortDayMonth(tomorrow)}`,
+    formatRuShortDayMonth(d2),
+    formatRuShortDayMonth(d3),
+    formatRuShortDayMonth(d4),
+  ];
+}
 /** Демо: лимит списания с карты лояльности и сумма в подписи «Списать с карты GJ …» */
 const GJ_LOYALTY_MAX_SPEND_RUB = 1000;
 /** Имя перевозчика в составе заголовка курьерской карточки */
@@ -350,6 +369,32 @@ function optionCoverageLabel(summary?: MethodSummary) {
   return `${summary.availableUnits} из ${summary.totalUnits} ${pluralizeProducts(summary.totalUnits)}`;
 }
 
+function mergeProductQtyForPreview(lines: { productId: string; quantity: number }[]) {
+  const m = new Map<string, number>();
+  for (const l of lines) {
+    m.set(l.productId, (m.get(l.productId) ?? 0) + l.quantity);
+  }
+  return [...m.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+}
+
+function splitPvzLinePreviewFromScenario(scenario: ScenarioResult): CartMethodSummariesResult["pvzLinePreview"] {
+  const available = mergeProductQtyForPreview(
+    scenario.parts.filter((p) => p.mode === "pvz").flatMap((p) => p.items),
+  );
+  const unavailable = mergeProductQtyForPreview(scenario.remainder);
+  return { available, unavailable };
+}
+
+function methodSummaryFromPvzOption(option: AlternativeMethodOption | null | undefined): MethodSummary | undefined {
+  if (!option || option.methodCode !== "pvz") return undefined;
+  return {
+    totalUnits: option.totalUnits,
+    availableUnits: option.availableUnits,
+    fullStoreCount: 0,
+    hasSplit: option.unresolvedUnits > 0 || option.scenario.parts.length > 1,
+  };
+}
+
 function pickupStoreRank(summary?: PickupStoreSummary) {
   if (!summary || summary.availableUnits <= 0) return 0;
   if (summary.hasFullCoverage && summary.collectUnits === 0) return 4;
@@ -451,9 +496,9 @@ function pvzPointTone(summary?: MethodSummary) {
     };
   }
   return {
-    marker: "border-amber-500 bg-amber-500 text-white",
-    accent: "bg-amber-100 text-amber-800",
-    card: "border-amber-200 bg-amber-50/60",
+    marker: "border-neutral-500 bg-neutral-600 text-white",
+    accent: "bg-neutral-100 text-neutral-800",
+    card: "border-neutral-200 bg-white",
   };
 }
 
@@ -547,25 +592,37 @@ function SheetThumbLabeledRow({
   label,
   items,
   productsById,
+  leadText,
+  holdText,
 }: {
   label: string;
   items: { productId: string; quantity: number }[];
   productsById: Record<string, SheetProductRef>;
+  /** Срок готовности / доставки (как в карточке отправления) */
+  leadText?: string;
+  /** Срок хранения (как в PartCard) */
+  holdText?: string;
 }) {
   if (items.length === 0) return null;
   return (
-    <div>
+    <div className="rounded-xl border border-neutral-100 bg-neutral-50/70 p-2.5">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">{label}</p>
-      <div className="mt-1 flex flex-wrap gap-2">
+      {leadText || holdText ? (
+        <div className="mt-1 space-y-0.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-neutral-600">
+          {leadText ? <p>{leadText}</p> : null}
+          {holdText ? <p>{holdText}</p> : null}
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
         {items.map((it, ix) => (
           <div key={`${it.productId}-${ix}`} className="flex flex-col items-center gap-0.5">
-            <div className="relative aspect-[3/4] w-9 overflow-hidden rounded-md bg-neutral-100">
+            <div className="relative aspect-[3/4] w-10 overflow-hidden rounded-md bg-neutral-100">
               <SafeProductImage
                 src={productsById[it.productId]?.image ?? ""}
                 alt={productsById[it.productId]?.name ?? ""}
                 fill
                 className="object-cover"
-                sizes="36px"
+                sizes="40px"
               />
               {it.quantity >= 2 ? (
                 <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[2px] text-[7px] font-semibold leading-none text-white ring-1 ring-white/30">
@@ -594,6 +651,14 @@ function PickupStoreSelector({
   productsById: Record<string, SheetProductRef>;
   onSelect: (storeId: string) => void;
 }) {
+  const [storeSearch, setStoreSearch] = useState("");
+
+  const filteredStores = useMemo(() => {
+    const q = storeSearch.trim().toLocaleLowerCase("ru");
+    if (!q) return stores;
+    return stores.filter((store) => store.name.toLocaleLowerCase("ru").includes(q));
+  }, [stores, storeSearch]);
+
   if (stores.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
@@ -602,29 +667,17 @@ function PickupStoreSelector({
     );
   }
 
-  const selectedStore = selectedStoreId ? stores.find((store) => store.id === selectedStoreId) : undefined;
+  const mapStores = filteredStores;
 
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-neutral-200 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] p-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold">Карта магазинов</p>
-            <p className="text-xs text-neutral-500">
-              Число на маркере — сколько единиц <span className="font-medium text-neutral-700">текущего заказа</span>{" "}
-              можно выдать из этой точки; 0 — в этом магазине выбранные позиции не собрать. Схема без точной
-              географии.
-            </p>
-          </div>
-          <span className="max-w-[55%] truncate rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-neutral-500 shadow-sm">
-            {selectedStore?.name ?? "Не выбран"}
-          </span>
-        </div>
         <div className="relative h-52 overflow-hidden rounded-xl border border-white/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]">
           <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-          {stores.map((store, index) => {
+          {mapStores.map((store) => {
             const tone = pickupStoreTone(store.summary);
-            const pos = PICKUP_MAP_POSITIONS[index % PICKUP_MAP_POSITIONS.length]!;
+            const storeIx = stores.findIndex((s) => s.id === store.id);
+            const pos = PICKUP_MAP_POSITIONS[(storeIx >= 0 ? storeIx : 0) % PICKUP_MAP_POSITIONS.length]!;
             const selected = selectedStoreId === store.id;
             const wasLastChoice = lastChosenStoreId === store.id;
             return (
@@ -647,91 +700,207 @@ function PickupStoreSelector({
             );
           })}
         </div>
-        {selectedStore ? (
-          <div className="mt-3 rounded-xl bg-white/90 p-3 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold">{selectedStore.name}</p>
-              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${pickupStoreTone(selectedStore.summary).accent}`}>
-                {pickupStoreStatusTitle(selectedStore.summary)}
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-neutral-900">{pickupStoreCountLabel(selectedStore.summary)}</p>
-            <p className="mt-1 text-xs text-neutral-500">{pickupStoreStatusDetail(selectedStore.summary)}</p>
-          </div>
-        ) : (
-          <div className="mt-3 rounded-xl bg-white/90 p-3 text-sm text-neutral-600 shadow-sm">
-            Выберите магазин на карте или в списке ниже.
-          </div>
-        )}
+        <label className="mt-3 block">
+          <span className="sr-only">Поиск магазина</span>
+          <input
+            type="search"
+            value={storeSearch}
+            onChange={(e) => setStoreSearch(e.target.value)}
+            placeholder="Найти магазин"
+            autoComplete="off"
+            className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-base outline-none focus:border-neutral-400"
+          />
+        </label>
       </div>
 
       <div className="space-y-2">
-        {stores.map((store) => {
-          const tone = pickupStoreTone(store.summary);
-          const selected = selectedStoreId === store.id;
-          const wasLastChoice = lastChosenStoreId === store.id;
-          return (
-            <button
-              key={store.id}
-              type="button"
-              onClick={() => onSelect(store.id)}
-              className={`w-full rounded-xl border p-3 text-left transition ${selected ? `${tone.card} border-black` : "border-neutral-200 bg-white hover:border-neutral-300"}`}
-              aria-pressed={selected}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold">{store.name}</span>
-                    {wasLastChoice ? (
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
-                        Выбирали в прошлый раз
-                      </span>
-                    ) : null}
+        {filteredStores.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+            По запросу магазины не найдены.
+          </div>
+        ) : (
+          filteredStores.map((store) => {
+            const tone = pickupStoreTone(store.summary);
+            const selected = selectedStoreId === store.id;
+            const wasLastChoice = lastChosenStoreId === store.id;
+            return (
+              <button
+                key={store.id}
+                type="button"
+                onClick={() => onSelect(store.id)}
+                className={`group w-full rounded-2xl border p-4 text-left transition ${selected ? "border-black bg-white" : "border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm"}`}
+                aria-pressed={selected}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[15px] font-semibold leading-tight">{store.name}</span>
+                      {wasLastChoice ? (
+                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+                          Выбирали в прошлый раз
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1.5 text-xs leading-relaxed text-neutral-500">{pickupStoreStatusDetail(store.summary)}</div>
                   </div>
-                  <div className="mt-1 text-sm text-neutral-900">{pickupStoreCountLabel(store.summary)}</div>
-                  <div className="mt-1 text-xs text-neutral-500">{pickupStoreStatusDetail(store.summary)}</div>
-                </div>
-                <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
-                  {pickupStoreStatusTitle(store.summary)}
-                </span>
-              </div>
-              {store.summary?.immediateLines?.length ||
-              store.summary?.laterLines?.length ||
-              store.summary?.unavailableLines?.length ? (
-                <div className="mt-2 space-y-2 border-t border-neutral-100 pt-2">
-                  <SheetThumbLabeledRow
-                    label="Сразу в магазине"
-                    items={store.summary?.immediateLines ?? []}
-                    productsById={productsById}
-                  />
-                  <SheetThumbLabeledRow
-                    label="Привезём в магазин"
-                    items={store.summary?.laterLines ?? []}
-                    productsById={productsById}
-                  />
-                  <SheetThumbLabeledRow
-                    label="Недоступно здесь"
-                    items={store.summary?.unavailableLines ?? []}
-                    productsById={productsById}
-                  />
-                </div>
-              ) : null}
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
-                <span className="rounded-full bg-neutral-100 px-2 py-1">
-                  Сразу: {store.summary?.reserveUnits ?? 0}
-                </span>
-                <span className="rounded-full bg-neutral-100 px-2 py-1">
-                  Привезем: {store.summary?.collectUnits ?? 0}
-                </span>
-                {(store.summary?.remainderUnits ?? 0) > 0 ? (
-                  <span className="rounded-full bg-neutral-100 px-2 py-1">
-                    Недоступно: {store.summary?.remainderUnits ?? 0}
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
+                    {pickupStoreStatusTitle(store.summary)}
                   </span>
+                </div>
+                {store.summary?.immediateLines?.length ||
+                store.summary?.laterLines?.length ||
+                store.summary?.unavailableLines?.length ? (
+                  <div className="mt-3 space-y-2.5 border-t border-neutral-100 pt-3">
+                    <SheetThumbLabeledRow
+                      label="Сразу в магазине"
+                      items={store.summary?.immediateLines ?? []}
+                      productsById={productsById}
+                      leadText={store.summary?.reserveThumb?.leadText}
+                      holdText={store.summary?.reserveThumb?.holdText}
+                    />
+                    <SheetThumbLabeledRow
+                      label="Привезём в магазин"
+                      items={store.summary?.laterLines ?? []}
+                      productsById={productsById}
+                      leadText={store.summary?.collectThumb?.leadText}
+                      holdText={store.summary?.collectThumb?.holdText}
+                    />
+                    <SheetThumbLabeledRow
+                      label="Недоступно здесь"
+                      items={store.summary?.unavailableLines ?? []}
+                      productsById={productsById}
+                      leadText={store.summary?.unavailableThumb?.leadText}
+                      holdText={store.summary?.unavailableThumb?.holdText}
+                    />
+                  </div>
                 ) : null}
-              </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Тот же экран «карта + список», что и при выборе самовывоза GJ на чекауте — правки в одном месте для обоих потоков. */
+function PickupStoreSelectionOverlay({
+  open,
+  onDismiss,
+  stores,
+  selectedStoreId,
+  lastChosenStoreId,
+  productsById,
+  onSelectStore,
+  zOverlayClass = "z-[100]",
+}: {
+  open: boolean;
+  onDismiss: () => void;
+  stores: PickupStoreOption[];
+  selectedStoreId: string;
+  lastChosenStoreId?: string | null;
+  productsById: Record<string, SheetProductRef>;
+  onSelectStore: (storeId: string) => void;
+  zOverlayClass?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className={`fixed inset-0 ${zOverlayClass} flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6`}
+    >
+      <button type="button" aria-label="Закрыть выбор магазина" className="absolute inset-0" onClick={onDismiss} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+      >
+        <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="cu-sheet-title">Самовывоз из магазина</h3>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
+            >
+              Закрыть
             </button>
-          );
-        })}
+          </div>
+        </div>
+        <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
+          <PickupStoreSelector
+            stores={stores}
+            selectedStoreId={selectedStoreId}
+            lastChosenStoreId={lastChosenStoreId}
+            productsById={productsById}
+            onSelect={onSelectStore}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Тот же экран с картой ПВЗ, что на основном чекауте — правки в одном месте. */
+function PvzPointSelectionOverlay({
+  open,
+  onDismiss,
+  points,
+  selectedPointId,
+  lastChosenPointId,
+  summary,
+  linePreview,
+  pvzSheetThumbMeta,
+  productsById,
+  onSelectPoint,
+  zOverlayClass = "z-[100]",
+}: {
+  open: boolean;
+  onDismiss: () => void;
+  points: PvzPointOption[];
+  selectedPointId: string;
+  lastChosenPointId?: string | null;
+  summary?: MethodSummary;
+  linePreview?: CartMethodSummariesResult["pvzLinePreview"];
+  pvzSheetThumbMeta?: CartMethodSummariesResult["pvzSheetThumbMeta"];
+  productsById: Record<string, SheetProductRef>;
+  onSelectPoint: (pointId: string) => void;
+  zOverlayClass?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className={`fixed inset-0 ${zOverlayClass} flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6`}
+    >
+      <button type="button" aria-label="Закрыть выбор ПВЗ" className="absolute inset-0" onClick={onDismiss} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+      >
+        <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="cu-sheet-title">Пункт выдачи заказа</h3>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+        <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
+          <PvzPointSelector
+            points={points}
+            selectedPointId={selectedPointId}
+            lastChosenPointId={lastChosenPointId}
+            summary={summary}
+            linePreview={linePreview}
+            pvzSheetThumbMeta={pvzSheetThumbMeta}
+            productsById={productsById}
+            onSelect={onSelectPoint}
+          />
+        </div>
       </div>
     </div>
   );
@@ -760,7 +929,6 @@ function PickupSelectedStoreCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">{store.name}</p>
-          <p className="mt-1 text-sm text-neutral-900">{pickupStoreCountLabel(store.summary)}</p>
           <p className="mt-1 text-xs text-neutral-500">{pickupStoreStatusDetail(store.summary)}</p>
         </div>
         <button
@@ -775,19 +943,6 @@ function PickupSelectedStoreCard({
           Изменить
         </button>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
-        <span className={`rounded-full px-2 py-1 ${embedded ? "bg-neutral-100" : "bg-white/80"}`}>
-          Сразу: {store.summary?.reserveUnits ?? 0}
-        </span>
-        <span className={`rounded-full px-2 py-1 ${embedded ? "bg-neutral-100" : "bg-white/80"}`}>
-          Привезем: {store.summary?.collectUnits ?? 0}
-        </span>
-        {(store.summary?.remainderUnits ?? 0) > 0 ? (
-          <span className={`rounded-full px-2 py-1 ${embedded ? "bg-neutral-100" : "bg-white/80"}`}>
-            Недоступно: {store.summary?.remainderUnits ?? 0}
-          </span>
-        ) : null}
-      </div>
     </div>
   );
 }
@@ -798,6 +953,7 @@ function PvzPointSelector({
   lastChosenPointId,
   summary,
   linePreview,
+  pvzSheetThumbMeta,
   productsById,
   onSelect,
 }: {
@@ -806,9 +962,22 @@ function PvzPointSelector({
   lastChosenPointId?: string | null;
   summary?: MethodSummary;
   linePreview?: CartMethodSummariesResult["pvzLinePreview"];
+  pvzSheetThumbMeta?: CartMethodSummariesResult["pvzSheetThumbMeta"];
   productsById: Record<string, SheetProductRef>;
   onSelect: (pointId: string) => void;
 }) {
+  const [pvzSearch, setPvzSearch] = useState("");
+
+  const filteredPoints = useMemo(() => {
+    const q = pvzSearch.trim().toLocaleLowerCase("ru");
+    if (!points.length) return [];
+    if (!q) return points;
+    return points.filter(
+      (p) =>
+        p.name.toLocaleLowerCase("ru").includes(q) || p.address.toLocaleLowerCase("ru").includes(q),
+    );
+  }, [points, pvzSearch]);
+
   if (points.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
@@ -817,28 +986,17 @@ function PvzPointSelector({
     );
   }
 
-  const selectedPoint = selectedPointId ? points.find((point) => point.id === selectedPointId) : undefined;
   const tone = pvzPointTone(summary);
+  const mapPoints = filteredPoints;
 
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-neutral-200 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] p-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold">Карта ПВЗ</p>
-            <p className="text-xs text-neutral-500">
-              У всех пунктов одно число: в ПВЗ отгружаем со склада города (не из магазинов). 0 — для вашего
-              заказа нет подходящего остатка на складе под эту схему. Схема без точной географии.
-            </p>
-          </div>
-          <span className="max-w-[55%] truncate rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-neutral-500 shadow-sm">
-            {selectedPoint?.name ?? "Не выбран"}
-          </span>
-        </div>
         <div className="relative h-52 overflow-hidden rounded-xl border border-white/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]">
           <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-          {points.map((point, index) => {
-            const pos = PICKUP_MAP_POSITIONS[index % PICKUP_MAP_POSITIONS.length]!;
+          {mapPoints.map((point) => {
+            const pointIx = points.findIndex((p) => p.id === point.id);
+            const pos = PICKUP_MAP_POSITIONS[(pointIx >= 0 ? pointIx : 0) % PICKUP_MAP_POSITIONS.length]!;
             const selected = selectedPointId === point.id;
             const wasLastChoice = lastChosenPointId === point.id;
             return (
@@ -861,62 +1019,74 @@ function PvzPointSelector({
             );
           })}
         </div>
-        {!selectedPoint ? (
-          <div className="mt-3 rounded-xl bg-white/90 p-3 text-sm text-neutral-600 shadow-sm">
-            Выберите ПВЗ на карте или в списке ниже.
-          </div>
-        ) : null}
+        <label className="mt-3 block">
+          <span className="sr-only">Поиск пункта выдачи</span>
+          <input
+            type="search"
+            value={pvzSearch}
+            onChange={(e) => setPvzSearch(e.target.value)}
+            placeholder="Найти пункт или адрес"
+            autoComplete="off"
+            className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-base outline-none focus:border-neutral-400"
+          />
+        </label>
       </div>
 
       <div className="space-y-2">
-        {points.map((point) => {
+        {filteredPoints.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+            По запросу пункты не найдены.
+          </div>
+        ) : (
+          filteredPoints.map((point) => {
           const selected = selectedPointId === point.id;
           const wasLastChoice = lastChosenPointId === point.id;
-          const pvzUnavailableUnits = Math.max(0, (summary?.totalUnits ?? 0) - (summary?.availableUnits ?? 0));
           return (
             <button
               key={point.id}
               type="button"
               onClick={() => onSelect(point.id)}
-              className={`w-full rounded-xl border p-3 text-left transition ${selected ? `${tone.card} border-black` : "border-neutral-200 bg-white hover:border-neutral-300"}`}
+              className={`group w-full rounded-2xl border p-4 text-left transition ${selected ? "border-black bg-white" : "border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm"}`}
               aria-pressed={selected}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold">{point.name}</span>
+                    <span className="text-[15px] font-semibold leading-tight">{point.name}</span>
                     {wasLastChoice ? (
                       <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
                         Выбирали в прошлый раз
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-1 text-sm text-neutral-900">{point.address}</div>
-                  <div className="mt-1 text-xs text-neutral-500">{pvzPointStatusDetail(summary)}</div>
+                  <div className="mt-1.5 text-sm text-neutral-900">{point.address}</div>
+                  <div className="mt-1 text-xs leading-relaxed text-neutral-500">{pvzPointStatusDetail(summary)}</div>
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
                   {pvzPointCountLabel(summary)}
                 </span>
               </div>
               {linePreview && (linePreview.available.length > 0 || linePreview.unavailable.length > 0) ? (
-                <div className="mt-2 space-y-2 border-t border-neutral-100 pt-2">
-                  <SheetThumbLabeledRow label="В пункте выдачи" items={linePreview.available} productsById={productsById} />
+                <div className="mt-3 space-y-2.5 border-t border-neutral-100 pt-3">
                   <SheetThumbLabeledRow
-                    label="Другим способом"
+                    label="В пункте выдачи"
+                    items={linePreview.available}
+                    productsById={productsById}
+                    leadText={pvzSheetThumbMeta?.atPoint.leadText}
+                    holdText={pvzSheetThumbMeta?.atPoint.holdText}
+                  />
+                  <SheetThumbLabeledRow
+                    label="В ПВЗ недоступно"
                     items={linePreview.unavailable}
                     productsById={productsById}
+                    leadText="Можно выбрать другой способ доставки"
                   />
                 </div>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
-                <span className="rounded-full bg-neutral-100 px-2 py-1">Доступно: {summary?.availableUnits ?? 0}</span>
-                {pvzUnavailableUnits > 0 ? (
-                  <span className="rounded-full bg-neutral-100 px-2 py-1">Недоступно: {pvzUnavailableUnits}</span>
-                ) : null}
-              </div>
             </button>
           );
-        })}
+          })
+        )}
       </div>
     </div>
   );
@@ -939,14 +1109,11 @@ function PvzSelectedPointCard({
     );
   }
 
-  const pvzUnavailableUnits = Math.max(0, (summary?.totalUnits ?? 0) - (summary?.availableUnits ?? 0));
-
   return (
     <div className="mt-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">{point.name}</p>
-          <p className="mt-1 text-sm text-neutral-900">{pvzPointCountLabel(summary)}</p>
           <p className="mt-1 text-xs text-neutral-500">{point.address}</p>
           <p className="mt-1 text-xs text-neutral-500">{pvzPointStatusDetail(summary)}</p>
         </div>
@@ -961,12 +1128,6 @@ function PvzSelectedPointCard({
         >
           Изменить
         </button>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-600">
-        <span className="rounded-full bg-neutral-100 px-2 py-1">Доступно: {summary?.availableUnits ?? 0}</span>
-        {pvzUnavailableUnits > 0 ? (
-          <span className="rounded-full bg-neutral-100 px-2 py-1">Недоступно: {pvzUnavailableUnits}</span>
-        ) : null}
       </div>
     </div>
   );
@@ -1482,6 +1643,8 @@ function SplitSelectionModal({
   onClose,
   onConfirm,
   saving,
+  lastChosenPickupStoreId,
+  lastChosenPvzPointId,
 }: {
   resolution: RemainderResolution;
   productsById: Record<string, Bootstrap["products"][number]>;
@@ -1493,6 +1656,9 @@ function SplitSelectionModal({
   onClose: () => void;
   onConfirm: (option: AlternativeMethodOption) => void;
   saving: boolean;
+  /** Та же подсказка «выбирали в прошлый раз», что на основном чекауте */
+  lastChosenPickupStoreId?: string | null;
+  lastChosenPvzPointId?: string | null;
 }) {
   const courierOption = resolution.options.find((option) => option.methodCode === "courier") ?? null;
   const pickupOptions = resolution.options.filter((option) => option.methodCode === "pickup");
@@ -1523,13 +1689,32 @@ function SplitSelectionModal({
   const [selectedMethod, setSelectedMethod] = useState<DeliveryMethodCode | null>(null);
   const [selectedPickupStoreId, setSelectedPickupStoreId] = useState<string>("");
   const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
-  const [pickupSearch, setPickupSearch] = useState("");
+  const [pvzSelectorOpen, setPvzSelectorOpen] = useState(false);
+  const splitPvzSummary = useMemo(() => methodSummaryFromPvzOption(pvzOption), [pvzOption]);
+  const splitPvzLinePreview = useMemo(
+    () => (pvzOption ? splitPvzLinePreviewFromScenario(pvzOption.scenario) : undefined),
+    [pvzOption],
+  );
+  const splitPvzSheetThumbMeta = useMemo(
+    () => (pvzOption ? buildPvzSheetThumbMeta(pvzOption.scenario, courierOption?.scenario) : undefined),
+    [pvzOption, courierOption],
+  );
+  const splitPickupStores = useMemo(
+    () =>
+      pickupOptions
+        .filter((o): o is AlternativeMethodOption & { storeId: string } => Boolean(o.storeId))
+        .map((opt) => ({
+          id: opt.storeId,
+          name: opt.storeName?.trim() || "Магазин",
+          summary: pickupSummaryFromScenario(opt.totalUnits, opt.scenario, courierOption?.scenario),
+        })),
+    [pickupOptions, courierOption],
+  );
   const selectedPickupOption =
     pickupOptions.find((option) => option.storeId === selectedPickupStoreId) ?? null;
-  const selectedPvzPoint = pvzPoints.find((point) => point.id === selectedPvzId) ?? pvzPoints[0];
-  const filteredPickupOptions = pickupOptions.filter((option) =>
-    (option.storeName ?? "").toLocaleLowerCase("ru").includes(pickupSearch.trim().toLocaleLowerCase("ru")),
-  );
+  const selectedPvzPoint = selectedPvzId.trim()
+    ? pvzPoints.find((point) => point.id === selectedPvzId)
+    : undefined;
   const selectedOption =
     selectedMethod === "courier"
       ? courierOption
@@ -1557,7 +1742,10 @@ function SplitSelectionModal({
       setPickupSelectorOpen(true);
       return;
     }
-    setSelectedMethod("pvz");
+    if (methodCode === "pvz") {
+      setSelectedMethod("pvz");
+      setPvzSelectorOpen(true);
+    }
   };
 
   return (
@@ -1666,33 +1854,23 @@ function SplitSelectionModal({
         ) : null}
 
         {selectedMethod === "pvz" ? (
-          <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">
-            <p className="text-xs text-neutral-500">Выберите ПВЗ для этой части заказа.</p>
-            {pvzPoints.map((point) => {
-              const isSelected = point.id === (selectedPvzPoint?.id ?? "");
-              return (
-                <button
-                  key={point.id}
-                  type="button"
-                  onClick={() => onSelectPvz(point.id)}
-                  className={`w-full rounded-xl border p-3 text-left transition ${
-                    isSelected ? "border-black bg-neutral-50" : "border-neutral-200 bg-white hover:border-neutral-300"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold">{point.name}</p>
-                      <p className="mt-1 text-xs text-neutral-500">{point.address}</p>
-                    </div>
-                    {isSelected ? (
-                      <span className="rounded-full bg-black px-2 py-1 text-[10px] font-semibold uppercase text-white">
-                        Выбран
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="mt-4 rounded-xl border border-neutral-200 p-4">
+            <p className="text-sm font-semibold">ПВЗ для этой части заказа</p>
+            {selectedPvzPoint ? (
+              <>
+                <p className="mt-2 text-sm text-neutral-900">{selectedPvzPoint.name}</p>
+                <p className="mt-1 text-xs text-neutral-500">{selectedPvzPoint.address}</p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-neutral-500">Выберите пункт на карте или в списке.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => setPvzSelectorOpen(true)}
+              className="mt-3 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
+            >
+              {selectedPvzPoint ? "Изменить ПВЗ" : "Выбрать ПВЗ"}
+            </button>
           </div>
         ) : null}
         </div>
@@ -1717,84 +1895,35 @@ function SplitSelectionModal({
           </div>
         </div>
       </div>
-      {pickupSelectorOpen ? (
-        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
-          <button
-            type="button"
-            aria-label="Закрыть выбор магазина"
-            className="absolute inset-0"
-            onClick={() => setPickupSelectorOpen(false)}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Выберите магазин"
-            className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
-          >
-            <div className="shrink-0 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="cu-sheet-title">Выберите магазин</h4>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    Для большого списка удобнее искать магазин по названию и сразу видеть покрытие товаров.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPickupSelectorOpen(false)}
-                  className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
-                >
-                  Закрыть
-                </button>
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:max-h-[calc(90vh-10rem)] sm:flex-none sm:basis-auto sm:px-5 sm:pb-5">
-            <input
-              type="text"
-              value={pickupSearch}
-              onChange={(e) => setPickupSearch(e.target.value)}
-              placeholder="Найти магазин"
-              className="mb-4 w-full rounded-xl border border-neutral-200 px-3 py-3 text-base outline-none focus:border-neutral-400"
-            />
-
-            <div className="space-y-2">
-              {filteredPickupOptions.map((option) => {
-                const isSelected = option.storeId === selectedPickupStoreId;
-                return (
-                  <button
-                    key={`${option.methodCode}_${option.storeId ?? "default"}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedPickupStoreId(option.storeId ?? "");
-                      setPickupSelectorOpen(false);
-                    }}
-                    className={`w-full rounded-xl border p-3 text-left transition ${
-                      isSelected ? "border-black bg-neutral-50" : "border-neutral-200 bg-white hover:border-neutral-300"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">{optionMethodLabel(option)}</p>
-                        <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</p>
-                      </div>
-                      <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
-                        {option.availableUnits}/{option.totalUnits}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-              {filteredPickupOptions.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-                  По этому запросу магазины не найдены.
-                </div>
-              ) : null}
-            </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <PickupStoreSelectionOverlay
+        open={pickupSelectorOpen}
+        onDismiss={() => setPickupSelectorOpen(false)}
+        stores={splitPickupStores}
+        selectedStoreId={selectedPickupStoreId}
+        lastChosenStoreId={lastChosenPickupStoreId}
+        productsById={productsById}
+        onSelectStore={(nextStoreId) => {
+          setSelectedPickupStoreId(nextStoreId);
+          setPickupSelectorOpen(false);
+        }}
+        zOverlayClass="z-[110]"
+      />
+      <PvzPointSelectionOverlay
+        open={pvzSelectorOpen}
+        onDismiss={() => setPvzSelectorOpen(false)}
+        points={pvzPoints}
+        selectedPointId={selectedPvzId}
+        lastChosenPointId={lastChosenPvzPointId}
+        summary={splitPvzSummary}
+        linePreview={splitPvzLinePreview}
+        pvzSheetThumbMeta={splitPvzSheetThumbMeta}
+        productsById={productsById}
+        onSelectPoint={(nextPointId) => {
+          onSelectPvz(nextPointId);
+          setPvzSelectorOpen(false);
+        }}
+        zOverlayClass="z-[110]"
+      />
     </div>
   );
 }
@@ -1804,9 +1933,6 @@ function PartCard({
   included,
   onToggle,
   showSelectionControl = true,
-  expanded,
-  collapsible,
-  onToggleExpand,
   showRemainderHint,
   remainderKeepHint,
   selectedDateIx,
@@ -1816,14 +1942,12 @@ function PartCard({
   badgeLabel,
   shipmentOrdinal,
   inGroup = false,
+  courierDateLabels,
 }: {
   part: ScenarioPart;
   included: boolean;
   onToggle: () => void;
   showSelectionControl?: boolean;
-  expanded: boolean;
-  collapsible: boolean;
-  onToggleExpand: () => void;
   /** Показываем подсказку только если реально есть remainder и текст не отключён в админке. */
   showRemainderHint: boolean;
   remainderKeepHint?: string;
@@ -1836,17 +1960,21 @@ function PartCard({
   shipmentOrdinal?: number;
   /** Без отдельной рамки — внутри общего блока заказа */
   inGroup?: boolean;
+  /** Подписи дат курьера (от календаря), по индексу совпадают с `selectedDateIx` */
+  courierDateLabels: string[];
 }) {
   const visible = part.items.slice(0, 5);
   const extra = part.items.reduce((s, i) => s + i.quantity, 0) - visible.reduce((s, i) => s + i.quantity, 0);
   const sub = Math.round(part.subtotal);
   const ship = included ? part.deliveryPrice : 0;
   const isCourier = part.mode === "courier";
-  const deliveryDate = isCourier ? MOCK_DATES[selectedDateIx ?? 0] : null;
+  const dateIx = Math.min(Math.max(selectedDateIx ?? 0, 0), Math.max(0, courierDateLabels.length - 1));
+  const deliveryDate = isCourier ? courierDateLabels[dateIx] : null;
   const deliverySlot = isCourier ? MOCK_SLOTS[selectedSlotIx ?? 0] : null;
   const leadLabel = isCourier && deliveryDate && deliverySlot ? `${deliveryDate}, ${deliverySlot}` : part.leadTimeLabel;
   const isGjStorePickup = part.mode === "click_reserve" || part.mode === "click_collect";
   const isPvz = part.mode === "pvz";
+  const holdLine = formatHoldNoticeForPart(part.mode, part.holdDays);
   const gjPickupHeadline =
     part.leadTimeLabel?.trim() ||
     (part.mode === "click_reserve" ? PICKUP_RESERVE_TITLE : PICKUP_COLLECT_TITLE);
@@ -1858,7 +1986,7 @@ function PartCard({
       : part.mode === "click_collect"
         ? PICKUP_COLLECT_TITLE
         : part.sourceName;
-  /** Строка даты/окна курьера: «Изменить» открывает слоты, «Свернуть» закрывает (без отдельной кнопки у суммы). */
+  /** Строка даты/окна курьера + всегда видимый выбор даты и интервала. */
   const showCourierDeliveryRow = isCourier && Boolean(leadLabel);
 
   return (
@@ -1897,10 +2025,8 @@ function PartCard({
           {isGjStorePickup ? (
             <div className="min-w-0">
               <p className="text-sm font-semibold leading-snug text-neutral-900">{gjPickupHeadline}</p>
-              {part.holdDays ? (
-                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">
-                  Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
-                </p>
+              {holdLine ? (
+                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">{holdLine}</p>
               ) : null}
               <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">
                 {part.mode === "click_reserve"
@@ -1920,10 +2046,8 @@ function PartCard({
           ) : isPvz ? (
             <div className="min-w-0">
               <p className="text-sm font-semibold leading-snug text-neutral-900">{pvzHeadline}</p>
-              {part.holdDays ? (
-                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">
-                  Срок хранения: {part.holdDays} {pluralizeDays(part.holdDays)}
-                </p>
+              {holdLine ? (
+                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">{holdLine}</p>
               ) : null}
               <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">бесплатно / ПВЗ</p>
             </div>
@@ -1973,51 +2097,22 @@ function PartCard({
           </div>
 
           {showCourierDeliveryRow ? (
-            collapsible ? (
-              <button
-                type="button"
-                onClick={onToggleExpand}
-                aria-expanded={expanded}
-                title={expanded ? "Свернуть выбор времени" : "Выбрать дату и время доставки"}
-                className="mt-3 flex w-full max-w-full items-center justify-between gap-2 py-1 text-left text-sm font-semibold leading-snug text-neutral-900 transition active:opacity-90 hover:opacity-90"
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="min-w-0">{leadLabel}</span>
-                  <svg
-                    className={`h-4 w-4 shrink-0 text-neutral-500 transition ${expanded ? "rotate-180" : ""}`}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                </span>
-                <span className="shrink-0 text-xs font-medium text-neutral-600">
-                  {expanded ? "Свернуть" : "Изменить"}
-                </span>
-              </button>
-            ) : (
-              <p className="mt-3 text-sm font-semibold leading-snug text-neutral-900">{leadLabel}</p>
-            )
+            <p className="mt-3 text-sm font-semibold leading-snug text-neutral-900">{leadLabel}</p>
           ) : null}
 
           <div className="mt-3">
             <span className="text-base font-semibold tabular-nums text-neutral-900">{fmt(sub + ship)}</span>
           </div>
-          {expanded && isCourier ? (
+          {showCourierDeliveryRow ? (
             <div className="mt-3 space-y-2">
               <div className="flex gap-2 overflow-x-auto pb-1">
-                {MOCK_DATES.map((d, i) => (
+                {courierDateLabels.map((d, i) => (
                   <button
-                    key={d}
+                    key={`courier-date-${i}`}
                     type="button"
                     onClick={() => onDateChange?.(i)}
                     className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-medium ${
-                      i === (selectedDateIx ?? 0) ? "border-black bg-black text-white" : "border-neutral-200"
+                      i === dateIx ? "border-black bg-black text-white" : "border-neutral-200"
                     }`}
                   >
                     {d}
@@ -2206,7 +2301,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [phoneGateOpen, setPhoneGateOpen] = useState(false);
   const [courierAddress, setCourierAddress] = useState("");
   const [courierAddressModalTarget, setCourierAddressModalTarget] = useState<CourierAddressModalTarget | null>(null);
-  const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
   const latestScenarioRequestRef = useRef(0);
   const skipPersistCourierAddress = useRef(true);
 
@@ -2364,6 +2458,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     methodSummaries: Bootstrap["methodSummaryByCity"][string];
     pickupSummaryByStore: Record<string, PickupStoreSummary>;
     pvzLinePreview?: CartMethodSummariesResult["pvzLinePreview"];
+    pvzSheetThumbMeta?: CartMethodSummariesResult["pvzSheetThumbMeta"];
   } | null>(null);
 
   useEffect(() => {
@@ -2392,6 +2487,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           methodSummaries: json.methodSummaries,
           pickupSummaryByStore: json.pickupSummaryByStore,
           pvzLinePreview: json.pvzLinePreview,
+          pvzSheetThumbMeta: json.pvzSheetThumbMeta,
         });
       } catch {
         if (!cancelled) setCartScopedSummaries(null);
@@ -2621,6 +2717,17 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     ? methodSummariesForUi?.pvz
     : boot?.methodSummaryByCity[cityId]?.pvz;
 
+  /** Мета сроков в модалке ПВЗ: из сводки корзины или из текущего сценария ПВЗ */
+  const pvzOverlayThumbMeta = useMemo(() => {
+    if (cartDetail?.lines?.length && cartScopedSummaries?.pvzSheetThumbMeta) {
+      return cartScopedSummaries.pvzSheetThumbMeta;
+    }
+    if (scenario?.deliveryMethodCode === "pvz") {
+      return buildPvzSheetThumbMeta(scenario, null);
+    }
+    return undefined;
+  }, [cartDetail?.lines?.length, cartScopedSummaries?.pvzSheetThumbMeta, scenario]);
+
   const recommendedMethodCode = useMemo<DeliveryMethodCode | null>(() => {
     const full = deliveryOptions.filter((option) => {
       if (!option.enabled || !option.summary || option.summary.totalUnits <= 0) return false;
@@ -2668,6 +2775,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [cityId]);
 
   const units = cartDetail?.units ?? 0;
+  const courierDateLabels = useMemo(() => buildCourierDateLabels(), []);
   const promoFactor = promoApplied ? 0.8 : 1;
 
   const secondaryDisplaySelections = useMemo<DisplaySecondarySelection[]>(
@@ -2775,20 +2883,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       for (const part of allDisplayParts) {
         if (part.mode !== "courier") continue;
         next[part.key] = prev[part.key] ?? { dateIx: 0, slotIx: 0 };
-      }
-      return next;
-    });
-  }, [allDisplayParts]);
-
-  useEffect(() => {
-    if (!allDisplayParts.length) {
-      setExpandedParts({});
-      return;
-    }
-    setExpandedParts((prev) => {
-      const next: Record<string, boolean> = {};
-      for (const part of allDisplayParts) {
-        next[part.key] = prev[part.key] ?? part.key.startsWith("secondary_");
       }
       return next;
     });
@@ -3050,7 +3144,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           deliveryPrice: p.deliveryPrice,
           promoDiscount: 0,
           bonusUsed: 0,
-          selectedDate: p.mode === "courier" ? MOCK_DATES[partSchedules[p.key]?.dateIx ?? 0] : undefined,
+          holdNotice: formatHoldNoticeForPart(p.mode, p.holdDays, new Date()) ?? undefined,
+          selectedDate:
+            p.mode === "courier"
+              ? courierDateLabels[
+                  Math.min(
+                    Math.max(partSchedules[p.key]?.dateIx ?? 0, 0),
+                    Math.max(0, courierDateLabels.length - 1),
+                  )
+                ]
+              : undefined,
           selectedSlot: p.mode === "courier" ? MOCK_SLOTS[partSchedules[p.key]?.slotIx ?? 0] : undefined,
         })),
       orderPromoDiscount: promoDiscount,
@@ -3149,8 +3252,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }
 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
-  /** Счётчик «В заказе X из Y» при разбиении на части / остатке — одинаково для магазина, ПВЗ и курьера */
-  const showOrderUnitsCountBadge = hasSplit && units > 0;
   /**
    * Стабильная нумерация «Отправление N» по порядку в сценарии среди видимых карточек.
    * Снятие галочки не сдвигает номера и не убирает подпись у соседних блоков (иначе UI прыгает).
@@ -3194,7 +3295,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const showScenarioSkeleton = loading && awaitingScenario;
 
   const primarySplitContextBarVisible =
-    !showScenarioSkeleton && !!scenario && (scenarioInformersForBanner.length > 0 || showOrderUnitsCountBadge);
+    !showScenarioSkeleton && !!scenario && scenarioInformersForBanner.length > 0;
 
   const renderPrimarySplitContextBar = (variant: "unified" | "stacked") => {
     if (!primarySplitContextBarVisible) return null;
@@ -3203,20 +3304,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       variant === "unified"
         ? "flex w-full items-start gap-3 bg-white px-3 py-2"
         : "mb-4 flex w-full items-start gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2.5";
-    const justifyEnd = !hasInformerText && showOrderUnitsCountBadge;
     return (
-      <div className={`${wrapClass}${justifyEnd ? " justify-end" : ""}`}>
+      <div className={wrapClass}>
         {hasInformerText ? (
           <div className="min-w-0 flex-1 space-y-1 border-l-2 border-amber-400/70 pl-2.5 text-xs leading-snug text-neutral-800">
             {scenarioInformersForBanner.map((t, i) => (
               <p key={i}>{t}</p>
             ))}
           </div>
-        ) : null}
-        {showOrderUnitsCountBadge ? (
-          <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-neutral-600">
-            В заказе {includedOrderUnits} из {units} шт
-          </span>
         ) : null}
       </div>
     );
@@ -3491,50 +3586,44 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         {showScenarioSkeleton ? (
           <ScenarioOrderSkeleton variant="unified" />
         ) : unifiedOrderBlock ? (
-          <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
-            <div className="px-3 py-3">{renderScenarioMethodSummary()}</div>
+          <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+            <div className="border-b border-neutral-100 px-3 py-3">{renderScenarioMethodSummary()}</div>
             {renderPrimarySplitContextBar("unified")}
             {(scenario?.parts ?? [])
               .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
               .map((p, partIndex) => (
-              <PartCard
-                key={p.key}
-                inGroup
-                shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
-                part={p}
-                included={included[p.key] !== false}
-                onToggle={() =>
-                  setIncluded((prev) => {
-                    const cur = prev[p.key] !== false;
-                    return { ...prev, [p.key]: !cur };
-                  })
-                }
-                showSelectionControl={!keepSinglePartExpanded}
-                expanded={keepSinglePartExpanded || expandedParts[p.key] === true}
-                collapsible={!keepSinglePartExpanded}
-                onToggleExpand={() =>
-                  setExpandedParts((prev) => ({
-                    ...prev,
-                    [p.key]: !prev[p.key],
-                  }))
-                }
-                showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
-                remainderKeepHint={scenario?.remainderKeepHint}
-                selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
-                selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
-                onDateChange={(dateIx) =>
-                  setPartSchedules((prev) => ({
-                    ...prev,
-                    [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
-                  }))
-                }
-                onSlotChange={(slotIx) =>
-                  setPartSchedules((prev) => ({
-                    ...prev,
-                    [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
-                  }))
-                }
-              />
+              <div key={p.key} className={partIndex > 0 ? "border-t border-neutral-100" : ""}>
+                <PartCard
+                  inGroup
+                  shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
+                  part={p}
+                  included={included[p.key] !== false}
+                  onToggle={() =>
+                    setIncluded((prev) => {
+                      const cur = prev[p.key] !== false;
+                      return { ...prev, [p.key]: !cur };
+                    })
+                  }
+                  showSelectionControl={!keepSinglePartExpanded}
+                  showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
+                  remainderKeepHint={scenario?.remainderKeepHint}
+                  selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
+                  selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
+                  onDateChange={(dateIx) =>
+                    setPartSchedules((prev) => ({
+                      ...prev,
+                      [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
+                    }))
+                  }
+                  onSlotChange={(slotIx) =>
+                    setPartSchedules((prev) => ({
+                      ...prev,
+                      [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
+                    }))
+                  }
+                  courierDateLabels={courierDateLabels}
+                />
+              </div>
             ))}
           </section>
         ) : (
@@ -3548,6 +3637,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 <PartCard
                   key={p.key}
                   shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
+                  courierDateLabels={courierDateLabels}
                   part={p}
                   included={included[p.key] !== false}
                   onToggle={() =>
@@ -3557,14 +3647,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     })
                   }
                   showSelectionControl={!keepSinglePartExpanded}
-                  expanded={keepSinglePartExpanded || expandedParts[p.key] === true}
-                  collapsible={!keepSinglePartExpanded}
-                  onToggleExpand={() =>
-                    setExpandedParts((prev) => ({
-                      ...prev,
-                      [p.key]: !prev[p.key],
-                    }))
-                  }
                   showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
                   remainderKeepHint={scenario?.remainderKeepHint}
                   selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
@@ -3616,14 +3698,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   })
                 }
                 showSelectionControl
-                expanded={expandedParts[part.key] !== false}
-                collapsible
-                onToggleExpand={() =>
-                  setExpandedParts((prev) => ({
-                    ...prev,
-                    [part.key]: !prev[part.key],
-                  }))
-                }
                 showRemainderHint={false}
                 remainderKeepHint={undefined}
                 selectedDateIx={partSchedules[part.key]?.dateIx ?? 0}
@@ -3640,6 +3714,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     [part.key]: { dateIx: prev[part.key]?.dateIx ?? 0, slotIx },
                   }))
                 }
+                courierDateLabels={courierDateLabels}
               />
             ))}
           </section>
@@ -3866,113 +3941,60 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             type="button"
             onClick={submit}
             disabled={!scenario || includedParts.length === 0}
-            className="w-full rounded-lg bg-black py-4 text-sm font-semibold uppercase tracking-wide text-white disabled:opacity-40"
+            className="inline-flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 rounded-lg bg-black py-4 text-sm font-semibold uppercase tracking-wide text-white disabled:opacity-40"
           >
             {(() => {
               const orderedUnits = includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0);
+              const price = fmt(payFinal);
+              let label: string;
               if (units > 0 && orderedUnits < units) {
-                return `Оформить ${orderedUnits} из ${units} товаров`;
+                label = `Оформить ${orderedUnits} из ${units} товаров`;
+              } else if (units > 0 && orderedUnits > 0) {
+                label = `Оформить ${orderedUnits} ${pluralizeProducts(orderedUnits)}`;
+              } else {
+                label = "Оформить заказ";
               }
-              if (units > 0 && orderedUnits > 0) {
-                return `Оформить ${orderedUnits} ${pluralizeProducts(orderedUnits)}`;
-              }
-              return "Оформить заказ";
+              return (
+                <>
+                  <span>{label}</span>
+                  <span className="tabular-nums">{price}</span>
+                </>
+              );
             })()}
           </button>
         </div>
       </div>
 
       {pickupSelectorOpen && method === "pickup" ? (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
-          <button
-            type="button"
-            aria-label="Закрыть выбор магазина"
-            className="absolute inset-0"
-            onClick={dismissPickupSelector}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
-          >
-            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="cu-sheet-title">Самовывоз из магазина</h3>
-                  <p className="cu-sheet-lead mt-1">
-                    Выберите магазин и посмотрите, сколько товаров доступны сразу, а сколько привезем позже.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={dismissPickupSelector}
-                  className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
-                >
-                  Закрыть
-                </button>
-              </div>
-            </div>
-            <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
-              <PickupStoreSelector
-                stores={pickupStoresOrdered}
-                selectedStoreId={storeId}
-                lastChosenStoreId={lastPickupMemoryId}
-                productsById={productsById}
-                onSelect={(nextStoreId) => {
-                  setStoreId(nextStoreId);
-                  setPickupSelectorOpen(false);
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        <PickupStoreSelectionOverlay
+          open
+          onDismiss={dismissPickupSelector}
+          stores={pickupStoresOrdered}
+          selectedStoreId={storeId}
+          lastChosenStoreId={lastPickupMemoryId}
+          productsById={productsById}
+          onSelectStore={(nextStoreId) => {
+            setStoreId(nextStoreId);
+            setPickupSelectorOpen(false);
+          }}
+        />
       ) : null}
       {pvzSelectorOpen && method === "pvz" ? (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
-          <button
-            type="button"
-            aria-label="Закрыть выбор ПВЗ"
-            className="absolute inset-0"
-            onClick={dismissPvzSelector}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
-          >
-            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="cu-sheet-title">Пункт выдачи заказа</h3>
-                  <p className="cu-sheet-lead mt-1">
-                    Выберите удобный ПВЗ на карте и сразу увидите его данные в карточке способа получения.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={dismissPvzSelector}
-                  className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
-                >
-                  Закрыть
-                </button>
-              </div>
-            </div>
-            <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
-              <PvzPointSelector
-                points={pvzOptionsOrdered}
-                selectedPointId={pvzId}
-                lastChosenPointId={lastPvzMemoryId}
-                summary={pvzSummary}
-                linePreview={cartDetail?.lines?.length ? cartScopedSummaries?.pvzLinePreview : undefined}
-                productsById={productsById}
-                onSelect={(nextPointId) => {
-                  setPvzId(nextPointId);
-                  setPvzSelectorOpen(false);
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        <PvzPointSelectionOverlay
+          open
+          onDismiss={dismissPvzSelector}
+          points={pvzOptionsOrdered}
+          selectedPointId={pvzId}
+          lastChosenPointId={lastPvzMemoryId}
+          summary={pvzSummary}
+          linePreview={cartDetail?.lines?.length ? cartScopedSummaries?.pvzLinePreview : undefined}
+          pvzSheetThumbMeta={pvzOverlayThumbMeta}
+          productsById={productsById}
+          onSelectPoint={(nextPointId) => {
+            setPvzId(nextPointId);
+            setPvzSelectorOpen(false);
+          }}
+        />
       ) : null}
       {splitModalState ? (
         <SplitSelectionModal
@@ -3988,6 +4010,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           }}
           onConfirm={confirmSplitSelection}
           saving={splitSubmitting}
+          lastChosenPickupStoreId={lastPickupMemoryId}
+          lastChosenPvzPointId={lastPvzMemoryId}
         />
       ) : null}
       {courierAddressModalTarget ? (

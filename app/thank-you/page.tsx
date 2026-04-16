@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { formatHoldNoticeForPart } from "@/lib/hold-display";
+import type { ScenarioPart } from "@/lib/types";
 
 type CheckoutPaymentMethod = "sbp" | "card" | "on_receipt";
 
@@ -15,6 +17,8 @@ type Ty = {
     leadTimeLabel: string;
     selectedDate?: string;
     selectedSlot?: string;
+    mode?: ScenarioPart["mode"];
+    holdNotice?: string;
     holdDays?: number;
     freeDeliveryThreshold: number;
     items: { name: string; quantity: number }[];
@@ -142,11 +146,16 @@ export default function ThankYouPage() {
             {data.courierAddress && p.methodLabel.toLowerCase().includes("курьер") ? (
               <p className="text-xs text-neutral-500">Адрес: {data.courierAddress}</p>
             ) : null}
-            {p.holdDays ? (
-              <p className="text-xs text-neutral-500">
-                Срок хранения: {p.holdDays} {pluralizeDays(p.holdDays)}
-              </p>
-            ) : null}
+            {(() => {
+              const line =
+                p.holdNotice ??
+                (p.mode != null && p.holdDays
+                  ? formatHoldNoticeForPart(p.mode, p.holdDays, new Date())
+                  : p.holdDays
+                    ? `Срок хранения: ${p.holdDays} ${pluralizeDays(p.holdDays)}`
+                    : null);
+              return line ? <p className="text-xs text-neutral-500">{line}</p> : null;
+            })()}
             <ul className="mt-2 text-xs text-neutral-700">
               {p.items.map((it) => (
                 <li key={it.name + it.quantity}>
