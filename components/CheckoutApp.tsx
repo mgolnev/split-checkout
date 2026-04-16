@@ -366,6 +366,7 @@ function methodSummaryLabel(
 
 function optionCoverageLabel(summary?: MethodSummary) {
   if (!summary || summary.totalUnits <= 0) return "Нет данных";
+  if (summary.availableUnits <= 0) return "Недоступно";
   return `${summary.availableUnits} из ${summary.totalUnits} ${pluralizeProducts(summary.totalUnits)}`;
 }
 
@@ -1488,40 +1489,30 @@ function UnresolvedItemsBlock({
   /** Не показывать плашку «нет способов», пока options ещё не подтянулись */
   suppressEmptyOptionsHint?: boolean;
 }) {
-  const totalUnits = countUnits(resolution.lines);
-
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold">{copy.title}</p>
-          <p className="mt-1 text-xs text-neutral-500">{copy.subtitle}</p>
-        </div>
-        <span className="inline-flex min-w-[2.75rem] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-semibold tabular-nums uppercase text-neutral-600">
-          {totalUnits} шт
-        </span>
+    <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
+      <div className="min-w-0">
+        <p className="text-[15px] font-semibold leading-tight text-neutral-900">{copy.title}</p>
+        <p className="mt-2 text-sm leading-snug text-neutral-600">{copy.subtitle}</p>
       </div>
 
-      <div className="mt-4 rounded-xl bg-neutral-50 p-3">
-        <p className="text-sm font-semibold">{copy.linesTitle}</p>
-        <div className="mt-3">
-          <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
-        </div>
+      <div className="mt-6 rounded-xl bg-neutral-50/70 p-3.5 sm:p-4">
+        <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
       </div>
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-5">
         <button
           type="button"
           onClick={onChoose}
           disabled={ctaDisabled}
-          className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-40"
+          className="w-full rounded-2xl bg-black px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
         >
           {copy.cta}
         </button>
       </div>
 
       {resolution.options.length === 0 && !suppressEmptyOptionsHint ? (
-        <div className="mt-3 rounded-xl border border-dashed border-neutral-300 p-3 text-xs text-neutral-500">
+        <div className="mt-4 rounded-xl border border-dashed border-neutral-200 bg-neutral-50/50 p-3.5 text-sm leading-snug text-neutral-600">
           {copy.noAlternatives}
         </div>
       ) : null}
@@ -1550,7 +1541,6 @@ function SecondarySelectionCard({
       <>
         <div className="min-w-0">
           <p className="cu-label-primary text-neutral-900">{methodGroupLabel(option.methodCode)}</p>
-          <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</p>
         </div>
         {option.methodCode === "pickup" && pickupStore ? (
           <div className="mt-2 flex items-center justify-between gap-3">
@@ -1607,7 +1597,6 @@ function SecondarySelectionCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-medium">{methodGroupLabel(option.methodCode)}</div>
-              <div className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(option)}</div>
             </div>
             <div className="flex shrink-0 gap-2">
               <button
@@ -1989,16 +1978,42 @@ function PartCard({
   /** Строка даты/окна курьера + всегда видимый выбор даты и интервала. */
   const showCourierDeliveryRow = isCourier && Boolean(leadLabel);
 
+  const benefitLine = isGjStorePickup
+    ? part.mode === "click_reserve"
+      ? "Бесплатно · примерка"
+      : "Бесплатно"
+    : isPvz
+      ? "Бесплатно · ПВЗ"
+      : isCourier
+        ? part.deliveryPrice <= 0
+          ? "Бесплатная доставка"
+          : `Курьер · ${fmt(part.deliveryPrice)}`
+        : null;
+
+  const headingName = isGjStorePickup
+    ? part.sourceName
+    : isCourier
+      ? courierPartHeadline(part)
+      : isPvz
+        ? part.sourceName
+        : partTitle;
+
+  const subtitle = isGjStorePickup
+    ? gjPickupHeadline
+    : isPvz
+      ? pvzHeadline
+      : null;
+
   return (
     <div
       className={`transition ${
-        inGroup ? "px-4 py-6" : "p-4"
+        inGroup ? "px-5 py-8" : "p-5"
       } ${
         inGroup
           ? included
             ? ""
             : "opacity-60"
-          : `rounded-xl border bg-white ${included ? "border-neutral-200" : "border-neutral-200 opacity-60"}`
+          : `rounded-2xl bg-white ${included ? "" : "opacity-60"}`
       }`}
     >
       <div className={`flex items-start ${showSelectionControl ? "gap-3" : ""}`}>
@@ -2018,54 +2033,32 @@ function PartCard({
         ) : null}
         <div className="min-w-0 flex-1">
           {shipmentOrdinal != null ? (
-            <p className="cu-block-heading mb-2">
+            <p className="cu-block-heading mb-4">
               Отправление {shipmentOrdinal}
             </p>
           ) : null}
-          {isGjStorePickup ? (
-            <div className="min-w-0">
-              <p className="text-sm font-semibold leading-snug text-neutral-900">{gjPickupHeadline}</p>
-              {holdLine ? (
-                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">{holdLine}</p>
-              ) : null}
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">
-                {part.mode === "click_reserve"
-                  ? "бесплатно / примерка"
-                  : "бесплатно / доставка в магазин"}
-              </p>
-            </div>
-          ) : isCourier ? (
-            <div className="min-w-0">
-              <p className="text-sm font-semibold leading-snug text-neutral-900">{courierPartHeadline(part)}</p>
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">
-                {part.deliveryPrice <= 0
-                  ? "курьер / бесплатная доставка"
-                  : `курьер / доставка ${fmt(part.deliveryPrice)}`}
-              </p>
-            </div>
-          ) : isPvz ? (
-            <div className="min-w-0">
-              <p className="text-sm font-semibold leading-snug text-neutral-900">{pvzHeadline}</p>
-              {holdLine ? (
-                <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">{holdLine}</p>
-              ) : null}
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">бесплатно / ПВЗ</p>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-sm font-semibold">{partTitle}</p>
-                {badgeLabel ? (
-                  <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-700">
-                    {badgeLabel}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          )}
 
-          {/* Превью fashion 3:4: бейдж количества при ≥ 2 шт. по позиции (товар+размер) */}
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2.5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-semibold leading-tight text-neutral-900">{headingName}</p>
+              {subtitle ? (
+                <p className="mt-1.5 text-sm leading-snug text-neutral-600">{subtitle}</p>
+              ) : null}
+              {holdLine ? (
+                <p className="mt-1.5 text-xs text-neutral-500">{holdLine}</p>
+              ) : null}
+              {benefitLine ? (
+                <p className="cu-benefit mt-4">{benefitLine}</p>
+              ) : null}
+            </div>
+            <span className="shrink-0 text-lg font-bold tabular-nums text-neutral-900">{fmt(sub + ship)}</span>
+          </div>
+
+          {showCourierDeliveryRow ? (
+            <p className="mt-3 text-sm font-medium leading-snug text-neutral-700">{leadLabel}</p>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2.5">
             {visible.map((it, thumbIx) => (
               <div
                 key={`${it.productId}-${it.sizeLabel ?? ""}-${thumbIx}`}
@@ -2097,14 +2090,7 @@ function PartCard({
           </div>
 
           {showCourierDeliveryRow ? (
-            <p className="mt-3 text-sm font-semibold leading-snug text-neutral-900">{leadLabel}</p>
-          ) : null}
-
-          <div className="mt-3">
-            <span className="text-base font-semibold tabular-nums text-neutral-900">{fmt(sub + ship)}</span>
-          </div>
-          {showCourierDeliveryRow ? (
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-2">
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {courierDateLabels.map((d, i) => (
                   <button
@@ -2136,7 +2122,7 @@ function PartCard({
             </div>
           ) : null}
           {showRemainderHint && remainderKeepHint ? (
-            <p className="mt-2 text-xs text-neutral-500">{remainderKeepHint}</p>
+            <p className="mt-3 text-xs text-neutral-500">{remainderKeepHint}</p>
           ) : null}
         </div>
       </div>
@@ -2155,11 +2141,17 @@ function ScenarioPartCardSkeleton({
   const inner = (
     <div className="flex items-start gap-3">
       <div className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-neutral-200" />
-      <div className="min-w-0 flex-1 space-y-3">
+      <div className="min-w-0 flex-1 space-y-4">
         {showShipmentHeading ? <div className="h-3.5 w-36 max-w-[14rem] rounded bg-neutral-200/85" /> : null}
-        <div className="space-y-2">
-          <div className="h-4 w-[72%] max-w-[260px] rounded-md bg-neutral-200" />
-          <div className="h-3 w-[40%] max-w-[140px] rounded-md bg-neutral-100" />
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="space-y-2">
+              <div className="h-4 w-[72%] max-w-[260px] rounded-md bg-neutral-200" />
+              <div className="h-3 w-[50%] max-w-[180px] rounded-md bg-neutral-100" />
+            </div>
+            <div className="mt-4 h-3 w-[38%] max-w-[140px] rounded-md bg-stone-200/90" />
+          </div>
+          <div className="h-5 w-20 shrink-0 rounded-md bg-neutral-200" />
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-2">
           {[0, 1, 2, 3].map((i) => (
@@ -2169,17 +2161,13 @@ function ScenarioPartCardSkeleton({
             </div>
           ))}
         </div>
-        <div className="flex items-baseline justify-between gap-3 pt-0.5">
-          <div className="h-5 w-28 rounded-md bg-neutral-200" />
-          <div className="h-4 w-20 rounded-md bg-neutral-100" />
-        </div>
       </div>
     </div>
   );
   if (inGroup) {
-    return <div className="px-4 py-6">{inner}</div>;
+    return <div className="px-5 py-8">{inner}</div>;
   }
-  return <div className="rounded-xl border border-neutral-200 bg-white p-4">{inner}</div>;
+  return <div className="rounded-2xl bg-white p-5">{inner}</div>;
 }
 
 function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) {
@@ -2189,7 +2177,7 @@ function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) 
         role="status"
         aria-busy="true"
         aria-live="polite"
-        className="pointer-events-none mb-6 space-y-3 select-none"
+        className="pointer-events-none mb-8 space-y-4 select-none"
       >
         <span className="sr-only">Считаем доступные отправления и сроки.</span>
         <div className="animate-pulse">
@@ -2206,10 +2194,10 @@ function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) 
       role="status"
       aria-busy="true"
       aria-live="polite"
-      className="pointer-events-none mb-6 select-none overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100"
+      className="pointer-events-none mb-8 select-none overflow-hidden rounded-2xl border border-neutral-200 bg-white divide-y divide-neutral-100"
     >
       <span className="sr-only">Считаем доступные отправления и сроки.</span>
-      <div className="animate-pulse space-y-2 px-3 py-3">
+      <div className="animate-pulse space-y-2 px-4 py-4">
         <div className="h-3 w-36 rounded bg-neutral-200/90" />
         <div className="h-3 w-full max-w-sm rounded bg-neutral-100" />
         <div className="h-4 w-[85%] max-w-xs rounded bg-neutral-200/80" />
@@ -3399,9 +3387,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </div>
       </div>
 
-      <div className="relative z-0 px-4 pt-4">
+      <div className="relative z-0 px-5 pt-6">
 
-        <section className="mb-6">
+        <section className="mb-8">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="cu-section-title">Способ получения</h2>
             <div className="relative">
@@ -3455,7 +3443,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                       : dm.enabled
                         ? "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
                         : mutedPvz
-                          ? "cursor-not-allowed border-amber-200/90 bg-amber-50/80 text-amber-900/80 opacity-95"
+                          ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-75"
                           : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
                   }`}
                 >
@@ -3586,8 +3574,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         {showScenarioSkeleton ? (
           <ScenarioOrderSkeleton variant="unified" />
         ) : unifiedOrderBlock ? (
-          <section className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-            <div className="border-b border-neutral-100 px-3 py-3">{renderScenarioMethodSummary()}</div>
+          <section className="mb-8 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+            <div className="border-b border-neutral-100 px-4 py-4">{renderScenarioMethodSummary()}</div>
             {renderPrimarySplitContextBar("unified")}
             {(scenario?.parts ?? [])
               .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
@@ -3672,9 +3660,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         {secondaryDisplaySelections.map((selection, selectionIndex) => (
           <section
             key={selection.id}
-            className="mb-6 overflow-hidden rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100"
+            className="mb-8 overflow-hidden rounded-2xl border border-neutral-200 bg-white divide-y divide-neutral-100"
           >
-            <div className="px-3 py-3">
+            <div className="px-4 py-4">
               <SecondarySelectionCard
                 variant="stacked"
                 option={selection.option}
@@ -3721,7 +3709,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ))}
 
         {activeRemainderResolution && activeRemainderResolution.lines.length > 0 ? (
-          <section className="mb-6">
+          <section className="mb-8">
             <UnresolvedItemsBlock
               resolution={activeRemainderResolution}
               productsById={productsById}
@@ -3732,7 +3720,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : null}
 
         {manualRemainderResolution && manualRemainderResolution.lines.length > 0 ? (
-          <section className="mb-6">
+          <section className="mb-8">
             <UnresolvedItemsBlock
               resolution={manualRemainderResolution}
               productsById={productsById}
@@ -3745,10 +3733,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : null}
 
         <section
-          className="mb-6 border-t border-neutral-100 pt-5"
+          className="mb-8 mt-8"
           aria-labelledby="checkout-recipient-heading"
         >
-          <h2 id="checkout-recipient-heading" className="cu-section-title mb-2">
+          <h2 id="checkout-recipient-heading" className="cu-section-title mb-3">
             Мои данные
           </h2>
           {!recipient ? (
@@ -3787,7 +3775,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           )}
         </section>
 
-        <section className="mb-6" aria-labelledby="checkout-payment-heading">
+        <section className="mb-8 mt-8" aria-labelledby="checkout-payment-heading">
           <h2 id="checkout-payment-heading" className="cu-section-title mb-3">
             Способ оплаты
           </h2>
@@ -3848,7 +3836,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : null}
         </section>
 
-        <section className="mb-6 space-y-3 border-t border-neutral-100 pt-4">
+        <section className="mb-8 mt-8 space-y-3">
           <div className="flex w-full items-stretch gap-2 rounded-xl bg-neutral-100 p-1.5 pl-3">
             <input
               type="search"
@@ -3902,9 +3890,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : null}
         </section>
 
-        <section className="mb-24 border-t border-neutral-100 pt-4">
+        <section className="mb-24 border-t border-neutral-100 pt-6">
           <h2 className="cu-section-title">Итого</h2>
-          <div className="mt-2 space-y-1">
+          <div className="mt-3 space-y-1.5">
             <div className="flex justify-between">
               <span className="cu-total-row-label">Товары</span>
               <span className="cu-total-row-value">{fmt(displayGoodsSubtotal)}</span>

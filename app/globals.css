@@ -3,7 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #111111;
-  --gj-muted: #6b5c4c;
+  --gj-muted: #8c8278;
   --gj-beige: #f5efe6;
   --gj-line: #e8e8e8;
   /* Админка (десктоп shell) */
@@ -178,6 +178,10 @@ body {
   }
   .checkout-ui .cu-total-final-row {
     @apply flex justify-between text-sm font-semibold tabular-nums text-neutral-900;
+  }
+  /** Строка условий/выгоды в PartCard: как раньше — капс, трекинг, цвет --gj-muted */
+  .checkout-ui .cu-benefit {
+    @apply text-[10px] font-medium uppercase leading-snug tracking-[0.12em] text-[var(--gj-muted)];
   }
 
   /**
