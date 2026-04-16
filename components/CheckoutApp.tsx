@@ -222,7 +222,7 @@ function BonusAuthBar() {
   );
 }
 
-const MOCK_SLOTS = ["9:00–12:00", "12:00–15:00", "15:00–18:00"];
+const MOCK_SLOTS = ["9:00–12:00", "12:00–15:00", "15:00–18:00", "18:00–21:00", "21:00–23:00"];
 
 function startOfStableCalendarDay(d: Date): Date {
   const x = new Date(d);
@@ -241,19 +241,32 @@ function formatRuShortDayMonth(d: Date): string {
   return s.replace(/\s*г\.?\s*$/i, "").trim();
 }
 
-/** Четыре ближайших календарных дня: «Завтра, …» и три следующих даты (относительно сегодня). */
+function formatRuWeekdayShort(d: Date): string {
+  return d.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "").trim().toLowerCase();
+}
+
+function splitCourierDateLabel(label: string): { primary: string; secondary: string } {
+  const dayMatch = label.match(/(\d{1,2})/);
+  const isTomorrow = /^завтра/i.test(label.trim());
+  const primary = dayMatch?.[1] ?? (isTomorrow ? "Завтра" : label.trim());
+  if (isTomorrow) return { primary, secondary: "завтра" };
+  const secondary = label
+    .replace(/\d{1,2}/g, "")
+    .replace(/[,.\s]+/g, " ")
+    .trim()
+    .toLowerCase();
+  return { primary, secondary: secondary || "дата" };
+}
+
+/** Ближайшие 10 календарных дней: «Завтра, …» + остальные даты в формате `17 пт`. */
 function buildCourierDateLabels(reference: Date = new Date()): string[] {
   const base = startOfStableCalendarDay(reference);
-  const tomorrow = addCalendarDays(base, 1);
-  const d2 = addCalendarDays(base, 2);
-  const d3 = addCalendarDays(base, 3);
-  const d4 = addCalendarDays(base, 4);
-  return [
-    `Завтра, ${formatRuShortDayMonth(tomorrow)}`,
-    formatRuShortDayMonth(d2),
-    formatRuShortDayMonth(d3),
-    formatRuShortDayMonth(d4),
-  ];
+  return Array.from({ length: 10 }, (_, idx) => {
+    const day = addCalendarDays(base, idx + 1);
+    if (idx === 0) return `Завтра, ${formatRuShortDayMonth(day)}`;
+    const dayNum = day.getDate();
+    return `${dayNum} ${formatRuWeekdayShort(day)}`;
+  });
 }
 /** Демо: лимит списания с карты лояльности и сумма в подписи «Списать с карты GJ …» */
 const GJ_LOYALTY_MAX_SPEND_RUB = 1000;
@@ -2034,9 +2047,9 @@ function PartCard({
             </p>
           ) : null}
 
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-baseline justify-between gap-4">
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold leading-tight text-neutral-900">{headingName}</p>
+              <p className="text-base font-semibold leading-tight text-neutral-900">{headingName}</p>
               {subtitle ? (
                 <p className="mt-1.5 text-sm leading-snug text-neutral-600">{subtitle}</p>
               ) : null}
@@ -2047,7 +2060,9 @@ function PartCard({
                 <p className="cu-benefit mt-4">{benefitLine}</p>
               ) : null}
             </div>
-            <span className="shrink-0 text-lg font-bold tabular-nums text-neutral-900">{fmt(sub + ship)}</span>
+            <span className="shrink-0 text-[17px] font-semibold leading-tight tabular-nums text-neutral-900">
+              {fmt(sub + ship)}
+            </span>
           </div>
 
           {showCourierDeliveryRow ? (
@@ -2087,28 +2102,38 @@ function PartCard({
 
           {showCourierDeliveryRow ? (
             <div className="mt-4 space-y-2">
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {courierDateLabels.map((d, i) => (
-                  <button
-                    key={`courier-date-${i}`}
-                    type="button"
-                    onClick={() => onDateChange?.(i)}
-                    className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-medium ${
-                      i === dateIx ? "border-black bg-black text-white" : "border-neutral-200"
-                    }`}
-                  >
-                    {d}
-                  </button>
-                ))}
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {courierDateLabels.map((d, i) => {
+                  const chunks = splitCourierDateLabel(d);
+                  return (
+                    <button
+                      key={`courier-date-${i}`}
+                      type="button"
+                      onClick={() => onDateChange?.(i)}
+                      className={`shrink-0 rounded-[18px] border px-3 py-2 text-center transition ${
+                        i === dateIx
+                          ? "border-neutral-900 bg-neutral-900 text-white"
+                          : "border-neutral-200 bg-white text-neutral-900"
+                      }`}
+                    >
+                      <span className="block text-[14px] font-semibold leading-tight">{chunks.primary}</span>
+                      <span className={`block text-[11px] leading-tight ${i === dateIx ? "text-white/85" : "text-neutral-600"}`}>
+                        {chunks.secondary}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {MOCK_SLOTS.map((s, i) => (
                   <button
                     key={s}
                     type="button"
                     onClick={() => onSlotChange?.(i)}
-                    className={`rounded-lg border px-3 py-2 text-xs ${
-                      i === (selectedSlotIx ?? 0) ? "border-black bg-black text-white" : "border-neutral-200"
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-[13px] font-medium transition ${
+                      i === (selectedSlotIx ?? 0)
+                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                        : "border-neutral-200 bg-white text-neutral-900"
                     }`}
                   >
                     {s}
