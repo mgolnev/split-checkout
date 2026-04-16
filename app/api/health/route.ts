@@ -139,12 +139,11 @@ export async function GET() {
       diagVersion: HEALTH_DIAG_VERSION,
     });
   } catch (e) {
-    let { code, hint } = prismaDiag(e);
+    const { code, hint: hintFromDiag } = prismaDiag(e);
+    const hint =
+      hintFromDiag ??
+      "Полный текст — в логах ONREZA по строке «[health] database check failed». Сверьте DATABASE_URL с панелью Kaiki и доступ compute→БД.";
     const metaSafe = prismaMetaSafe(e);
-    if (!hint) {
-      hint =
-        "Полный текст — в логах ONREZA по строке «[health] database check failed». Сверьте DATABASE_URL с панелью Kaiki и доступ compute→БД.";
-    }
     console.error("[health] database check failed", e);
     return NextResponse.json(
       {
