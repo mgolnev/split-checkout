@@ -31,6 +31,12 @@ npm run dev
 
 Если нужно просто **выложить прототип** для показов с телефона и сбора фидбека, а **Vercel не устраивает по TTFB из РФ** — разумный минимум: **небольшой VPS** (например Hetzner HEL / бюджетный тариф у российского провайдера) + тот же **`Dockerfile`**. База может остаться на **Supabase**. Кратко: **`deploy/demo-testing.md`**.
 
+### Onreza и похожие прокси (Server Actions)
+
+Если в логах **`x-forwarded-host` does not match `origin`** и **Invalid Server Actions request**, прокси отдаёт внутренний хост (например `10.x.x.x:порт`), а браузер шлёт публичный `Origin`. В переменных окружения деплоя задайте **`SERVER_ACTION_TRUSTED_ORIGINS`** — список хостов через запятую или шаблон **`*.onreza.app`**. Host из **`NEXT_PUBLIC_APP_URL`** тоже считается доверенным (если переменная задана). Правка заголовка делается в **`middleware.ts`** только для «внутренних» `X-Forwarded-Host` и только если `Origin` проходит allowlist.
+
+Отдельно: **`PrismaClientInitializationError` / Can't reach database server`** значит, что из контейнера Onreza **недоступен** хост из **`DATABASE_URL`** (сеть, файрвол, неверный URL, БД выключена). Нужна рабочая строка подключения из той же сети, что и рантайм, или публичный pooler (Neon/Supabase и т.д.).
+
 ### Yandex Cloud
 
 Полноценный деплой в YC (Managed PostgreSQL, Container Registry, ВМ) — см. **`deploy/yandex/README.md`**, если позже понадобится именно это.

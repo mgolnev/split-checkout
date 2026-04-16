@@ -296,10 +296,6 @@ const modeLabel = (mode: ScenarioPart["mode"]) => {
 
 const methodOrder = { courier: 0, pickup: 1, pvz: 2 } as const;
 
-function countUnits(lines: { quantity: number }[]) {
-  return lines.reduce((sum, line) => sum + line.quantity, 0);
-}
-
 function withSecondaryPartKeys(parts: ScenarioPart[], selectionId: string) {
   return parts.map((part, index) => ({
     ...part,
@@ -3413,7 +3409,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           {/* Горизонтальные вкладки */}
           <div className="flex items-stretch gap-3">
             {deliveryOptions.map((dm) => {
-              const tabName = dm.code === "pickup" ? "Магазины GJ" : dm.name;
+              const tabName = dm.code === "pickup" ? "Магазины" : dm.name;
               const isSelected = method === dm.code;
               const isRecommended = recommendedMethodCode === dm.code;
               const coverage = optionCoverageLabel(dm.summary);
