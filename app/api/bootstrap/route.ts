@@ -47,23 +47,22 @@ function unitsForMode(
 
 export async function GET() {
   try {
-  const [cities, methods, products, rules, disclaimerRows] = await Promise.all([
-    prisma.city.findMany({ orderBy: { name: "asc" } }),
-    prisma.deliveryMethod.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.product.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.shippingRule.findMany({
-      include: { deliveryMethod: true },
-    }),
-    prisma.disclaimerTemplate.findMany({
-      select: { code: true, text: true, isActive: true },
-    }),
-  ]);
+  // Последовательно: при connection_limit=1 (PgBouncer / pooler) Promise.all исчерпывает пул и даёт таймаут.
+  const cities = await prisma.city.findMany({ orderBy: { name: "asc" } });
+  const methods = await prisma.deliveryMethod.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+  });
+  const products = await prisma.product.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+  });
+  const rules = await prisma.shippingRule.findMany({
+    include: { deliveryMethod: true },
+  });
+  const disclaimerRows = await prisma.disclaimerTemplate.findMany({
+    select: { code: true, text: true, isActive: true },
+  });
 
   const disclaimerMap = Object.fromEntries(
     disclaimerRows.map((r) => [r.code, r.isActive ? r.text : null]),
@@ -124,18 +123,16 @@ export async function GET() {
     const nextPickupSummary: Record<string, PickupStoreSummary> = {};
 
     if (totalUnits > 0) {
-      const [courierScenario, pvzScenario] = await Promise.all([
-        buildScenario({
-          cityId: c.id,
-          deliveryMethodCode: "courier",
-          selectedStoreId: null,
-        }),
-        buildScenario({
-          cityId: c.id,
-          deliveryMethodCode: "pvz",
-          selectedStoreId: null,
-        }),
-      ]);
+      const courierScenario = await buildScenario({
+        cityId: c.id,
+        deliveryMethodCode: "courier",
+        selectedStoreId: null,
+      });
+      const pvzScenario = await buildScenario({
+        cityId: c.id,
+        deliveryMethodCode: "pvz",
+        selectedStoreId: null,
+      });
 
       nextSummary.courier.availableUnits = availableUnitsForScenario(courierScenario);
       nextSummary.courier.hasSplit =
