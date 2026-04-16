@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+/** Меняйте при изменении полей диагностики — по значению видно, что задеплоено. */
+const HEALTH_DIAG_VERSION = 3;
+
 function readPrismaCode(o: object): string | undefined {
   const r = o as Record<string, unknown>;
   if (typeof r.errorCode === "string") return r.errorCode;
@@ -68,6 +71,61 @@ function prismaDiag(e: unknown): { code?: string; hint?: string } {
   return { code, hint };
 }
 
+/** Без пароля и query: только факт наличия env и разбор хоста для отладки ONREZA. */
+function databaseUrlSafeInfo(): {
+  databaseUrlSet: boolean;
+  databaseUrlParseOk: boolean;
+  databaseUrlHost: string | null;
+  databaseUrlPort: string | null;
+} {
+  const raw = process.env.DATABASE_URL?.trim();
+  if (!raw) {
+    return {
+      databaseUrlSet: false,
+      databaseUrlParseOk: false,
+      databaseUrlHost: null,
+      databaseUrlPort: null,
+    };
+  }
+  try {
+    const u = new URL(raw);
+    return {
+      databaseUrlSet: true,
+      databaseUrlParseOk: true,
+      databaseUrlHost: u.hostname || null,
+      databaseUrlPort: u.port || null,
+    };
+  } catch {
+    return {
+      databaseUrlSet: true,
+      databaseUrlParseOk: false,
+      databaseUrlHost: null,
+      databaseUrlPort: null,
+    };
+  }
+}
+
+function errorNamesFromChain(e: unknown): string[] {
+  const names: string[] = [];
+  for (const item of errorChain(e)) {
+    if (item instanceof Error && item.name && !names.includes(item.name)) names.push(item.name);
+    if (names.length >= 8) break;
+  }
+  return names;
+}
+
+/** Только безопасные поля Prisma meta (без сырого объекта). */
+function prismaMetaSafe(e: unknown): { prismaMetaTable?: string } {
+  for (const item of errorChain(e)) {
+    if (typeof item !== "object" || item === null || !("meta" in item)) continue;
+    const meta = (item as { meta: unknown }).meta;
+    if (!meta || typeof meta !== "object") continue;
+    const t = (meta as Record<string, unknown>).table;
+    if (typeof t === "string" && t.length > 0 && t.length < 200) return { prismaMetaTable: t };
+  }
+  return {};
+}
+
 /**
  * Проверка БД после деплоя: GET /api/health
  * При сбое в теле ответа есть prismaCode / hint — без полного текста ошибки в проде.
@@ -75,17 +133,30 @@ function prismaDiag(e: unknown): { code?: string; hint?: string } {
 export async function GET() {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return NextResponse.json({ ok: true, database: "up" });
+    return NextResponse.json({
+      ok: true,
+      database: "up",
+      diagVersion: HEALTH_DIAG_VERSION,
+    });
   } catch (e) {
-    const { code, hint } = prismaDiag(e);
+    let { code, hint } = prismaDiag(e);
+    const metaSafe = prismaMetaSafe(e);
+    if (!hint) {
+      hint =
+        "Полный текст — в логах ONREZA по строке «[health] database check failed». Сверьте DATABASE_URL с панелью Kaiki и доступ compute→БД.";
+    }
     console.error("[health] database check failed", e);
     return NextResponse.json(
       {
         ok: false,
         database: "down",
         error: "connection_failed",
+        diagVersion: HEALTH_DIAG_VERSION,
+        ...databaseUrlSafeInfo(),
+        errorNames: errorNamesFromChain(e),
+        ...metaSafe,
         ...(code ? { prismaCode: code } : {}),
-        ...(hint ? { hint } : {}),
+        hint,
       },
       { status: 503 },
     );
