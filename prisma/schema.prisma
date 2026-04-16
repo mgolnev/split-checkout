@@ -1,7 +1,7 @@
 generator client {
-  provider      = "prisma-client-js"
-  // ONREZA: сборка даёт linux-musl, рантайм — debian glibc; Docker — bookworm (debian). Иначе PrismaClientInitializationError «could not locate Query Engine».
-  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+  provider = "prisma-client-js"
+  // Несколько рантаймов: локально — native; Vercel/serverless AWS — rhel-openssl-3.0.x; ONREZA (glibc) — debian; сборка в musl / Docker slim — linux-musl.
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
