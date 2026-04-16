@@ -2033,7 +2033,7 @@ function PartCard({
             onClick={onToggle}
             role="checkbox"
             aria-checked={included}
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-bold leading-none ${
+            className={`-mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-bold leading-none ${
               included ? "border-black bg-black text-white" : "border-neutral-400 bg-white text-transparent"
             } ${part.canToggle ? "" : "opacity-40"}`}
           >
@@ -2046,7 +2046,6 @@ function PartCard({
               Отправление {shipmentOrdinal}
             </p>
           ) : null}
-
           <div className="flex items-baseline justify-between gap-4">
             <div className="min-w-0 flex-1">
               <p className="text-base font-semibold leading-tight text-neutral-900">{headingName}</p>
@@ -2110,7 +2109,7 @@ function PartCard({
                       key={`courier-date-${i}`}
                       type="button"
                       onClick={() => onDateChange?.(i)}
-                      className={`shrink-0 rounded-[18px] border px-3 py-2 text-center transition ${
+                      className={`h-[50px] w-[62px] shrink-0 rounded-[18px] border px-2 py-1.5 text-center transition ${
                         i === dateIx
                           ? "border-neutral-900 bg-neutral-900 text-white"
                           : "border-neutral-200 bg-white text-neutral-900"
@@ -2132,7 +2131,7 @@ function PartCard({
                     onClick={() => onSlotChange?.(i)}
                     className={`shrink-0 rounded-full border px-3 py-1.5 text-[13px] font-medium transition ${
                       i === (selectedSlotIx ?? 0)
-                        ? "border-neutral-200 bg-neutral-100 text-neutral-900"
+                        ? "border-neutral-900 bg-neutral-900 text-white"
                         : "border-neutral-200 bg-white text-neutral-900"
                     }`}
                   >
