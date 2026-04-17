@@ -43,9 +43,13 @@ const BY_METHOD = {
     clickCollectUnavailable: "Доставка со склада в магазин (click & collect) здесь недоступна.",
     remainderUnavailableInStore:
       "В этом магазине не всё из заказа оформляется сразу — часть уйдёт в остаток.",
+    payOnDeliveryOnlySplitPickup:
+      "Несколько получений в магазине\nОформим отдельными получениями. Для такого заказа доступна только оплата при получении.",
   },
   pvz: {
     intro: "В ПВЗ едут только позиции со склада под этот пункт.",
+    partialOrder:
+      "В ПВЗ привезём только товары со склада\nВыберите способ получения для остальных товаров ниже или оставьте их в корзине.",
     disabledByRule: "ПВЗ для этого города отключён правилами.",
     noWarehouseInCity: "В городе нет склада для отгрузки в ПВЗ.",
   },
@@ -89,7 +93,9 @@ const CODE_TITLES: Record<string, string> = {
   "pickup.storeNotFound": "Самовывоз: магазин не найден",
   "pickup.clickCollectUnavailable": "Самовывоз: click&collect недоступен",
   "pickup.remainderUnavailableInStore": "Самовывоз: часть недоступна в магазине",
+  "pickup.payOnDeliveryOnlySplitPickup": "Самовывоз: несколько получений — оплата при получении",
   "pvz.intro": "ПВЗ: вводный текст",
+  "pvz.partialOrder": "ПВЗ: неполный заказ",
   "pvz.disabledByRule": "ПВЗ: способ отключён",
   "pvz.noWarehouseInCity": "ПВЗ: нет склада в городе",
 };

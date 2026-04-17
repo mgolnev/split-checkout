@@ -2048,7 +2048,7 @@ function PartCard({
   return (
     <div
       className={`transition ${
-        inGroup ? "px-5 py-8" : "p-5"
+        inGroup ? "px-5 pb-8 pt-6" : "p-5"
       } ${
         inGroup
           ? included

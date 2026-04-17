@@ -770,7 +770,7 @@ function pickupScenario(ctx: EngineInput): ScenarioResult {
       parts.length > 1
         ? [
             ...informers,
-            commonDisclaimer("payOnDeliveryOnly", ctx.disclaimers),
+            methodDisclaimer("pickup", "payOnDeliveryOnlySplitPickup", ctx.disclaimers),
           ]
         : informers,
     payOnDeliveryOnly: parts.length > 1,
@@ -781,9 +781,7 @@ function pickupScenario(ctx: EngineInput): ScenarioResult {
 
 function pvzScenario(ctx: EngineInput): ScenarioResult {
   const { cartLines, products, sources, inventories, rule } = ctx;
-  const informers: string[] = [
-    methodDisclaimer("pvz", "intro", ctx.disclaimers),
-  ];
+  const informers: string[] = [];
 
   if (!rule?.canUseWarehouse) {
     return {
@@ -829,8 +827,7 @@ function pvzScenario(ctx: EngineInput): ScenarioResult {
   const parts = part ? [part] : [];
 
   if (remainder.length > 0) {
-    informers.push(commonDisclaimer("remainderUnavailable", ctx.disclaimers));
-    informers.push(commonDisclaimer("remainderKeep", ctx.disclaimers));
+    informers.push(methodDisclaimer("pvz", "partialOrder", ctx.disclaimers));
   }
 
   return {
