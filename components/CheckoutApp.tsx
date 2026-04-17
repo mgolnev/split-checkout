@@ -268,11 +268,6 @@ function addCalendarDays(d: Date, n: number): Date {
   return x;
 }
 
-function formatRuShortDayMonth(d: Date): string {
-  const s = d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-  return s.replace(/\s*г\.?\s*$/i, "").trim();
-}
-
 function formatRuWeekdayShort(d: Date): string {
   return d.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "").trim().toLowerCase();
 }
@@ -283,9 +278,7 @@ function formatRuDayMonthLong(d: Date): string {
 
 function splitCourierDateLabel(label: string): { primary: string; secondary: string } {
   const dayMatch = label.match(/(\d{1,2})/);
-  const isTomorrow = /^завтра/i.test(label.trim());
-  const primary = dayMatch?.[1] ?? (isTomorrow ? "Завтра" : label.trim());
-  if (isTomorrow) return { primary, secondary: "завтра" };
+  const primary = dayMatch?.[1] ?? label.trim();
   const secondary = label
     .replace(/\d{1,2}/g, "")
     .replace(/[,.\s]+/g, " ")
@@ -315,12 +308,11 @@ function parseCheckoutInformer(raw: string): { title: string; body: string } {
   return { title: text, body: "" };
 }
 
-/** Ближайшие 10 календарных дней: «Завтра, …» + остальные даты в формате `17 пт`. */
+/** Ближайшие 10 календарных дней в формате `18 сб` (слово «Завтра» только в заголовке карточки, не в пилюле). */
 function buildCourierDateLabels(reference: Date = new Date()): string[] {
   const base = startOfStableCalendarDay(reference);
   return Array.from({ length: 10 }, (_, idx) => {
     const day = addCalendarDays(base, idx + 1);
-    if (idx === 0) return `Завтра, ${formatRuShortDayMonth(day)}`;
     const dayNum = day.getDate();
     return `${dayNum} ${formatRuWeekdayShort(day)}`;
   });
@@ -1931,23 +1923,14 @@ function SplitSelectionModal({
         </div>
 
         <div className="shrink-0 border-t border-neutral-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => selectedOption && onConfirm(selectedOption)}
-              disabled={confirmDisabled}
-              className="flex-1 rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              {saving ? "Подтверждаем…" : "Выбрать этот вариант"}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-neutral-900 bg-white px-4 py-3 text-sm font-medium text-neutral-900"
-            >
-              Отмена
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => selectedOption && onConfirm(selectedOption)}
+            disabled={confirmDisabled}
+            className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {saving ? "Подтверждаем…" : "Выбрать этот вариант"}
+          </button>
         </div>
       </div>
       <PickupStoreSelectionOverlay
@@ -2156,7 +2139,7 @@ function PartCard({
 
           {showCourierDeliveryRow ? (
             <div className="mt-4 space-y-2">
-              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {courierDateLabels.map((d, i) => {
                   const chunks = splitCourierDateLabel(d);
                   return (
@@ -2164,14 +2147,14 @@ function PartCard({
                       key={`courier-date-${i}`}
                       type="button"
                       onClick={() => onDateChange?.(i)}
-                      className={`h-[50px] w-[62px] shrink-0 rounded-[18px] border px-2 py-1.5 text-center transition ${
+                      className={`h-[44px] w-[54px] shrink-0 rounded-[14px] border px-1.5 py-1 text-center transition ${
                         i === dateIx
                           ? "border-neutral-900 bg-neutral-900 text-white"
                           : "border-neutral-200 bg-white text-neutral-900"
                       }`}
                     >
-                      <span className="block text-[14px] font-semibold leading-tight">{chunks.primary}</span>
-                      <span className={`block text-[11px] leading-tight ${i === dateIx ? "text-white/85" : "text-neutral-600"}`}>
+                      <span className="block text-[13px] font-semibold leading-tight">{chunks.primary}</span>
+                      <span className={`block text-[10px] leading-tight ${i === dateIx ? "text-white/85" : "text-neutral-600"}`}>
                         {chunks.secondary}
                       </span>
                     </button>
