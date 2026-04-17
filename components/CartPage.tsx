@@ -364,7 +364,7 @@ export default function CartPage() {
             type="button"
             disabled={selectedCount === 0}
             onClick={goCheckout}
-            className="flex w-full items-center justify-between gap-3 rounded-full bg-neutral-900 px-5 py-3.5 text-left text-sm font-semibold text-white disabled:opacity-40"
+            className="flex w-full items-center justify-between gap-3 rounded-lg bg-black px-5 py-4 text-left text-sm font-semibold uppercase tracking-wide text-white disabled:pointer-events-none disabled:opacity-40"
           >
             <span>Далее</span>
             <span className="flex items-baseline gap-2">

@@ -651,13 +651,13 @@ function SheetThumbLabeledRow({
       <div className="mt-2 flex flex-wrap gap-2">
         {items.map((it, ix) => (
           <div key={`${it.productId}-${ix}`} className="flex flex-col items-center gap-0.5">
-            <div className="relative aspect-[3/4] w-10 overflow-hidden rounded-md bg-neutral-100">
+            <div className="relative aspect-[3/4] w-12 overflow-hidden rounded-md bg-neutral-100">
               <SafeProductImage
                 src={productsById[it.productId]?.image ?? ""}
                 alt={productsById[it.productId]?.name ?? ""}
                 fill
                 className="object-cover"
-                sizes="40px"
+                sizes="48px"
               />
               {it.quantity >= 2 ? (
                 <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[2px] text-[7px] font-semibold leading-none text-white ring-1 ring-white/30">
@@ -1476,14 +1476,14 @@ function RemainderLinesThumbStrip({
       {lines.map((line, lineIx) => {
         const sizeLabel = productsById[line.productId]?.sizeLabel?.trim();
         return (
-          <div key={`${line.productId}-${lineIx}`} className="flex w-10 shrink-0 flex-col items-center gap-0.5">
+          <div key={`${line.productId}-${lineIx}`} className="flex w-12 shrink-0 flex-col items-center gap-0.5">
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-neutral-100">
               <SafeProductImage
                 src={productsById[line.productId]?.image ?? ""}
                 alt=""
                 fill
                 className="object-cover"
-                sizes="40px"
+                sizes="48px"
               />
               {line.quantity >= 2 ? (
                 <span
@@ -2095,10 +2095,10 @@ function PartCard({
             {visible.map((it, thumbIx) => (
               <div
                 key={`${it.productId}-${it.sizeLabel ?? ""}-${thumbIx}`}
-                className="flex w-10 shrink-0 flex-col items-center gap-0.5"
+                className="flex w-12 shrink-0 flex-col items-center gap-0.5"
               >
                 <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-neutral-100">
-                  <SafeProductImage src={it.image} alt="" fill className="object-cover" sizes="40px" />
+                  <SafeProductImage src={it.image} alt="" fill className="object-cover" sizes="48px" />
                   {it.quantity >= 2 ? (
                     <span
                       className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-[7px] font-semibold leading-none tabular-nums text-white ring-1 ring-white/35"
@@ -2116,7 +2116,7 @@ function PartCard({
               </div>
             ))}
             {extra > 0 ? (
-              <div className="flex aspect-[3/4] w-10 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-xs font-semibold text-neutral-500">
+              <div className="flex aspect-[3/4] w-12 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-xs font-semibold text-neutral-500">
                 +{extra}
               </div>
             ) : null}
@@ -2198,7 +2198,7 @@ function ScenarioPartCardSkeleton({
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-2">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="flex w-10 shrink-0 flex-col items-center gap-0.5">
+            <div key={i} className="flex w-12 shrink-0 flex-col items-center gap-0.5">
               <div className="aspect-[3/4] w-full rounded-md bg-neutral-200/90" />
               <div className="h-2 w-6 rounded bg-neutral-200/70" />
             </div>
