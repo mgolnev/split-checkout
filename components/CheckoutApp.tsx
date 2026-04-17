@@ -121,6 +121,26 @@ function mergeRemainderLineLists(...lists: ReadonlyArray<ReadonlyArray<Remainder
   return [...map.entries()].map(([productId, quantity]) => ({ productId, quantity }));
 }
 
+function remainderLineCounts(lines: ReadonlyArray<RemainderLine>): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const { productId, quantity } of lines) {
+    if (quantity <= 0) continue;
+    m.set(productId, (m.get(productId) ?? 0) + quantity);
+  }
+  return m;
+}
+
+/** Сравнение наборов позиций (без учёта порядка строк). */
+function remainderLinesMultisetEqual(a: ReadonlyArray<RemainderLine>, b: ReadonlyArray<RemainderLine>): boolean {
+  const ma = remainderLineCounts(a);
+  const mb = remainderLineCounts(b);
+  if (ma.size !== mb.size) return false;
+  for (const [k, v] of ma) {
+    if (mb.get(k) !== v) return false;
+  }
+  return true;
+}
+
 function pluralizeDays(n: number) {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -3096,9 +3116,56 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [unifiedRemainderResolution]);
 
   const openSplitEditModal = (selectionIndex: number) => {
-    const baseResolution = selectionIndex === 0 ? remainderResolution : secondarySelections[selectionIndex - 1]?.nextResolution;
-    if (!baseResolution || baseResolution.lines.length === 0) return;
-    setSplitModalState({ mode: "edit", editIndex: selectionIndex, resolution: baseResolution });
+    const sel = secondarySelections[selectionIndex];
+    if (!sel?.inputLines?.length) return;
+    const lines: RemainderLine[] = sel.inputLines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
+
+    const chainSource =
+      selectionIndex === 0 ? remainderResolution : secondarySelections[selectionIndex - 1]?.nextResolution;
+
+    if (chainSource?.lines.length && remainderLinesMultisetEqual(lines, chainSource.lines)) {
+      setSplitModalState({
+        mode: "edit",
+        editIndex: selectionIndex,
+        resolution: { lines, options: chainSource.options },
+      });
+      return;
+    }
+
+    setSplitModalState({
+      mode: "edit",
+      editIndex: selectionIndex,
+      resolution: { lines, options: [] },
+    });
+
+    void (async () => {
+      try {
+        if (!cityId || !method) return;
+        const res = await fetch("/api/checkout/remainder-resolution", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cityId,
+            deliveryMethodCode: method,
+            selectedStoreId: method === "pickup" ? storeId || null : null,
+            lines,
+          }),
+        });
+        const text = await res.text();
+        const j = JSON.parse(text) as { remainderResolution?: RemainderResolution; error?: string };
+        if (!res.ok) throw new Error(j.error ?? text);
+        const nextRes = j.remainderResolution ?? { lines, options: [] };
+        setSplitModalState((prev) => {
+          if (prev?.mode !== "edit" || prev.editIndex !== selectionIndex) return prev;
+          return { ...prev, resolution: nextRes };
+        });
+      } catch {
+        setSplitModalState((prev) => {
+          if (prev?.mode !== "edit" || prev.editIndex !== selectionIndex) return prev;
+          return { ...prev, resolution: { lines, options: [] } };
+        });
+      }
+    })();
   };
 
   const applySplitSelection = async (option: AlternativeMethodOption) => {
