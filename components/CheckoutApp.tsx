@@ -262,6 +262,27 @@ function splitCourierDateLabel(label: string): { primary: string; secondary: str
   return { primary, secondary: secondary || "дата" };
 }
 
+function parseCheckoutInformer(raw: string): { title: string; body: string } {
+  const text = raw.trim();
+  if (!text) return { title: "", body: "" };
+  if (text.includes("\n")) {
+    const [title, ...rest] = text.split("\n");
+    return { title: title.trim(), body: rest.join(" ").trim() };
+  }
+  if (text.includes("::")) {
+    const [title, ...rest] = text.split("::");
+    return { title: title.trim(), body: rest.join("::").trim() };
+  }
+  const sentenceSplit = text.match(/^(.+?[.!?])\s+(.+)$/);
+  if (sentenceSplit) {
+    return {
+      title: sentenceSplit[1]!.replace(/[.!?]\s*$/, "").trim(),
+      body: sentenceSplit[2]!.trim(),
+    };
+  }
+  return { title: text, body: "" };
+}
+
 /** Ближайшие 10 календарных дней: «Завтра, …» + остальные даты в формате `17 пт`. */
 function buildCourierDateLabels(reference: Date = new Date()): string[] {
   const base = startOfStableCalendarDay(reference);
@@ -3309,20 +3330,35 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const renderPrimarySplitContextBar = (variant: "unified" | "stacked") => {
     if (!primarySplitContextBarVisible) return null;
-    const hasInformerText = scenarioInformersForBanner.length > 0;
+    const parsed = scenarioInformersForBanner.map(parseCheckoutInformer).filter((x) => x.title || x.body);
+    if (!parsed.length) return null;
+    const primary = parsed[0]!;
+    const extra = parsed.slice(1);
+    const bodyLines: string[] = [];
+    if (primary.body) bodyLines.push(primary.body);
+    for (const item of extra) {
+      const composed = item.body ? `${item.title}. ${item.body}` : item.title;
+      if (composed.trim()) bodyLines.push(composed.trim());
+    }
     const wrapClass =
       variant === "unified"
-        ? "flex w-full items-start gap-3 bg-white px-3 py-2"
-        : "mb-4 flex w-full items-start gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2.5";
+        ? "w-full bg-white px-5 py-5"
+        : "mb-5 w-full rounded-2xl border border-neutral-200 bg-white px-5 py-5";
     return (
       <div className={wrapClass}>
-        {hasInformerText ? (
-          <div className="min-w-0 flex-1 space-y-1 border-l-2 border-amber-400/70 pl-2.5 text-xs leading-snug text-neutral-800">
-            {scenarioInformersForBanner.map((t, i) => (
-              <p key={i}>{t}</p>
-            ))}
+        <div className="min-w-0">
+          {primary.title ? <p className="cu-page-title text-neutral-900">{primary.title}</p> : null}
+          {bodyLines.length > 0 ? (
+            <div className="mt-3 space-y-1.5 border-l-2 border-amber-400/80 pl-2.5 text-[13px] leading-snug text-neutral-700">
+              {bodyLines.map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+          ) : null}
+          {!primary.title && bodyLines.length === 0 ? (
+            <p className="text-[13px] leading-snug text-neutral-700">{scenarioInformersForBanner[0]}</p>
+          ) : null}
           </div>
-        ) : null}
       </div>
     );
   };
