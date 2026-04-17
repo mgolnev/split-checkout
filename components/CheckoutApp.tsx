@@ -2011,8 +2011,8 @@ function PartCard({
       : null;
   const primaryHeading = isCourier ? (leadLabel ?? headingName) : (subtitle ?? headingName);
   const secondaryHeading = primaryHeading === headingName ? null : headingName;
-  /** Если срок уже вынесен в главный заголовок, отдельную строку не дублируем. */
-  const showCourierDeliveryRow = isCourier && Boolean(leadLabel) && primaryHeading !== leadLabel;
+  /** Для курьера всегда показываем отдельный блок выбора даты/интервала. */
+  const showCourierDeliveryRow = isCourier && Boolean(leadLabel);
 
   return (
     <div
