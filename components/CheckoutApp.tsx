@@ -109,6 +109,18 @@ const fmt = (n: number) =>
     n,
   );
 
+/** Склеивает строки остатка из разных источников в одну витрину (без дублей по productId). */
+function mergeRemainderLineLists(...lists: ReadonlyArray<ReadonlyArray<RemainderLine>>): RemainderLine[] {
+  const map = new Map<string, number>();
+  for (const list of lists) {
+    for (const { productId, quantity } of list) {
+      if (quantity <= 0) continue;
+      map.set(productId, (map.get(productId) ?? 0) + quantity);
+    }
+  }
+  return [...map.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+}
+
 function pluralizeDays(n: number) {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -1906,7 +1918,7 @@ function SplitSelectionModal({
               disabled={confirmDisabled}
               className="flex-1 rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
             >
-              {saving ? "Добавляем…" : "Добавить отправление"}
+              {saving ? "Подтверждаем…" : "Выбрать этот вариант"}
             </button>
             <button
               type="button"
@@ -2313,9 +2325,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [lastPvzMemoryId, setLastPvzMemoryId] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ScenarioResult | null>(null);
   const [remainderResolution, setRemainderResolution] = useState<RemainderResolution | null>(null);
-  /** Варианты доставки для позиций, снятых с отправления (чекбокс) — тот же контракт, что у API-остатка */
-  const [manualRemainderResolution, setManualRemainderResolution] = useState<RemainderResolution | null>(null);
-  const [manualRemainderFetchPending, setManualRemainderFetchPending] = useState(false);
+  /** Остаток по объединённым линиям (цепочка nextResolution + снятые галочки) — один блок и один запрос remainder-resolution */
+  const [unifiedRemainderResolution, setUnifiedRemainderResolution] = useState<RemainderResolution | null>(null);
+  const [unifiedRemainderFetchPending, setUnifiedRemainderFetchPending] = useState(false);
   const [secondarySelections, setSecondarySelections] = useState<SecondarySelection[]>([]);
   const [splitModalState, setSplitModalState] = useState<SplitModalState | null>(null);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
@@ -2952,6 +2964,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     return [...map.values()].filter((r) => r.quantity > 0);
   }, [allDisplayParts, included, secondarySelections]);
 
+  /** Все позиции без оформленной доставки: API-остаток + снятые галочки — один общий блок на чекауте */
+  const mergedCheckoutRemainderLines = useMemo(
+    () =>
+      mergeRemainderLineLists(
+        activeRemainderResolution?.lines ?? [],
+        manualExcludedLines.map(({ productId, quantity }) => ({ productId, quantity })),
+      ),
+    [activeRemainderResolution, manualExcludedLines],
+  );
+
   /**
    * Первичное отправление снято с галочки, но те же строки уже оформлены вторичным блоком —
    * карточку скрываем, иначе можно снова включить и задвоить позиции в заказе.
@@ -2986,19 +3008,19 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [scenario?.parts, secondarySelections, included]);
 
   useEffect(() => {
-    if (manualExcludedLines.length === 0) {
-      setManualRemainderResolution(null);
-      setManualRemainderFetchPending(false);
+    if (mergedCheckoutRemainderLines.length === 0) {
+      setUnifiedRemainderResolution(null);
+      setUnifiedRemainderFetchPending(false);
       return;
     }
     if (!cityId || !method) {
-      setManualRemainderResolution(null);
-      setManualRemainderFetchPending(false);
+      setUnifiedRemainderResolution(null);
+      setUnifiedRemainderFetchPending(false);
       return;
     }
-    const lines = manualExcludedLines.map(({ productId, quantity }) => ({ productId, quantity }));
-    setManualRemainderResolution({ lines, options: [] });
-    setManualRemainderFetchPending(true);
+    const lines = mergedCheckoutRemainderLines;
+    setUnifiedRemainderResolution({ lines, options: [] });
+    setUnifiedRemainderFetchPending(true);
     let cancelled = false;
     void (async () => {
       try {
@@ -3016,18 +3038,18 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         const j = JSON.parse(text) as { remainderResolution?: RemainderResolution; error?: string };
         if (!res.ok) throw new Error(j.error ?? text);
         if (!cancelled) {
-          setManualRemainderResolution(j.remainderResolution ?? { lines, options: [] });
+          setUnifiedRemainderResolution(j.remainderResolution ?? { lines, options: [] });
         }
       } catch {
-        if (!cancelled) setManualRemainderResolution({ lines, options: [] });
+        if (!cancelled) setUnifiedRemainderResolution({ lines, options: [] });
       } finally {
-        if (!cancelled) setManualRemainderFetchPending(false);
+        if (!cancelled) setUnifiedRemainderFetchPending(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [manualExcludedLines, cityId, method, storeId]);
+  }, [mergedCheckoutRemainderLines, cityId, method, storeId]);
 
   const handlePromo = () => {
     if (promo.trim().toUpperCase() === "APP20") {
@@ -3068,15 +3090,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
   }, [method, isPvzUnavailableForCurrentOrder, deliveryOptions, courierAddress]);
 
-  const openCurrentSplitModal = () => {
-    if (!activeRemainderResolution || activeRemainderResolution.lines.length === 0) return;
-    setSplitModalState({ mode: "add", editIndex: null, resolution: activeRemainderResolution });
-  };
-
-  const openManualRemainderSplitModal = useCallback(() => {
-    if (!manualRemainderResolution?.lines.length) return;
-    setSplitModalState({ mode: "add", editIndex: null, resolution: manualRemainderResolution });
-  }, [manualRemainderResolution]);
+  const openUnifiedRemainderSplitModal = useCallback(() => {
+    if (!unifiedRemainderResolution?.lines.length) return;
+    setSplitModalState({ mode: "add", editIndex: null, resolution: unifiedRemainderResolution });
+  }, [unifiedRemainderResolution]);
 
   const openSplitEditModal = (selectionIndex: number) => {
     const baseResolution = selectionIndex === 0 ? remainderResolution : secondarySelections[selectionIndex - 1]?.nextResolution;
@@ -3766,26 +3783,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </section>
         ))}
 
-        {activeRemainderResolution && activeRemainderResolution.lines.length > 0 ? (
+        {unifiedRemainderResolution && unifiedRemainderResolution.lines.length > 0 ? (
           <section className="mb-8">
             <UnresolvedItemsBlock
-              resolution={activeRemainderResolution}
+              resolution={unifiedRemainderResolution}
               productsById={productsById}
-              onChoose={openCurrentSplitModal}
+              onChoose={openUnifiedRemainderSplitModal}
               copy={boot.checkoutCopy ?? unresolvedBlockCopy()}
-            />
-          </section>
-        ) : null}
-
-        {manualRemainderResolution && manualRemainderResolution.lines.length > 0 ? (
-          <section className="mb-8">
-            <UnresolvedItemsBlock
-              resolution={manualRemainderResolution}
-              productsById={productsById}
-              onChoose={openManualRemainderSplitModal}
-              copy={boot.checkoutCopy ?? unresolvedBlockCopy()}
-              ctaDisabled={manualRemainderFetchPending}
-              suppressEmptyOptionsHint={manualRemainderFetchPending}
+              ctaDisabled={unifiedRemainderFetchPending}
+              suppressEmptyOptionsHint={unifiedRemainderFetchPending}
             />
           </section>
         ) : null}
