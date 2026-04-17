@@ -245,6 +245,10 @@ function formatRuWeekdayShort(d: Date): string {
   return d.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "").trim().toLowerCase();
 }
 
+function formatRuDayMonthLong(d: Date): string {
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }).replace(/\s*г\.?\s*$/i, "").trim();
+}
+
 function splitCourierDateLabel(label: string): { primary: string; secondary: string } {
   const dayMatch = label.match(/(\d{1,2})/);
   const isTomorrow = /^завтра/i.test(label.trim());
@@ -2009,7 +2013,13 @@ function PartCard({
     : isPvz
       ? pvzHeadline
       : null;
-  const primaryHeading = isCourier ? (leadLabel ?? headingName) : (subtitle ?? headingName);
+  const courierHeadingDate = isCourier ? addCalendarDays(startOfStableCalendarDay(new Date()), dateIx + 1) : null;
+  const courierHeading = isCourier
+    ? dateIx === 0
+      ? `Завтра, ${formatRuDayMonthLong(courierHeadingDate!)}`
+      : formatRuDayMonthLong(courierHeadingDate!)
+    : null;
+  const primaryHeading = isCourier ? (courierHeading ?? headingName) : (subtitle ?? headingName);
   const secondaryHeading = primaryHeading === headingName ? null : headingName;
   /** Для курьера всегда показываем отдельный блок выбора даты/интервала. */
   const showCourierDeliveryRow = isCourier && Boolean(leadLabel);
@@ -2059,10 +2069,6 @@ function PartCard({
               {fmt(sub + ship)}
             </span>
           </div>
-
-          {showCourierDeliveryRow ? (
-            <p className="mt-3 text-sm font-medium leading-snug text-neutral-700">{leadLabel}</p>
-          ) : null}
 
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2.5">
             {visible.map((it, thumbIx) => (
