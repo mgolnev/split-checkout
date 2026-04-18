@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadCourierAddress, saveCourierAddress } from "@/lib/courier-address-storage";
 import { loadCheckoutCart } from "@/lib/checkout-cart-storage";
@@ -902,6 +902,43 @@ function getSearchFocusSheetInsets(): { top: number; bottom: number } {
   };
 }
 
+/** Пересчёт при смене вьюпорта/размера контейнера — иначе слой «карты» (absolute inset-0) может визуально «залипать» при fixed-шторке (Safari/WebKit). */
+function useSelectorMapLayoutResync(
+  setViewportRev: Dispatch<SetStateAction<number>>,
+  containerRef: RefObject<HTMLDivElement | null>,
+) {
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        setViewportRev((n) => n + 1);
+      });
+    };
+    schedule();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", schedule);
+    vv?.addEventListener("scroll", schedule);
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+    const root = containerRef.current;
+    let ro: ResizeObserver | undefined;
+    if (root && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(schedule);
+      ro.observe(root);
+    }
+    return () => {
+      vv?.removeEventListener("resize", schedule);
+      vv?.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+      ro?.disconnect();
+    };
+  }, [setViewportRev, containerRef]);
+}
+
 function PickupStoreSelector({
   stores,
   selectedStoreId,
@@ -927,6 +964,7 @@ function PickupStoreSelector({
   const [mapPreviewStoreId, setMapPreviewStoreId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
   const [searchViewportRev, setSearchViewportRev] = useState(0);
+  const selectorRootRef = useRef<HTMLDivElement | null>(null);
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
 
@@ -987,20 +1025,7 @@ function PickupStoreSelector({
     }
   }, [filteredStores, mapPreviewStoreId]);
 
-  useLayoutEffect(() => {
-    if (!searchActive) return;
-    const bump = () => setSearchViewportRev((n) => n + 1);
-    bump();
-    const vv = window.visualViewport;
-    vv?.addEventListener("resize", bump);
-    vv?.addEventListener("scroll", bump);
-    window.addEventListener("orientationchange", bump);
-    return () => {
-      vv?.removeEventListener("resize", bump);
-      vv?.removeEventListener("scroll", bump);
-      window.removeEventListener("orientationchange", bump);
-    };
-  }, [searchActive]);
+  useSelectorMapLayoutResync(setSearchViewportRev, selectorRootRef);
 
   const recommendedStore = filteredStores[0] ?? null;
   const recommendedStoreId = recommendedStore?.id ?? null;
@@ -1107,14 +1132,17 @@ function PickupStoreSelector({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      ref={selectorRootRef}
+      className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate [contain:layout]"
+    >
       <CheckoutCloseCrossButton
         ariaLabel="Закрыть карту выбора магазина"
         onClick={onClose}
         className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
       />
       <div
-        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] [transform:translateZ(0)] [backface-visibility:hidden]"
         onClick={() => {
           setSearchActive(false);
           setMapPreviewStoreId(null);
@@ -1123,7 +1151,7 @@ function PickupStoreSelector({
         aria-hidden
       />
       <div
-        className="absolute inset-0 z-[1] overflow-hidden"
+        className="absolute inset-0 z-[1] overflow-hidden [transform:translateZ(0)] [backface-visibility:hidden]"
         onClick={() => {
           setSearchActive(false);
           setMapPreviewStoreId(null);
@@ -1711,6 +1739,7 @@ function PvzPointSelector({
   const [mapPreviewPointId, setMapPreviewPointId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
   const [searchViewportRev, setSearchViewportRev] = useState(0);
+  const selectorRootRef = useRef<HTMLDivElement | null>(null);
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
 
@@ -1740,20 +1769,7 @@ function PvzPointSelector({
     }
   }, [filteredPoints, mapPreviewPointId]);
 
-  useLayoutEffect(() => {
-    if (!searchActive) return;
-    const bump = () => setSearchViewportRev((n) => n + 1);
-    bump();
-    const vv = window.visualViewport;
-    vv?.addEventListener("resize", bump);
-    vv?.addEventListener("scroll", bump);
-    window.addEventListener("orientationchange", bump);
-    return () => {
-      vv?.removeEventListener("resize", bump);
-      vv?.removeEventListener("scroll", bump);
-      window.removeEventListener("orientationchange", bump);
-    };
-  }, [searchActive]);
+  useSelectorMapLayoutResync(setSearchViewportRev, selectorRootRef);
 
   const mapPoints = filteredPoints;
   const recommendedPoint = filteredPoints[0] ?? null;
@@ -1845,14 +1861,17 @@ function PvzPointSelector({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      ref={selectorRootRef}
+      className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate [contain:layout]"
+    >
       <CheckoutCloseCrossButton
         ariaLabel="Закрыть карту выбора ПВЗ"
         onClick={onClose}
         className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
       />
       <div
-        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] [transform:translateZ(0)] [backface-visibility:hidden]"
         onClick={() => {
           setSearchActive(false);
           setMapPreviewPointId(null);
@@ -1861,7 +1880,7 @@ function PvzPointSelector({
         aria-hidden
       />
       <div
-        className="absolute inset-0 z-[1] overflow-hidden"
+        className="absolute inset-0 z-[1] overflow-hidden [transform:translateZ(0)] [backface-visibility:hidden]"
         onClick={() => {
           setSearchActive(false);
           setMapPreviewPointId(null);
