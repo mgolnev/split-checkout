@@ -10,8 +10,6 @@ type MapStorePinProps = {
   /** Либо счётчики по ТЗ: «N сегодня» / «M позже» */
   todayCount?: number;
   laterCount?: number;
-  /** Выбран в списке (не открыт превью) */
-  selected?: boolean;
   /** Ранее выбирали этот магазин — бейдж ↻ на круге */
   wasLastChoice?: boolean;
   className?: string;
@@ -26,7 +24,6 @@ export function MapStorePin({
   line2: line2Prop,
   todayCount,
   laterCount,
-  selected,
   wasLastChoice = false,
   className = "",
 }: MapStorePinProps) {
@@ -44,7 +41,7 @@ export function MapStorePin({
 
   return (
     <div
-      className={`relative inline-flex w-max max-w-[min(100%,calc(100vw-2rem))] shrink-0 flex-row items-start pt-[3px] max-sm:pt-px ${selected ? "rounded-[28px] ring-2 ring-black/20 ring-offset-2 ring-offset-transparent" : ""} ${className}`}
+      className={`relative inline-flex w-max max-w-[min(100%,calc(100vw-2rem))] shrink-0 flex-row items-start pt-[3px] max-sm:pt-px ${className}`}
     >
       {/* Колонка: круг + хвост — треугольник без зазора под кругом */}
       <div className="flex w-[76px] shrink-0 flex-col items-center">

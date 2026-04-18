@@ -640,8 +640,8 @@ function pickupStorePinEmphasisClass(
   opts: { recommended: boolean; pinOpen: boolean },
 ): string {
   const kind = pickupStoreScenarioKind(summary);
-  if (opts.pinOpen) return "z-[35] scale-[1.06] ring-2 ring-black/25";
-  if ((kind === "today_all" || kind === "today_later") && opts.recommended) return "z-[14] scale-[1.03] ring-2 ring-black/10";
+  if (opts.pinOpen) return "z-[35] scale-[1.06]";
+  if ((kind === "today_all" || kind === "today_later") && opts.recommended) return "z-[14] scale-[1.03]";
   if (kind === "incomplete" || kind === "later_partial") return "z-[8] scale-[0.95] opacity-70";
   if (kind === "later_all") return "z-[9] opacity-80";
   if (kind === "today_later") return "z-[10]";
@@ -661,8 +661,9 @@ function pickupStoreIsTodayLater(store: PickupStoreOption): boolean {
   return !!s && s.availableUnits > 0 && s.hasFullCoverage && s.reserveUnits > 0 && s.collectUnits > 0;
 }
 
+/** Можно выбрать точку, если в ней доступна хотя бы часть заказа (не только при полном покрытии). */
 function pickupStoreCanSelect(summary?: PickupStoreSummary): boolean {
-  return !!summary && summary.availableUnits > 0 && summary.hasFullCoverage;
+  return !!summary && summary.availableUnits > 0;
 }
 
 function storeMatchesPickupListFilter(store: PickupStoreOption, filter: PickupStoreListFilter): boolean {
@@ -1135,7 +1136,6 @@ function PickupStoreSelector({
           const pinOpen = mapPreviewStoreId === store.id;
           const recommended = recommendedStoreId === store.id;
           const emphasis = pickupStorePinEmphasisClass(store.summary, { recommended, pinOpen });
-          const selected = !pinOpen && selectedStoreId === store.id;
           return (
             <button
               key={store.id}
@@ -1155,7 +1155,6 @@ function PickupStoreSelector({
               <MapStorePin
                 line1={pinLines.line1}
                 line2={pinLines.line2}
-                selected={selected}
                 wasLastChoice={lastChosenStoreId === store.id}
               />
             </button>
