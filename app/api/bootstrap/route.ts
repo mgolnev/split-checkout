@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildScenario } from "@/lib/build-scenario";
-import { selectorCopy, unresolvedBlockCopy, type DisclaimerTextMap } from "@/lib/disclaimers";
+import { fullCheckoutCopy, selectorCopy, type DisclaimerTextMap } from "@/lib/disclaimers";
 import { prisma } from "@/lib/prisma";
 
 type MethodCode = "courier" | "pickup" | "pvz";
@@ -68,7 +68,7 @@ export async function GET() {
     disclaimerRows.map((r) => [r.code, r.isActive ? r.text : null]),
   ) as DisclaimerTextMap;
 
-  const checkoutCopy = unresolvedBlockCopy(disclaimerMap);
+  const checkoutCopy = fullCheckoutCopy(disclaimerMap);
   const checkoutSelectorCopy = selectorCopy(disclaimerMap);
 
   const storesByCity: Record<string, { id: string; name: string }[]> = {};

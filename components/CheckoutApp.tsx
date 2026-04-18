@@ -15,13 +15,14 @@ import {
   saveCheckoutRecipient,
   type CheckoutRecipientPayload,
 } from "@/lib/checkout-recipient-storage";
-import { commonDisclaimer, selectorCopy, unresolvedBlockCopy } from "@/lib/disclaimers";
+import { commonDisclaimer, fullCheckoutCopy, selectorCopy } from "@/lib/disclaimers";
 import {
   buildPvzSheetThumbMeta,
   pickupSummaryFromScenario,
   type CartMethodSummariesResult,
   type PickupStoreSummary,
 } from "@/lib/cart-method-summaries";
+import { fetchWithRetry } from "@/lib/fetch-retry";
 import { formatHoldNoticeForPart } from "@/lib/hold-display";
 import type {
   AlternativeMethodOption,
@@ -39,7 +40,7 @@ function phoneHasMinDigits(value: string, min = 10): boolean {
   return digits.length >= min;
 }
 
-type CheckoutCopy = ReturnType<typeof unresolvedBlockCopy>;
+type CheckoutCopy = ReturnType<typeof fullCheckoutCopy>;
 type SelectorCopy = ReturnType<typeof selectorCopy>;
 const FALLBACK_SELECTOR_COPY = selectorCopy();
 
@@ -61,7 +62,7 @@ type Bootstrap = {
     >
   >;
   pickupSummaryByStore: Record<string, Record<string, PickupStoreSummary>>;
-  /** Тексты UI чекаута из DisclaimerTemplate (см. common.unresolvedBlock*) */
+  /** Тексты UI чекаута из DisclaimerTemplate (common.unresolvedBlock*, common.checkoutPromoBonus*) */
   checkoutCopy?: CheckoutCopy;
   /** Тексты модалок выбора магазина/ПВЗ из DisclaimerTemplate */
   checkoutSelectorCopy?: SelectorCopy;
@@ -1562,8 +1563,11 @@ function CheckoutSheetStickyHeader({
 function CheckoutDeliveryMethodTabs({
   items,
   className = "flex items-stretch gap-3",
+  coveragePending = false,
 }: {
   className?: string;
+  /** Пока не пришли сводки по корзине — плейсхолдер вместо строки «N из M товаров». */
+  coveragePending?: boolean;
   items: Array<{
     id: string;
     tabLabel: string;
@@ -1585,6 +1589,7 @@ function CheckoutDeliveryMethodTabs({
           type="button"
           disabled={item.disabled}
           title={item.title}
+          aria-busy={coveragePending}
           onClick={() => {
             if (item.disabled) return;
             item.onSelect();
@@ -1600,10 +1605,19 @@ function CheckoutDeliveryMethodTabs({
           }`}
         >
           <span className="cu-label-primary leading-tight text-inherit">{item.tabLabel}</span>
-          <p className={`text-xs leading-tight ${item.selected ? "text-white/95" : "text-neutral-600"}`}>
-            {item.coverage}
-          </p>
-          {item.recommended ? (
+          {coveragePending ? (
+            <span
+              className={`block h-3.5 w-[5.25rem] max-w-full animate-pulse rounded-sm ${
+                item.selected ? "bg-white/30" : "bg-neutral-200"
+              }`}
+              aria-hidden
+            />
+          ) : (
+            <p className={`text-xs leading-tight ${item.selected ? "text-white/95" : "text-neutral-600"}`}>
+              {item.coverage}
+            </p>
+          )}
+          {item.recommended && !coveragePending ? (
             <span
               className={`inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
                 item.selected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
@@ -3516,7 +3530,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/bootstrap")
+    fetchWithRetry("/api/bootstrap")
       .then(async (r) => {
         const text = await r.text();
         if (!r.ok) {
@@ -3577,7 +3591,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           return;
         }
         if (fromStorage && fromStorage.length > 0) {
-          const r = await fetch("/api/cart-lines", {
+          const r = await fetchWithRetry("/api/cart-lines", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -3585,6 +3599,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               lines: fromStorage.map(({ productId, quantity }) => ({ productId, quantity })),
             }),
           });
+          if (!r.ok) throw new Error(String(r.status));
           const json = (await r.json()) as {
             lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
             units: number;
@@ -3593,7 +3608,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           if (!cancelled) setCartDetail(json);
           return;
         }
-        const r = await fetch(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`);
+        const r = await fetchWithRetry(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`);
+        if (!r.ok) throw new Error(String(r.status));
         const json = (await r.json()) as {
           lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
           units: number;
@@ -3626,6 +3642,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     pvzLinePreview?: CartMethodSummariesResult["pvzLinePreview"];
     pvzSheetThumbMeta?: CartMethodSummariesResult["pvzSheetThumbMeta"];
   } | null>(null);
+  const [cartSummariesFetchFailed, setCartSummariesFetchFailed] = useState(false);
 
   useEffect(() => {
     setCartScopedSummaries(null);
@@ -3634,21 +3651,28 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   useEffect(() => {
     if (!cityId || !cartDetail?.lines?.length) {
       setCartScopedSummaries(null);
+      setCartSummariesFetchFailed(false);
       return;
     }
+    setCartSummariesFetchFailed(false);
     setCartScopedSummaries(null);
     let cancelled = false;
     const lines = cartDetail.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
 
     void (async () => {
       try {
-        const r = await fetch("/api/cart-summaries", {
+        const r = await fetchWithRetry("/api/cart-summaries", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cityId, lines }),
         });
         const json = (await r.json()) as CartMethodSummariesResult;
-        if (cancelled || !r.ok || !json.methodSummaries || !json.pickupSummaryByStore) return;
+        if (cancelled) return;
+        if (!r.ok || !json.methodSummaries || !json.pickupSummaryByStore) {
+          setCartScopedSummaries(null);
+          setCartSummariesFetchFailed(true);
+          return;
+        }
         setCartScopedSummaries({
           methodSummaries: json.methodSummaries,
           pickupSummaryByStore: json.pickupSummaryByStore,
@@ -3656,7 +3680,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           pvzSheetThumbMeta: json.pvzSheetThumbMeta,
         });
       } catch {
-        if (!cancelled) setCartScopedSummaries(null);
+        if (!cancelled) {
+          setCartScopedSummaries(null);
+          setCartSummariesFetchFailed(true);
+        }
       }
     })();
 
@@ -3673,6 +3700,17 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     return boot.methodSummaryByCity[cityId];
   }, [boot, cityId, cartDetail?.lines?.length, cartScopedSummaries?.methodSummaries]);
 
+  /** Пока `/api/cart-summaries` не вернул сводки — скелетон строки «N из M» на вкладках способа получения. */
+  const methodTabsCoveragePending = useMemo(
+    () =>
+      Boolean(
+        cartDetail?.lines?.length &&
+          !cartSummariesFetchFailed &&
+          !cartScopedSummaries?.methodSummaries,
+      ),
+    [cartDetail?.lines?.length, cartSummariesFetchFailed, cartScopedSummaries?.methodSummaries],
+  );
+
   /** По сводке корзины: в ПВЗ нечего отгрузить (напр. только склад под ПВЗ, остатка нет). Вкладку не скрываем — приглушаем и поясняем. */
   const isPvzUnavailableForCurrentOrder = useMemo(() => {
     if (!cartDetail?.lines?.length || !methodSummariesForUi?.pvz) return false;
@@ -3686,7 +3724,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       selectedStoreId?: string | null;
       lines?: CartLine[];
     }) => {
-      const res = await fetch("/api/checkout/scenario", {
+      const res = await fetchWithRetry("/api/checkout/scenario", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3696,9 +3734,17 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           lines: params.lines,
         }),
       });
-      return (await res.json()) as {
-        scenario: ScenarioResult;
-        remainderResolution: RemainderResolution | null;
+      const data = (await res.json()) as {
+        scenario?: ScenarioResult;
+        remainderResolution?: RemainderResolution | null;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Сценарий: ${res.status}`);
+      }
+      return {
+        scenario: data.scenario!,
+        remainderResolution: data.remainderResolution ?? null,
       };
     },
     [cityId],
@@ -4156,7 +4202,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/checkout/remainder-resolution", {
+        const res = await fetchWithRetry("/api/checkout/remainder-resolution", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -4253,7 +4299,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     void (async () => {
       try {
         if (!cityId || !method) return;
-        const res = await fetch("/api/checkout/remainder-resolution", {
+        const res = await fetchWithRetry("/api/checkout/remainder-resolution", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -4478,6 +4524,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     );
   }
 
+  const checkoutCopyResolved = boot.checkoutCopy ?? fullCheckoutCopy();
+
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
   const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
@@ -4523,7 +4571,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <div className="min-w-0">
           {primary.title ? <p className="cu-page-title text-neutral-900">{primary.title}</p> : null}
           {bodyLines.length > 0 ? (
-            <div className="mt-3 space-y-1.5 border-l-2 border-amber-400/80 pl-2.5 text-[13px] leading-snug text-neutral-700">
+            <div className="mt-3 space-y-1.5 border-l-2 border-neutral-900 pl-2.5 text-[13px] leading-snug text-neutral-700">
               {bodyLines.map((line, i) => (
                 <p key={i}>{line}</p>
               ))}
@@ -4627,7 +4675,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <div className="relative">
               <select
                 aria-label="Выбор города"
-                className="appearance-none rounded-full border border-neutral-200 bg-white pl-3 pr-8 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-sm outline-none transition focus:border-neutral-400"
+                className="appearance-none rounded-full border-0 bg-transparent pl-3 pr-8 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900/15 focus-visible:ring-offset-0"
                 value={cityId}
                 onChange={(e) => setCityId(e.target.value)}
               >
@@ -4643,6 +4691,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </div>
           </div>
           <CheckoutDeliveryMethodTabs
+            coveragePending={methodTabsCoveragePending}
             items={deliveryOptions.map((dm) => {
               const tabName = dm.code === "pickup" ? "Магазины" : dm.name;
               const isSelected = method === dm.code;
@@ -4919,7 +4968,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               resolution={unifiedRemainderResolution}
               productsById={productsById}
               onChoose={openUnifiedRemainderSplitModal}
-              copy={boot.checkoutCopy ?? unresolvedBlockCopy()}
+              copy={checkoutCopyResolved}
               ctaDisabled={unifiedRemainderFetchPending}
               suppressEmptyOptionsHint={unifiedRemainderFetchPending}
             />
@@ -4973,6 +5022,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           <h2 id="checkout-payment-heading" className="cu-section-title mb-3">
             Способ оплаты
           </h2>
+          {payOnDeliveryOnlyEffective ? (
+            <div className="mb-3">
+              <p className="cu-page-title text-neutral-900">Несколько отправлений</p>
+              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-[13px] leading-snug text-neutral-800">
+                <p>{payOnDeliveryDisclaimerText}</p>
+              </div>
+            </div>
+          ) : null}
           <div role="radiogroup" aria-labelledby="checkout-payment-heading" className="space-y-2">
             {(
               [
@@ -5025,12 +5082,17 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               );
             })}
           </div>
-          {payOnDeliveryOnlyEffective ? (
-            <p className="cu-muted mt-3">{payOnDeliveryDisclaimerText}</p>
-          ) : null}
         </section>
 
         <section className="mb-8 mt-8 space-y-3">
+          {(recipient || promoApplied || bonusOn) ? (
+            <div>
+              <p className="cu-page-title text-neutral-900">{checkoutCopyResolved.promoBonusTitle}</p>
+              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-[13px] leading-snug text-neutral-800">
+                <p>{checkoutCopyResolved.promoBonusBody}</p>
+              </div>
+            </div>
+          ) : null}
           <div className="flex w-full items-stretch gap-2 rounded-xl bg-neutral-100 p-1.5 pl-3">
             <input
               type="search"
@@ -5077,11 +5139,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : (
             <BonusAuthBar />
           )}
-          {promoApplied || bonusOn ? (
-            <p className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-snug text-neutral-600">
-              В одном заказе можно применить или промокод, или бонусы.
-            </p>
-          ) : null}
         </section>
 
         <section className="mb-24 border-t border-neutral-100 pt-6">

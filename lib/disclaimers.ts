@@ -18,6 +18,10 @@ const COMMON = {
   unresolvedBlockCta: "Выбрать способ получения",
   unresolvedBlockNoAlternatives:
     "Для этих товаров сейчас не нашли других способов оформления.",
+  /** Блок «промокод или бонусы» на чекауте (common.checkoutPromoBonus*) */
+  checkoutPromoBonusTitle: "Промокод или бонусы",
+  checkoutPromoBonusBody:
+    "В одном заказе можно применить что-то одно: промокод или списание бонусов.",
 };
 
 const SYSTEM = {
@@ -91,6 +95,8 @@ const CODE_TITLES: Record<string, string> = {
   "common.unresolvedBlockLinesTitle": "Чекаут: подпись списка позиций",
   "common.unresolvedBlockCta": "Чекаут: кнопка выбора способа",
   "common.unresolvedBlockNoAlternatives": "Чекаут: нет вариантов доставки",
+  "common.checkoutPromoBonusTitle": "Чекаут: заголовок «промокод или бонусы»",
+  "common.checkoutPromoBonusBody": "Чекаут: текст «промокод или бонусы»",
   "system.cityNotFound": "Система: город не найден",
   "system.deliveryMethodUnavailable": "Система: способ получения недоступен",
   "system.noActiveProductsForMethod": "Система: нет товаров для способа",
@@ -180,6 +186,22 @@ export function unresolvedBlockCopy(overrides?: DisclaimerTextMap) {
     linesTitle: commonDisclaimer("unresolvedBlockLinesTitle", overrides),
     cta: commonDisclaimer("unresolvedBlockCta", overrides),
     noAlternatives: commonDisclaimer("unresolvedBlockNoAlternatives", overrides),
+  };
+}
+
+/** Заголовок и текст блока «промокод или бонусы» на чекауте (common.checkoutPromoBonus*). */
+export function checkoutPromoBonusCopy(overrides?: DisclaimerTextMap) {
+  return {
+    promoBonusTitle: commonDisclaimer("checkoutPromoBonusTitle", overrides),
+    promoBonusBody: commonDisclaimer("checkoutPromoBonusBody", overrides),
+  };
+}
+
+/** Все тексты чекаута из DisclaimerTemplate: остаток корзины + промокод/бонусы. */
+export function fullCheckoutCopy(overrides?: DisclaimerTextMap) {
+  return {
+    ...unresolvedBlockCopy(overrides),
+    ...checkoutPromoBonusCopy(overrides),
   };
 }
 

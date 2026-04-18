@@ -9,6 +9,7 @@ import {
   saveCheckoutCart,
   type StoredCartLine,
 } from "@/lib/checkout-cart-storage";
+import { fetchWithRetry } from "@/lib/fetch-retry";
 
 type Bootstrap = {
   cities: { id: string; name: string }[];
@@ -70,18 +71,20 @@ export default function CartPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/bootstrap")
-      .then((r) => r.json())
-      .then((d: Bootstrap) => {
+    void (async () => {
+      try {
+        const r = await fetchWithRetry("/api/bootstrap");
+        if (!r.ok) throw new Error(String(r.status));
+        const d = (await r.json()) as Bootstrap;
         if (cancelled) return;
         setBoot(d);
         const snap = loadCheckoutCart();
         const first = d.cities[0];
         if (first) setCityId(snap?.cityId && d.cities.some((c) => c.id === snap.cityId) ? snap.cityId : first.id);
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setBoot({ cities: [] });
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -93,45 +96,54 @@ export default function CartPage() {
     setHydrated(false);
 
     async function load() {
-      const snap = loadCheckoutCart();
-      if (snap?.cityId === cityId && snap.lines.length > 0) {
-        const r = await fetch("/api/cart-lines", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            cityId,
-            lines: snap.lines.map(({ productId, quantity }) => ({ productId, quantity })),
-          }),
-        });
+      try {
+        const snap = loadCheckoutCart();
+        if (snap?.cityId === cityId && snap.lines.length > 0) {
+          const r = await fetchWithRetry("/api/cart-lines", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cityId,
+              lines: snap.lines.map(({ productId, quantity }) => ({ productId, quantity })),
+            }),
+          });
+          if (!r.ok) throw new Error(String(r.status));
+          const j = (await r.json()) as {
+            lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
+          };
+          if (cancelled) return;
+          const resolved: UiLine[] = j.lines.map((l) => ({
+            ...l,
+            size: "S",
+            selected: true,
+            favorite: false,
+          }));
+          setLines(mapSnapshotToUi(snap.lines, resolved));
+          setHydrated(true);
+          return;
+        }
+
+        const r = await fetchWithRetry(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`);
+        if (!r.ok) throw new Error(String(r.status));
         const j = (await r.json()) as {
           lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
         };
         if (cancelled) return;
-        const resolved: UiLine[] = j.lines.map((l) => ({
-          ...l,
-          size: "S",
-          selected: true,
-          favorite: false,
-        }));
-        setLines(mapSnapshotToUi(snap.lines, resolved));
+        setLines(
+          j.lines.map((l) => ({
+            ...l,
+            size: "S",
+            selected: true,
+            favorite: false,
+          })),
+        );
         setHydrated(true);
-        return;
+      } catch {
+        if (!cancelled) {
+          setLines([]);
+          setHydrated(true);
+        }
       }
-
-      const r = await fetch(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`);
-      const j = (await r.json()) as {
-        lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
-      };
-      if (cancelled) return;
-      setLines(
-        j.lines.map((l) => ({
-          ...l,
-          size: "S",
-          selected: true,
-          favorite: false,
-        })),
-      );
-      setHydrated(true);
     }
 
     void load();
