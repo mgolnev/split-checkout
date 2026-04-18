@@ -444,14 +444,18 @@ function splitPvzLinePreviewFromScenario(scenario: ScenarioResult): CartMethodSu
   return { available, unavailable };
 }
 
-function methodSummaryFromPvzOption(option: AlternativeMethodOption | null | undefined): MethodSummary | undefined {
-  if (!option || option.methodCode !== "pvz") return undefined;
+function methodSummaryFromAlternativeOption(option: AlternativeMethodOption): MethodSummary {
   return {
     totalUnits: option.totalUnits,
     availableUnits: option.availableUnits,
     fullStoreCount: 0,
     hasSplit: option.unresolvedUnits > 0 || option.scenario.parts.length > 1,
   };
+}
+
+function methodSummaryFromPvzOption(option: AlternativeMethodOption | null | undefined): MethodSummary | undefined {
+  if (!option || option.methodCode !== "pvz") return undefined;
+  return methodSummaryFromAlternativeOption(option);
 }
 
 type PickupScenarioKind =
@@ -1163,14 +1167,11 @@ function PickupStoreSelector({
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <button
-        type="button"
+      <CheckoutCloseCrossButton
+        ariaLabel="Закрыть карту выбора магазина"
         onClick={onClose}
-        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md"
-        aria-label="Закрыть карту выбора магазина"
-      >
-        ×
-      </button>
+        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+      />
       <div
         className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
         onClick={() => {
@@ -1291,18 +1292,14 @@ function PickupStoreSelector({
             <p className="min-w-0 flex-1 truncate text-left text-[22px] font-semibold leading-tight text-neutral-900">
               {sheetStore?.name}
             </p>
-            <button
-              type="button"
+            <CheckoutCloseCrossButton
+              ariaLabel="Закрыть карточку магазина"
               onClick={() => {
                 setSearchActive(false);
                 setMapPreviewStoreId(null);
                 setSheetMode("collapsed");
               }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-sm"
-              aria-label="Закрыть карточку магазина"
-            >
-              ×
-            </button>
+            />
           </div>
         ) : null}
 
@@ -1512,7 +1509,29 @@ function PickupStoreSelector({
   );
 }
 
-/** Общая шапка bottom-sheet как у выбора магазина/ПВЗ на чекауте (sticky + «Закрыть»). */
+/** Круглая кнопка ×: белый фон, серая обводка, тень — единый стиль закрытия на чекауте. */
+function CheckoutCloseCrossButton({
+  ariaLabel,
+  onClick,
+  className = "",
+}: {
+  ariaLabel: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md ${className}`}
+    >
+      <span aria-hidden>×</span>
+    </button>
+  );
+}
+
+/** Общая шапка bottom-sheet как у выбора магазина/ПВЗ на чекауте (sticky + × справа). */
 function CheckoutSheetStickyHeader({
   title,
   onClose,
@@ -1532,47 +1551,70 @@ function CheckoutSheetStickyHeader({
       }
     >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="cu-sheet-title">{title}</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
-        >
-          Закрыть
-        </button>
+        <h3 className="cu-sheet-title min-w-0 flex-1 pr-2">{title}</h3>
+        <CheckoutCloseCrossButton ariaLabel="Закрыть" onClick={onClose} />
       </div>
     </div>
   );
 }
 
-/** Карточка способа получения в том же визуальном языке, что горизонтальные вкладки на чекауте. */
-function CheckoutDeliveryOptionCard({
-  label,
-  subtitle,
-  selected,
-  onClick,
-  disabled,
+/** Горизонтальные вкладки способа получения — общий блок для основного чекаута и модалки сплита. */
+function CheckoutDeliveryMethodTabs({
+  items,
+  className = "flex items-stretch gap-3",
 }: {
-  label: string;
-  subtitle: string;
-  selected: boolean;
-  onClick: () => void;
-  disabled?: boolean;
+  className?: string;
+  items: Array<{
+    id: string;
+    tabLabel: string;
+    coverage: string;
+    selected: boolean;
+    disabled?: boolean;
+    /** Состояние «ПВЗ недоступен для заказа» — те же отступы/курсор, что на основном чекауте */
+    mutedUnavailable?: boolean;
+    recommended?: boolean;
+    title?: string;
+    onSelect: () => void;
+  }>;
 }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`flex w-full min-h-[75px] flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition ${
-        selected
-          ? "border-black bg-black text-white"
-          : "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
-      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
-    >
-      <span className="cu-label-primary leading-tight text-inherit">{label}</span>
-      <p className={`text-xs leading-tight ${selected ? "text-white/95" : "text-neutral-600"}`}>{subtitle}</p>
-    </button>
+    <div className={className}>
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          disabled={item.disabled}
+          title={item.title}
+          onClick={() => {
+            if (item.disabled) return;
+            item.onSelect();
+          }}
+          className={`flex min-h-[75px] flex-1 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition ${
+            item.selected
+              ? "border-black bg-black text-white"
+              : item.disabled
+                ? item.mutedUnavailable
+                  ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-75"
+                  : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
+                : "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
+          }`}
+        >
+          <span className="cu-label-primary leading-tight text-inherit">{item.tabLabel}</span>
+          <p className={`text-xs leading-tight ${item.selected ? "text-white/95" : "text-neutral-600"}`}>
+            {item.coverage}
+          </p>
+          {item.recommended ? (
+            <span
+              className={`inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                item.selected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+              }`}
+            >
+              Рекомендуем
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1896,14 +1938,11 @@ function PvzPointSelector({
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <button
-        type="button"
+      <CheckoutCloseCrossButton
+        ariaLabel="Закрыть карту выбора ПВЗ"
         onClick={onClose}
-        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md"
-        aria-label="Закрыть карту выбора ПВЗ"
-      >
-        ×
-      </button>
+        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+      />
       <div
         className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
         onClick={() => {
@@ -2023,18 +2062,14 @@ function PvzPointSelector({
                 <p className="mt-1 truncate text-sm leading-snug text-neutral-500">{sheetPoint.address}</p>
               ) : null}
             </div>
-            <button
-              type="button"
+            <CheckoutCloseCrossButton
+              ariaLabel="Закрыть карточку ПВЗ"
               onClick={() => {
                 setSearchActive(false);
                 setMapPreviewPointId(null);
                 setSheetMode("collapsed");
               }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-sm"
-              aria-label="Закрыть карточку ПВЗ"
-            >
-              ×
-            </button>
+            />
           </div>
         ) : null}
 
@@ -2416,18 +2451,12 @@ function CourierAddressModal({
         aria-label="Куда доставить"
         className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
       >
-        <div className="relative flex h-11 shrink-0 items-center justify-center border-b border-neutral-100 px-3">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть"
-            className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-950 shadow-sm transition hover:border-neutral-300"
-          >
-            <span className="text-2xl font-light leading-none" aria-hidden>
-              ×
-            </span>
-          </button>
-          <h2 className="cu-section-title pointer-events-none px-10 text-center">Куда доставить</h2>
+        <div className="flex min-h-12 shrink-0 items-center border-b border-neutral-100 px-2 py-2 sm:px-3">
+          <div className="flex min-h-12 w-12 shrink-0 items-center justify-start" aria-hidden />
+          <h2 className="cu-section-title min-w-0 flex-1 text-center">Куда доставить</h2>
+          <div className="flex shrink-0 items-center justify-end">
+            <CheckoutCloseCrossButton ariaLabel="Закрыть" onClick={onClose} />
+          </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-none sm:max-h-[min(85vh,36rem)]">
@@ -2739,6 +2768,7 @@ function SplitSelectionModal({
   saving,
   lastChosenPickupStoreId,
   lastChosenPvzPointId,
+  methodTabNames,
 }: {
   resolution: RemainderResolution;
   productsById: Record<string, Bootstrap["products"][number]>;
@@ -2754,33 +2784,15 @@ function SplitSelectionModal({
   /** Та же подсказка «выбирали в прошлый раз», что на основном чекауте */
   lastChosenPickupStoreId?: string | null;
   lastChosenPvzPointId?: string | null;
+  /** Подписи вкладок как на основном чекауте (`Магазины` для самовывоза, имена методов из bootstrap). */
+  methodTabNames?: Partial<Record<DeliveryMethodCode, string>>;
 }) {
+  const labelCourier = methodTabNames?.courier ?? "Курьер";
+  const labelPickup = methodTabNames?.pickup ?? "Магазины";
+  const labelPvz = methodTabNames?.pvz ?? "ПВЗ";
   const courierOption = resolution.options.find((option) => option.methodCode === "courier") ?? null;
   const pickupOptions = resolution.options.filter((option) => option.methodCode === "pickup");
   const pvzOption = resolution.options.find((option) => option.methodCode === "pvz") ?? null;
-  const methodChoices = [
-    courierOption
-      ? {
-          key: "courier" as const,
-          label: methodGroupLabel("courier"),
-          summary: methodGroupSummary("courier", courierOption),
-        }
-      : null,
-    pickupOptions[0]
-      ? {
-          key: "pickup" as const,
-          label: methodGroupLabel("pickup"),
-          summary: methodGroupSummary("pickup", pickupOptions[0], pickupOptions.length),
-        }
-      : null,
-    pvzOption
-      ? {
-          key: "pvz" as const,
-          label: methodGroupLabel("pvz"),
-          summary: methodGroupSummary("pvz", pvzOption),
-        }
-      : null,
-  ].filter((item): item is { key: DeliveryMethodCode; label: string; summary: string } => Boolean(item));
   const [selectedMethod, setSelectedMethod] = useState<DeliveryMethodCode | null>(null);
   const [selectedPickupStoreId, setSelectedPickupStoreId] = useState<string>("");
   const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
@@ -2827,9 +2839,6 @@ function SplitSelectionModal({
   const handleMethodSelect = (methodCode: DeliveryMethodCode) => {
     if (methodCode === "courier") {
       setSelectedMethod("courier");
-      if (!courierAddress.trim() && courierOption) {
-        onEditCourierAddress(courierOption);
-      }
       return;
     }
     if (methodCode === "pickup") {
@@ -2859,87 +2868,139 @@ function SplitSelectionModal({
           <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
         </div>
 
-        <div className="mt-4 space-y-3">
-          {methodChoices.map((choice) => {
-            const isSelected = selectedMethod === choice.key;
-            return (
-              <CheckoutDeliveryOptionCard
-                key={choice.key}
-                label={choice.label}
-                subtitle={choice.summary}
-                selected={isSelected}
-                onClick={() => handleMethodSelect(choice.key)}
-              />
-            );
-          })}
-        </div>
+        <CheckoutDeliveryMethodTabs
+          className="mt-4 flex items-stretch gap-3"
+          items={[
+            courierOption
+              ? {
+                  id: "courier",
+                  tabLabel: labelCourier,
+                  coverage: optionCoverageLabel(methodSummaryFromAlternativeOption(courierOption)),
+                  selected: selectedMethod === "courier",
+                  onSelect: () => handleMethodSelect("courier"),
+                }
+              : null,
+            pickupOptions[0]
+              ? {
+                  id: "pickup",
+                  tabLabel: labelPickup,
+                  coverage: optionCoverageLabel(methodSummaryFromAlternativeOption(pickupOptions[0])),
+                  selected: selectedMethod === "pickup",
+                  onSelect: () => handleMethodSelect("pickup"),
+                }
+              : null,
+            pvzOption
+              ? {
+                  id: "pvz",
+                  tabLabel: labelPvz,
+                  coverage: optionCoverageLabel(methodSummaryFromAlternativeOption(pvzOption)),
+                  selected: selectedMethod === "pvz",
+                  onSelect: () => handleMethodSelect("pvz"),
+                }
+              : null,
+          ].filter((item): item is NonNullable<typeof item> => Boolean(item))}
+        />
 
-        {selectedMethod === "pickup" ? (
-          <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="cu-block-heading">Магазин для этой части заказа</p>
-                {selectedPickupOption ? (
-                  <>
-                    <p className="mt-2 text-sm text-neutral-900">{optionMethodLabel(selectedPickupOption)}</p>
-                    <p className="mt-1 text-xs text-neutral-500">{optionSummaryTitle(selectedPickupOption)}</p>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-neutral-500">Выберите магазин в отдельном окне выбора.</p>
-                )}
-              </div>
-              {selectedPickupOption ? (
-                <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-600">
-                  {selectedPickupOption.availableUnits}/{selectedPickupOption.totalUnits}
-                </span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => setPickupSelectorOpen(true)}
-              className="mt-3 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-900"
-            >
-              {selectedPickupOption ? "Изменить магазин" : "Выбрать магазин"}
-            </button>
-          </div>
+        {courierOption || pickupOptions[0] || pvzOption ? (
+          !selectedMethod ? (
+            <p className="mx-auto mt-3 max-w-[17rem] text-center text-[11px] font-normal leading-snug text-neutral-500">
+              Выберите способ получения.
+            </p>
+          ) : null
         ) : null}
 
-        {selectedMethod === "courier" ? (
+        {selectedMethod ? (
           <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
-            <p className="cu-block-heading">Адрес для этой доставки</p>
-            {courierAddress.trim() ? (
-              <p className="mt-2 break-words text-sm leading-snug text-neutral-900">{courierAddress}</p>
-            ) : (
-              <p className="mt-2 text-sm text-neutral-500">Укажите адрес, чтобы добавить курьерское отправление.</p>
-            )}
-            <button
-              type="button"
-              onClick={() => courierOption && onEditCourierAddress(courierOption)}
-              className="mt-3 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-900"
-            >
-              {courierAddress.trim() ? "Изменить адрес" : "Указать адрес"}
-            </button>
-          </div>
-        ) : null}
-
-        {selectedMethod === "pvz" ? (
-          <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
-            <p className="cu-block-heading">ПВЗ для этой части заказа</p>
-            {selectedPvzPoint ? (
-              <>
-                <p className="mt-2 text-sm text-neutral-900">{selectedPvzPoint.name}</p>
-                <p className="mt-1 text-xs text-neutral-500">{selectedPvzPoint.address}</p>
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-neutral-500">Выберите пункт на карте или в списке.</p>
-            )}
-            <button
-              type="button"
-              onClick={() => setPvzSelectorOpen(true)}
-              className="mt-3 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-900"
-            >
-              {selectedPvzPoint ? "Изменить ПВЗ" : "Выбрать ПВЗ"}
-            </button>
+            {(() => {
+              const optForSummary =
+                selectedMethod === "courier"
+                  ? courierOption
+                  : selectedMethod === "pickup"
+                    ? pickupOptions[0] ?? null
+                    : selectedMethod === "pvz"
+                      ? pvzOption
+                      : null;
+              const dmSummary = optForSummary ? methodSummaryFromAlternativeOption(optForSummary) : undefined;
+              const summaryText =
+                selectedMethod && dmSummary
+                  ? methodSummaryLabel(selectedMethod, dmSummary, true)
+                  : "";
+              const chosenSplitPickupStore = splitPickupStores.find((s) => s.id === selectedPickupStoreId);
+              return (
+                <>
+                  {summaryText ? <p className="mb-2 text-sm text-neutral-400">{summaryText}</p> : null}
+                  {selectedMethod === "pickup" ? (
+                    chosenSplitPickupStore ? (
+                      <PickupSelectedStoreCard
+                        store={chosenSplitPickupStore}
+                        onChange={() => setPickupSelectorOpen(true)}
+                        embedded
+                      />
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 p-3 text-sm text-neutral-700">
+                        <p className="font-medium text-neutral-900">Выберите магазин</p>
+                        <p className="mt-1 text-xs text-neutral-600">
+                          {lastChosenPickupStoreId &&
+                          splitPickupStores.some((s) => s.id === lastChosenPickupStoreId) ? (
+                            <>
+                              В прошлый раз вы выбирали «
+                              {splitPickupStores.find((s) => s.id === lastChosenPickupStoreId)!.name}» — он показан
+                              первым в списке.
+                            </>
+                          ) : (
+                            "Укажите точку самовывоза на карте или в списке."
+                          )}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setPickupSelectorOpen(true)}
+                          className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                        >
+                          Открыть выбор магазина
+                        </button>
+                      </div>
+                    )
+                  ) : null}
+                  {selectedMethod === "courier" && courierOption ? (
+                    <CourierAddressCard
+                      address={courierAddress}
+                      onChange={() => onEditCourierAddress(courierOption)}
+                    />
+                  ) : null}
+                  {selectedMethod === "pvz" ? (
+                    selectedPvzPoint ? (
+                      <PvzSelectedPointCard
+                        point={selectedPvzPoint}
+                        summary={splitPvzSummary}
+                        copy={selectorUiCopy?.pvz}
+                        onChange={() => setPvzSelectorOpen(true)}
+                      />
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 p-3 text-sm text-neutral-700">
+                        <p className="font-medium text-neutral-900">Выберите ПВЗ</p>
+                        <p className="mt-1 text-xs text-neutral-600">
+                          {lastChosenPvzPointId && pvzPoints.some((p) => p.id === lastChosenPvzPointId) ? (
+                            <>
+                              В прошлый раз вы выбирали «{pvzPoints.find((p) => p.id === lastChosenPvzPointId)!.name}» —
+                              он показан первым в списке.
+                            </>
+                          ) : (
+                            "Укажите пункт выдачи на карте или в списке."
+                          )}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setPvzSelectorOpen(true)}
+                          className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                        >
+                          Открыть выбор ПВЗ
+                        </button>
+                      </div>
+                    )
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
         ) : null}
         </div>
@@ -3830,6 +3891,18 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [cartDetail?.lines?.length, cartScopedSummaries?.pvzSheetThumbMeta, scenario]);
   const selectorUiCopy = boot?.checkoutSelectorCopy ?? FALLBACK_SELECTOR_COPY;
 
+  const splitModalMethodTabNames = useMemo(
+    () =>
+      boot
+        ? ({
+            courier: boot.deliveryMethods.find((m) => m.code === "courier")?.name ?? "Курьер",
+            pickup: "Магазины",
+            pvz: boot.deliveryMethods.find((m) => m.code === "pvz")?.name ?? "ПВЗ",
+          } satisfies Partial<Record<DeliveryMethodCode, string>>)
+        : undefined,
+    [boot],
+  );
+
   const recommendedMethodCode = useMemo<DeliveryMethodCode | null>(() => {
     const full = deliveryOptions.filter((option) => {
       if (!option.enabled || !option.summary || option.summary.totalUnits <= 0) return false;
@@ -4569,9 +4642,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               </span>
             </div>
           </div>
-          {/* Горизонтальные вкладки */}
-          <div className="flex items-stretch gap-3">
-            {deliveryOptions.map((dm) => {
+          <CheckoutDeliveryMethodTabs
+            items={deliveryOptions.map((dm) => {
               const tabName = dm.code === "pickup" ? "Магазины" : dm.name;
               const isSelected = method === dm.code;
               const isRecommended = recommendedMethodCode === dm.code;
@@ -4580,49 +4652,25 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 dm.code === "pvz" &&
                 "pvzUnavailableForOrder" in dm &&
                 (dm as { pvzUnavailableForOrder?: boolean }).pvzUnavailableForOrder;
-              return (
-                <button
-                  key={dm.id}
-                  type="button"
-                  disabled={!dm.enabled}
-                  title={
-                    mutedPvz
-                      ? "Этот заказ через ПВЗ не оформить: для выбранных позиций нет остатка на складе под отгрузку в пункт. Выберите курьера или магазин."
-                      : undefined
-                  }
-                  onClick={() => {
-                    if (!dm.enabled) return;
-                    selectPrimaryMethod(dm.code as "courier" | "pickup" | "pvz");
-                    if (dm.code === "pickup") setPickupSelectorOpen(true);
-                    if (dm.code === "pvz") setPvzSelectorOpen(true);
-                  }}
-                  className={`flex min-h-[75px] flex-1 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition ${
-                    isSelected
-                      ? "border-black bg-black text-white"
-                      : dm.enabled
-                        ? "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
-                        : mutedPvz
-                          ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-75"
-                          : "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60"
-                  }`}
-                >
-                  <span className="cu-label-primary leading-tight text-inherit">{tabName}</span>
-                  <p className={`text-xs leading-tight ${isSelected ? "text-white/95" : "text-neutral-600"}`}>
-                    {coverage}
-                  </p>
-                  {isRecommended ? (
-                    <span
-                      className={`inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
-                        isSelected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
-                      }`}
-                    >
-                      Рекомендуем
-                    </span>
-                  ) : null}
-                </button>
-              );
+              return {
+                id: dm.id,
+                tabLabel: tabName,
+                coverage,
+                selected: isSelected,
+                disabled: !dm.enabled,
+                mutedUnavailable: mutedPvz,
+                recommended: isRecommended,
+                title: mutedPvz
+                  ? "Этот заказ через ПВЗ не оформить: для выбранных позиций нет остатка на складе под отгрузку в пункт. Выберите курьера или магазин."
+                  : undefined,
+                onSelect: () => {
+                  selectPrimaryMethod(dm.code as "courier" | "pickup" | "pvz");
+                  if (dm.code === "pickup") setPickupSelectorOpen(true);
+                  if (dm.code === "pvz") setPvzSelectorOpen(true);
+                },
+              };
             })}
-          </div>
+          />
           {deliveryOptions.length > 0 && !method ? (
             <p className="mx-auto mt-3 max-w-[17rem] text-center text-[11px] font-normal leading-snug text-neutral-500">
               Выберите способ получения.
@@ -5081,7 +5129,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               const orderedUnits = includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0);
               const price = fmt(payFinal);
               let label: string;
-              if (units > 0 && orderedUnits < units) {
+              if (units > 0 && orderedUnits === 0) {
+                label = "Выберите способ получения";
+              } else if (units > 0 && orderedUnits < units) {
                 label = `Оформить ${orderedUnits} из ${units} товаров`;
               } else if (units > 0 && orderedUnits > 0) {
                 label = `Оформить ${orderedUnits} ${pluralizeProducts(orderedUnits)}`;
@@ -5149,6 +5199,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           lastChosenPickupStoreId={lastPickupMemoryId}
           lastChosenPvzPointId={lastPvzMemoryId}
           selectorCopy={selectorUiCopy}
+          methodTabNames={splitModalMethodTabNames}
         />
       ) : null}
       {courierAddressModalTarget ? (
@@ -5172,11 +5223,20 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             aria-modal="true"
             className="relative z-10 max-h-[95dvh] w-full max-w-md overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
           >
-            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-5 pb-3 pt-5">
-              <h3 className="cu-sheet-title">Подтвердите телефон</h3>
-              <p className="cu-sheet-lead mt-1">
-                Чтобы оформить заказ, укажите номер и нажмите «Получить смс с кодом» — в демо переходим без ввода кода.
-              </p>
+            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 pr-1">
+                  <h3 className="cu-sheet-title">Подтвердите телефон</h3>
+                  <p className="cu-sheet-lead mt-1">
+                    Чтобы оформить заказ, укажите номер и нажмите «Получить смс с кодом» — в демо переходим без ввода
+                    кода.
+                  </p>
+                </div>
+                <CheckoutCloseCrossButton
+                  ariaLabel="Закрыть окно телефона"
+                  onClick={() => setPhoneGateOpen(false)}
+                />
+              </div>
             </div>
             <div className="px-5 pb-5 pt-3">
               <input
