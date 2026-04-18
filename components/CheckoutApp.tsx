@@ -887,6 +887,21 @@ function PickupStoreFulfillmentBlock({
   );
 }
 
+/** Fixed-шторка при фокусе поиска: сразу задаём top/bottom от visualViewport (без кадра без стиля до setState). */
+function getSearchFocusSheetInsets(): { top: number; bottom: number } {
+  if (typeof window === "undefined") {
+    return { top: 0, bottom: 0 };
+  }
+  const viewport = window.visualViewport;
+  if (!viewport) {
+    return { top: 88, bottom: 0 };
+  }
+  return {
+    top: Math.max(16, Math.round(viewport.offsetTop + 16)),
+    bottom: Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
+  };
+}
+
 function PickupStoreSelector({
   stores,
   selectedStoreId,
@@ -911,7 +926,7 @@ function PickupStoreSelector({
   const [expandedStoreIds, setExpandedStoreIds] = useState<Record<string, boolean>>({});
   const [mapPreviewStoreId, setMapPreviewStoreId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
-  const [searchViewportStyle, setSearchViewportStyle] = useState<{ top: number; bottom: number } | null>(null);
+  const [searchViewportRev, setSearchViewportRev] = useState(0);
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
 
@@ -973,33 +988,17 @@ function PickupStoreSelector({
   }, [filteredStores, mapPreviewStoreId]);
 
   useLayoutEffect(() => {
-    if (!searchActive) {
-      setSearchViewportStyle(null);
-      return;
-    }
-
-    const updateSearchViewportStyle = () => {
-      const viewport = window.visualViewport;
-      if (!viewport) {
-        setSearchViewportStyle({ top: 88, bottom: 0 });
-        return;
-      }
-
-      setSearchViewportStyle({
-        top: Math.max(16, Math.round(viewport.offsetTop + 16)),
-        bottom: Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
-      });
-    };
-
-    updateSearchViewportStyle();
-    window.visualViewport?.addEventListener("resize", updateSearchViewportStyle);
-    window.visualViewport?.addEventListener("scroll", updateSearchViewportStyle);
-    window.addEventListener("orientationchange", updateSearchViewportStyle);
-
+    if (!searchActive) return;
+    const bump = () => setSearchViewportRev((n) => n + 1);
+    bump();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", bump);
+    vv?.addEventListener("scroll", bump);
+    window.addEventListener("orientationchange", bump);
     return () => {
-      window.visualViewport?.removeEventListener("resize", updateSearchViewportStyle);
-      window.visualViewport?.removeEventListener("scroll", updateSearchViewportStyle);
-      window.removeEventListener("orientationchange", updateSearchViewportStyle);
+      vv?.removeEventListener("resize", bump);
+      vv?.removeEventListener("scroll", bump);
+      window.removeEventListener("orientationchange", bump);
     };
   }, [searchActive]);
 
@@ -1017,14 +1016,6 @@ function PickupStoreSelector({
     };
   }, [filteredStores, mapPreviewStoreId, recommendedStoreId]);
 
-  if (stores.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-        В этом городе пока нет активных магазинов для самовывоза.
-      </div>
-    );
-  }
-
   const mapStores = filteredStores;
   const sheetStore = mapPreviewStore ?? recommendedStore ?? filteredStores[0] ?? null;
   const sheetScenarioLine = sheetStore ? pickupStoreCompactScenarioLine(sheetStore.summary) : "";
@@ -1032,20 +1023,24 @@ function PickupStoreSelector({
   const showPreview = sheetMode === "preview" && !!sheetStore;
   const sheetClass =
     searchActive
-      ? "max-h-none"
+      ? "min-h-0 max-h-[100dvh]"
       : sheetMode === "expanded"
         ? "max-h-[78dvh]"
         : showPreview
           ? "max-h-[calc(100dvh-7rem)]"
           : "max-h-[34dvh]";
   const sheetScrollClass = searchActive
-    ? "min-h-0 flex-1 max-h-none"
+    ? "min-h-0 flex-1"
     : showPreview
       ? "max-h-[calc(100dvh-12rem)]"
       : "max-h-[calc(78dvh-5.5rem)]";
   const sheetPositionClass = searchActive ? "fixed bottom-0 left-0 right-0" : "absolute bottom-0 left-0 right-0";
   const sheetTransitionClass = searchActive ? "transition-none" : "transition-[max-height,top] duration-200";
-  const sheetStyle = searchActive && searchViewportStyle ? searchViewportStyle : undefined;
+  const sheetStyle = useMemo(() => {
+    if (!searchActive) return undefined;
+    void searchViewportRev;
+    return getSearchFocusSheetInsets();
+  }, [searchActive, searchViewportRev]);
 
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
@@ -1102,6 +1097,14 @@ function PickupStoreSelector({
       </button>
     );
   };
+
+  if (stores.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+        В этом городе пока нет активных магазинов для самовывоза.
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -1165,11 +1168,11 @@ function PickupStoreSelector({
       <div
         role="region"
         aria-label="Результаты поиска магазинов"
-        className={`${sheetPositionClass} z-40 flex flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
+        className={`${sheetPositionClass} z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
         style={sheetStyle}
       >
         <div
-          className="cursor-grab px-4 pb-2 pt-2 active:cursor-grabbing"
+          className="cursor-grab shrink-0 px-4 pb-2 pt-2 active:cursor-grabbing"
           onPointerDown={(event) => {
             sheetDragRef.current = { startY: event.clientY };
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -1192,7 +1195,7 @@ function PickupStoreSelector({
           </button>
         </div>
         {showPreview ? (
-          <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-2">
+          <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-2">
             <p className="min-w-0 flex-1 truncate text-left text-[22px] font-semibold leading-tight text-neutral-900">
               {sheetStore?.name}
             </p>
@@ -1707,7 +1710,7 @@ function PvzPointSelector({
   const [expandedPointIds, setExpandedPointIds] = useState<Record<string, boolean>>({});
   const [mapPreviewPointId, setMapPreviewPointId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
-  const [searchViewportStyle, setSearchViewportStyle] = useState<{ top: number; bottom: number } | null>(null);
+  const [searchViewportRev, setSearchViewportRev] = useState(0);
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
 
@@ -1738,43 +1741,19 @@ function PvzPointSelector({
   }, [filteredPoints, mapPreviewPointId]);
 
   useLayoutEffect(() => {
-    if (!searchActive) {
-      setSearchViewportStyle(null);
-      return;
-    }
-
-    const updateSearchViewportStyle = () => {
-      const viewport = window.visualViewport;
-      if (!viewport) {
-        setSearchViewportStyle({ top: 88, bottom: 0 });
-        return;
-      }
-
-      setSearchViewportStyle({
-        top: Math.max(16, Math.round(viewport.offsetTop + 16)),
-        bottom: Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
-      });
-    };
-
-    updateSearchViewportStyle();
-    window.visualViewport?.addEventListener("resize", updateSearchViewportStyle);
-    window.visualViewport?.addEventListener("scroll", updateSearchViewportStyle);
-    window.addEventListener("orientationchange", updateSearchViewportStyle);
-
+    if (!searchActive) return;
+    const bump = () => setSearchViewportRev((n) => n + 1);
+    bump();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", bump);
+    vv?.addEventListener("scroll", bump);
+    window.addEventListener("orientationchange", bump);
     return () => {
-      window.visualViewport?.removeEventListener("resize", updateSearchViewportStyle);
-      window.visualViewport?.removeEventListener("scroll", updateSearchViewportStyle);
-      window.removeEventListener("orientationchange", updateSearchViewportStyle);
+      vv?.removeEventListener("resize", bump);
+      vv?.removeEventListener("scroll", bump);
+      window.removeEventListener("orientationchange", bump);
     };
   }, [searchActive]);
-
-  if (points.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-        В этом городе пока нет доступных ПВЗ.
-      </div>
-    );
-  }
 
   const mapPoints = filteredPoints;
   const recommendedPoint = filteredPoints[0] ?? null;
@@ -1796,20 +1775,24 @@ function PvzPointSelector({
   };
   const sheetClass =
     searchActive
-      ? "max-h-none"
+      ? "min-h-0 max-h-[100dvh]"
       : sheetMode === "expanded"
         ? "max-h-[78dvh]"
         : showPreview
           ? "max-h-[calc(100dvh-7rem)]"
           : "max-h-[28dvh]";
   const sheetScrollClass = searchActive
-    ? "min-h-0 flex-1 max-h-none"
+    ? "min-h-0 flex-1"
     : showPreview
       ? "max-h-[calc(100dvh-12rem)]"
       : "max-h-[calc(78dvh-5.5rem)]";
   const sheetPositionClass = searchActive ? "fixed bottom-0 left-0 right-0" : "absolute bottom-0 left-0 right-0";
   const sheetTransitionClass = searchActive ? "transition-none" : "transition-[max-height,top] duration-200";
-  const sheetStyle = searchActive && searchViewportStyle ? searchViewportStyle : undefined;
+  const sheetStyle = useMemo(() => {
+    if (!searchActive) return undefined;
+    void searchViewportRev;
+    return getSearchFocusSheetInsets();
+  }, [searchActive, searchViewportRev]);
 
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
@@ -1852,6 +1835,14 @@ function PvzPointSelector({
         />
       </div>
     ) : null;
+
+  if (points.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+        В этом городе пока нет доступных ПВЗ.
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -1942,11 +1933,11 @@ function PvzPointSelector({
       <div
         role="region"
         aria-label="Результаты поиска ПВЗ"
-        className={`${sheetPositionClass} z-40 flex flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
+        className={`${sheetPositionClass} z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
         style={sheetStyle}
       >
         <div
-          className="cursor-grab px-4 pb-2 pt-2 active:cursor-grabbing"
+          className="cursor-grab shrink-0 px-4 pb-2 pt-2 active:cursor-grabbing"
           onPointerDown={(event) => {
             sheetDragRef.current = { startY: event.clientY };
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -1970,7 +1961,7 @@ function PvzPointSelector({
         </div>
 
         {showPreview ? (
-          <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-2">
+          <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-2">
             <div className="min-w-0 flex-1">
               <p className="truncate text-left text-[22px] font-semibold leading-tight text-neutral-900">
                 {sheetPoint?.name}
