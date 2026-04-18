@@ -45,6 +45,12 @@ const BY_METHOD = {
       "В этом магазине не всё из заказа оформляется сразу — часть уйдёт в остаток.",
     payOnDeliveryOnlySplitPickup:
       "Несколько получений в магазине\nОформим отдельными получениями. Для такого заказа доступна только оплата при получении.",
+    selectorNoTodayAllButTodayLater:
+      "Сейчас ни в одном магазине нет всех товаров из корзины. Часть можно забрать сегодня, остальные привезём позже.",
+    selectorNoTodayLater:
+      "Нет магазинов, где часть можно забрать сегодня, а остальное привезти позже.",
+    selectorNoTodayOptions:
+      "Сегодня забрать не получится, но товары можно привезти в магазин.",
   },
   pvz: {
     intro: "В ПВЗ едут только позиции со склада под этот пункт.",
@@ -52,6 +58,13 @@ const BY_METHOD = {
       "В ПВЗ привезём только товары со склада\nВыберите способ получения для остальных товаров ниже или оставьте их в корзине.",
     disabledByRule: "ПВЗ для этого города отключён правилами.",
     noWarehouseInCity: "В городе нет склада для отгрузки в ПВЗ.",
+    selectorNoCart: "Нет данных по текущей корзине.",
+    selectorUnavailable:
+      "ПВЗ обслуживается со склада: для выбранных позиций нет остатка с отгрузкой в пункт. Попробуйте курьера или самовывоз.",
+    selectorAllAvailable:
+      "Все {total} товаров можно получить через пункт выдачи заказа.",
+    selectorPartial:
+      "Через ПВЗ можно оформить {available} из {total} товаров. Остальные потребуется оформить другим способом.",
   },
 } as const;
 
@@ -94,10 +107,17 @@ const CODE_TITLES: Record<string, string> = {
   "pickup.clickCollectUnavailable": "Самовывоз: click&collect недоступен",
   "pickup.remainderUnavailableInStore": "Самовывоз: часть недоступна в магазине",
   "pickup.payOnDeliveryOnlySplitPickup": "Самовывоз: несколько получений — оплата при получении",
+  "pickup.selectorNoTodayAllButTodayLater": "Выбор магазина: нет «забрать всё сегодня»",
+  "pickup.selectorNoTodayLater": "Выбор магазина: нет «сегодня + позже»",
+  "pickup.selectorNoTodayOptions": "Выбор магазина: нет вариантов на сегодня",
   "pvz.intro": "ПВЗ: вводный текст",
   "pvz.partialOrder": "ПВЗ: неполный заказ",
   "pvz.disabledByRule": "ПВЗ: способ отключён",
   "pvz.noWarehouseInCity": "ПВЗ: нет склада в городе",
+  "pvz.selectorNoCart": "Выбор ПВЗ: нет данных по корзине",
+  "pvz.selectorUnavailable": "Выбор ПВЗ: товары недоступны",
+  "pvz.selectorAllAvailable": "Выбор ПВЗ: всё доступно",
+  "pvz.selectorPartial": "Выбор ПВЗ: доступна часть",
 };
 
 export const DISCLAIMER_DEFAULTS: Record<string, string> = {
@@ -160,5 +180,22 @@ export function unresolvedBlockCopy(overrides?: DisclaimerTextMap) {
     linesTitle: commonDisclaimer("unresolvedBlockLinesTitle", overrides),
     cta: commonDisclaimer("unresolvedBlockCta", overrides),
     noAlternatives: commonDisclaimer("unresolvedBlockNoAlternatives", overrides),
+  };
+}
+
+/** Тексты для модалок выбора магазина и ПВЗ. */
+export function selectorCopy(overrides?: DisclaimerTextMap) {
+  return {
+    pickup: {
+      noTodayAllButTodayLater: methodDisclaimer("pickup", "selectorNoTodayAllButTodayLater", overrides),
+      noTodayLater: methodDisclaimer("pickup", "selectorNoTodayLater", overrides),
+      noTodayOptions: methodDisclaimer("pickup", "selectorNoTodayOptions", overrides),
+    },
+    pvz: {
+      noCart: methodDisclaimer("pvz", "selectorNoCart", overrides),
+      unavailable: methodDisclaimer("pvz", "selectorUnavailable", overrides),
+      allAvailable: methodDisclaimer("pvz", "selectorAllAvailable", overrides),
+      partial: methodDisclaimer("pvz", "selectorPartial", overrides),
+    },
   };
 }

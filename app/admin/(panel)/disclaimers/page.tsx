@@ -1,11 +1,27 @@
 import { AdminConfirmSubmitButton } from "@/components/admin/AdminConfirmSubmitButton";
 import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
 import { AdminSubmitButton } from "@/components/admin/AdminSubmitButton";
+import { defaultDisclaimerRows } from "@/lib/disclaimers";
 import { prisma } from "@/lib/prisma";
 import { createDisclaimer, deleteDisclaimer, updateDisclaimer } from "../../actions";
 
 export default async function AdminDisclaimersPage() {
-  const list = await prisma.disclaimerTemplate.findMany({ orderBy: [{ code: "asc" }] });
+  const savedList = await prisma.disclaimerTemplate.findMany({ orderBy: [{ code: "asc" }] });
+  const savedCodes = new Set(savedList.map((d) => d.code));
+  const missingDefaults = defaultDisclaimerRows()
+    .filter((d) => !savedCodes.has(d.code))
+    .map((d) => ({
+      id: "",
+      code: d.code,
+      title: d.title,
+      text: d.text,
+      isActive: true,
+      fromDefaults: true,
+    }));
+  const list = [
+    ...savedList.map((d) => ({ ...d, fromDefaults: false })),
+    ...missingDefaults,
+  ].sort((a, b) => a.code.localeCompare(b.code));
 
   return (
     <div>
@@ -46,8 +62,12 @@ export default async function AdminDisclaimersPage() {
       ) : (
         <div className="mt-3 space-y-2">
           {list.map((d) => (
-            <form key={d.id} action={updateDisclaimer} className="admin-form-card admin-form-card--compact space-y-2 text-sm">
-              <input type="hidden" name="id" value={d.id} />
+            <form
+              key={d.id || `default-${d.code}`}
+              action={d.fromDefaults ? createDisclaimer : updateDisclaimer}
+              className="admin-form-card admin-form-card--compact space-y-2 text-sm"
+            >
+              {d.fromDefaults ? null : <input type="hidden" name="id" value={d.id} />}
               <div className="grid gap-2 md:grid-cols-3">
                 <input name="code" defaultValue={d.code} className="md:col-span-2" aria-label="Код" />
                 <input name="title" defaultValue={d.title} aria-label="Название" />
@@ -57,16 +77,23 @@ export default async function AdminDisclaimersPage() {
                 <label className="flex items-center gap-2 text-xs">
                   <input type="checkbox" name="isActive" defaultChecked={d.isActive} /> Активен
                 </label>
+                {d.fromDefaults ? (
+                  <span className="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                    Шаблон из кода: сохраните, чтобы редактировать через БД
+                  </span>
+                ) : null}
                 <AdminSubmitButton variant="secondary" size="sm" silentPending>
-                  Сохранить
+                  {d.fromDefaults ? "Создать" : "Сохранить"}
                 </AdminSubmitButton>
-                <AdminConfirmSubmitButton
-                  formAction={deleteDisclaimer}
-                  message={`Удалить дисклеймер «${d.title || d.code}»?`}
-                  silentPending
-                >
-                  Удалить
-                </AdminConfirmSubmitButton>
+                {d.fromDefaults ? null : (
+                  <AdminConfirmSubmitButton
+                    formAction={deleteDisclaimer}
+                    message={`Удалить дисклеймер «${d.title || d.code}»?`}
+                    silentPending
+                  >
+                    Удалить
+                  </AdminConfirmSubmitButton>
+                )}
               </div>
             </form>
           ))}

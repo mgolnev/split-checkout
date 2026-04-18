@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildScenario } from "@/lib/build-scenario";
-import { unresolvedBlockCopy, type DisclaimerTextMap } from "@/lib/disclaimers";
+import { selectorCopy, unresolvedBlockCopy, type DisclaimerTextMap } from "@/lib/disclaimers";
 import { prisma } from "@/lib/prisma";
 
 type MethodCode = "courier" | "pickup" | "pvz";
@@ -69,6 +69,7 @@ export async function GET() {
   ) as DisclaimerTextMap;
 
   const checkoutCopy = unresolvedBlockCopy(disclaimerMap);
+  const checkoutSelectorCopy = selectorCopy(disclaimerMap);
 
   const storesByCity: Record<string, { id: string; name: string }[]> = {};
   const pvzByCity: Record<string, { id: string; name: string; address: string; requiresPrepayment: boolean }[]> =
@@ -189,6 +190,7 @@ export async function GET() {
     methodSummaryByCity,
     pickupSummaryByStore,
     checkoutCopy,
+    checkoutSelectorCopy,
   });
   } catch (e) {
     console.error("[bootstrap]", e);

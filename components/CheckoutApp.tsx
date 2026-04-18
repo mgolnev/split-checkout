@@ -15,7 +15,7 @@ import {
   saveCheckoutRecipient,
   type CheckoutRecipientPayload,
 } from "@/lib/checkout-recipient-storage";
-import { commonDisclaimer, unresolvedBlockCopy } from "@/lib/disclaimers";
+import { commonDisclaimer, selectorCopy, unresolvedBlockCopy } from "@/lib/disclaimers";
 import {
   buildPvzSheetThumbMeta,
   pickupSummaryFromScenario,
@@ -40,6 +40,8 @@ function phoneHasMinDigits(value: string, min = 10): boolean {
 }
 
 type CheckoutCopy = ReturnType<typeof unresolvedBlockCopy>;
+type SelectorCopy = ReturnType<typeof selectorCopy>;
+const FALLBACK_SELECTOR_COPY = selectorCopy();
 
 type Bootstrap = {
   cities: { id: string; name: string; hasClickCollect: boolean }[];
@@ -61,6 +63,8 @@ type Bootstrap = {
   pickupSummaryByStore: Record<string, Record<string, PickupStoreSummary>>;
   /** Тексты UI чекаута из DisclaimerTemplate (см. common.unresolvedBlock*) */
   checkoutCopy?: CheckoutCopy;
+  /** Тексты модалок выбора магазина/ПВЗ из DisclaimerTemplate */
+  checkoutSelectorCopy?: SelectorCopy;
 };
 
 type MethodSummary = Bootstrap["methodSummaryByCity"][string]["courier"];
@@ -71,6 +75,10 @@ type PickupStoreOption = {
 };
 
 type PvzPointOption = Bootstrap["pvzByCity"][string][number];
+
+function applyCopyTemplate(text: string, values: Record<string, string | number>): string {
+  return text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+}
 
 type PartDeliverySchedule = {
   dateIx: number;
@@ -446,36 +454,103 @@ function methodSummaryFromPvzOption(option: AlternativeMethodOption | null | und
   };
 }
 
-/** Выше = лучше для сортировки: все сейчас → полная корзина с позже → неполная корзина. */
-function pickupStoreSortScore(summary?: PickupStoreSummary): number {
-  if (!summary || summary.totalUnits <= 0) return 0;
-  if (summary.availableUnits <= 0) return -100_000 - (summary.remainderUnits ?? 0);
-  if (summary.hasFullCoverage && summary.collectUnits === 0) {
-    return 1_000_000 + summary.reserveUnits * 100 + summary.totalUnits;
-  }
-  if (summary.hasFullCoverage) {
-    return 500_000 + summary.reserveUnits * 1_000 + summary.collectUnits;
-  }
-  return 100_000 + summary.availableUnits * 1_000 + summary.reserveUnits;
-}
+type PickupScenarioKind =
+  | "today_all"
+  | "today_later"
+  | "later_all"
+  | "later_partial"
+  | "incomplete"
+  | "empty";
 
-type PickupPinKind = "ideal" | "split_full" | "incomplete" | "empty";
+const RU_MONTH_SHORT_BY_NAME: Record<string, string> = {
+  января: "01",
+  феврала: "02",
+  марта: "03",
+  апреля: "04",
+  мая: "05",
+  июня: "06",
+  июля: "07",
+  августа: "08",
+  сентября: "09",
+  октября: "10",
+  ноября: "11",
+  декабря: "12",
+};
 
-function pickupPinKind(summary?: PickupStoreSummary): PickupPinKind {
+const RU_MONTH_PATTERN = Object.keys(RU_MONTH_SHORT_BY_NAME).join("|");
+
+function pickupStoreScenarioKind(summary?: PickupStoreSummary): PickupScenarioKind {
   if (!summary || summary.totalUnits <= 0) return "empty";
   if (summary.availableUnits <= 0) return "incomplete";
-  if (!summary.hasFullCoverage) return "incomplete";
-  if (summary.collectUnits === 0) return "ideal";
-  return "split_full";
+  if (summary.hasFullCoverage && summary.collectUnits === 0) return "today_all";
+  if (summary.hasFullCoverage && summary.reserveUnits > 0 && summary.collectUnits > 0) return "today_later";
+  if (summary.hasFullCoverage && summary.reserveUnits <= 0 && summary.collectUnits > 0) return "later_all";
+  if (!summary.hasFullCoverage && summary.reserveUnits <= 0 && summary.collectUnits > 0) return "later_partial";
+  return "incomplete";
 }
 
-/** Строки на пине карты (единый язык: A — одна строка, B — две, C — только «X из Y»). */
+function pickupCollectDateLong(summary?: PickupStoreSummary): string | null {
+  const raw = summary?.collectThumb?.leadText?.trim();
+  if (!raw) return null;
+  const text = raw.replace(/^Доставим\s+в\s+магазин\s+/i, "").trim();
+  const match = text.match(new RegExp(`(\\d{1,2}\\s+(?:${RU_MONTH_PATTERN}))`, "i"));
+  return match?.[1] ?? null;
+}
+
+function pickupCollectDateShort(summary?: PickupStoreSummary): string | null {
+  const raw = summary?.collectThumb?.leadText?.trim();
+  if (!raw) return null;
+  const longMatch = raw.toLocaleLowerCase("ru-RU").match(new RegExp(`(\\d{1,2})\\s+(${RU_MONTH_PATTERN})`, "i"));
+  if (longMatch) {
+    const day = longMatch[1]!.padStart(2, "0");
+    const month = RU_MONTH_SHORT_BY_NAME[longMatch[2]!.toLocaleLowerCase("ru-RU")];
+    return month ? `${day}.${month}` : null;
+  }
+  const numericMatch = raw.match(/\b(\d{1,2})[./-](\d{1,2})(?:[./-]\d{2,4})?\b/);
+  if (!numericMatch) return null;
+  const day = numericMatch[1]!.padStart(2, "0");
+  const month = numericMatch[2]!.padStart(2, "0");
+  return `${day}.${month}`;
+}
+
+function pickupCollectPinLine(summary?: PickupStoreSummary): string {
+  const shortDate = pickupCollectDateShort(summary);
+  return shortDate ? `Привезём ${shortDate}` : "Привезём позже";
+}
+
+function pickupCollectAllStoreLine(summary?: PickupStoreSummary): string {
+  const longDate = pickupCollectDateLong(summary);
+  return longDate ? `Привезём все товары в этот магазин ${longDate}` : "Привезём все товары в этот магазин";
+}
+
+/** Выше = лучше: всё сегодня → сегодня+позже → всё позже → частично позже → не собрать. */
+function pickupStoreSortScore(summary?: PickupStoreSummary): number {
+  if (!summary || summary.totalUnits <= 0) return 0;
+  const kind = pickupStoreScenarioKind(summary);
+  switch (kind) {
+    case "today_all":
+      return 1_000_000 + summary.reserveUnits * 100 + summary.totalUnits;
+    case "today_later":
+      return 800_000 + summary.reserveUnits * 1_000 + summary.collectUnits;
+    case "later_all":
+      return 600_000 + summary.collectUnits * 100 + summary.totalUnits;
+    case "later_partial":
+      return 300_000 + summary.collectUnits * 1_000 + summary.availableUnits;
+    case "incomplete":
+      return 100_000 + summary.availableUnits * 1_000 + summary.reserveUnits;
+    default:
+      return -100_000 - (summary.remainderUnits ?? 0);
+  }
+}
+
+/** Строки на пине карты: решение для клиента, без `0 сегодня`. */
 function pickupStorePinLines(summary?: PickupStoreSummary): { line1: string; line2?: string } {
-  const k = pickupPinKind(summary);
-  if (k === "empty" || !summary) return { line1: "—" };
-  if (summary.availableUnits <= 0) return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
-  if (k === "ideal") return { line1: "Все сейчас" };
-  if (k === "split_full") return { line1: `${summary.reserveUnits} сейчас`, line2: `${summary.collectUnits} позже` };
+  const kind = pickupStoreScenarioKind(summary);
+  if (kind === "empty" || !summary) return { line1: "—" };
+  if (kind === "today_all") return { line1: "Все сегодня" };
+  if (kind === "today_later") return { line1: `${summary.reserveUnits} сегодня`, line2: `${summary.collectUnits} позже` };
+  if (kind === "later_all") return { line1: pickupCollectPinLine(summary) };
+  if (kind === "later_partial") return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
   return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
 }
 
@@ -488,21 +563,25 @@ function sortPickupStoresByScenario(list: PickupStoreOption[]): PickupStoreOptio
 }
 
 function pickupStoreStatusTitle(summary?: PickupStoreSummary) {
-  if (!summary || summary.availableUnits <= 0) return "Нет доступных товаров";
-  if (summary.hasFullCoverage && summary.collectUnits === 0) return "Все товары доступны сразу";
-  if (summary.hasFullCoverage) return "Все товары доступны";
+  const kind = pickupStoreScenarioKind(summary);
+  if (!summary || kind === "empty") return "Данные по товарам уточняются";
+  if (kind === "today_all") return "Все товары доступны сегодня";
+  if (kind === "today_later") return "Часть сегодня, часть привезём";
+  if (kind === "later_all") return "Привезём заказ в магазин";
   return "Доступна только часть заказа";
 }
 
 function pickupStoreStatusDetail(summary?: PickupStoreSummary) {
-  if (!summary || summary.availableUnits <= 0)
-    return "В этом магазине нельзя собрать выбранные позиции под самовывоз (нет остатка или только другой способ). Выберите другой магазин или способ доставки.";
-  if (summary.hasFullCoverage && summary.collectUnits === 0) {
-    return `Все ${summary.totalUnits} товаров готовы к выдаче в магазине.`;
-  }
+  if (!summary || summary.totalUnits <= 0) return "Данные по товарам уточняются.";
+  const kind = pickupStoreScenarioKind(summary);
+  if (kind === "today_all") return `Все ${summary.totalUnits} ${pluralizeProducts(summary.totalUnits)} готовы к выдаче в магазине.`;
+  if (kind === "today_later") return `${summary.reserveUnits} ${pluralizeProducts(summary.reserveUnits)} сегодня, ${summary.collectUnits} привезём в магазин.`;
+  if (kind === "later_all") return `${pickupCollectAllStoreLine(summary)}.`;
+  if (kind === "later_partial") return `Сможем привезти ${summary.availableUnits} из ${summary.totalUnits} товаров.`;
+  if (summary.availableUnits <= 0) return `Доступно 0 из ${summary.totalUnits} товаров для самовывоза.`;
   const parts: string[] = [];
   if (summary.reserveUnits > 0) parts.push(`${summary.reserveUnits} доступны сразу`);
-  if (summary.collectUnits > 0) parts.push(`${summary.collectUnits} привезем в магазин`);
+  if (summary.collectUnits > 0) parts.push(`${summary.collectUnits} привезём в магазин`);
   if (summary.remainderUnits > 0) parts.push(`${summary.remainderUnits} пока недоступны`);
   return parts.join(", ") + ".";
 }
@@ -537,58 +616,58 @@ function pickupStoreTone(summary?: PickupStoreSummary) {
 }
 
 function pickupStorePinTailClass(summary?: PickupStoreSummary) {
-  const kind = pickupPinKind(summary);
-  if (kind === "ideal") return "bg-neutral-950";
-  if (kind === "split_full") return "bg-neutral-900";
+  const kind = pickupStoreScenarioKind(summary);
+  if (kind === "today_all" || kind === "today_later") return "bg-neutral-950";
+  if (kind === "later_all" || kind === "later_partial") return "bg-neutral-500";
   if (kind === "incomplete") return "bg-neutral-400";
   return "bg-neutral-300";
 }
 
 function pickupStoreGjMarkerClass(summary?: PickupStoreSummary) {
-  const kind = pickupPinKind(summary);
-  if (kind === "ideal") return "border-neutral-950 bg-neutral-950 text-white";
-  if (kind === "split_full") return "border-neutral-900 bg-neutral-900 text-white";
+  const kind = pickupStoreScenarioKind(summary);
+  if (kind === "today_all" || kind === "today_later") return "border-neutral-950 bg-neutral-950 text-white";
+  if (kind === "later_all" || kind === "later_partial") return "border-neutral-300 bg-white text-neutral-700";
   if (kind === "incomplete") return "border-neutral-300 bg-white text-neutral-700";
   return "border-neutral-300 bg-white text-neutral-500";
 }
 
 function pickupStoreGjLogoClass(summary?: PickupStoreSummary) {
-  const kind = pickupPinKind(summary);
-  if (kind === "ideal" || kind === "split_full") return "bg-white text-neutral-950";
+  const kind = pickupStoreScenarioKind(summary);
+  if (kind === "today_all" || kind === "today_later") return "bg-white text-neutral-950";
   return "bg-neutral-950 text-white";
 }
 
 function pickupStoreGjPinSizeClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupPinKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  const kind = pickupStoreScenarioKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
   if (primary) return "min-w-[8rem] rounded-2xl px-2.5 py-2";
   return "min-w-[6.6rem] rounded-2xl px-2.5 py-1.5";
 }
 
 function pickupStoreGjPinShadowClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupPinKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  const kind = pickupStoreScenarioKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
   if (primary) return "shadow-[0_10px_22px_rgba(0,0,0,0.22)]";
   return "shadow-[0_6px_14px_rgba(0,0,0,0.12)]";
 }
 
 function pickupStoreGjLogoSizeClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupPinKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  const kind = pickupStoreScenarioKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
   if (primary) return "h-8 w-12 rounded-lg text-[13px]";
   return "h-7 w-10 rounded-lg text-[11px]";
 }
 
 function pickupStoreGjTextClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupPinKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  const kind = pickupStoreScenarioKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
   if (primary) return { line1: "text-[15px] font-bold leading-tight", line2: "text-[13px] font-bold leading-tight" };
   return { line1: "text-[13px] font-bold leading-tight", line2: "text-[11px] font-bold leading-tight" };
 }
 
 function pickupStoreGjAnchorClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupPinKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  const kind = pickupStoreScenarioKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
   if (primary) {
     return {
       stem: "top-full h-4 w-0.5",
@@ -604,37 +683,54 @@ function pickupStoreGjAnchorClass(summary: PickupStoreSummary | undefined, opts:
 /** Одна строка под названием магазина в свёрнутой карточке (тот же смысл, что на пине). */
 function pickupStoreCompactScenarioLine(summary?: PickupStoreSummary): string {
   if (!summary || summary.totalUnits <= 0) return "Нет состава корзины для оценки";
-  if (summary.availableUnits <= 0) return "Нет доступных позиций для самовывоза";
-  const { line1, line2 } = pickupStorePinLines(summary);
-  return line2 ? `${line1} · ${line2}` : line1;
+  const kind = pickupStoreScenarioKind(summary);
+  if (kind === "today_all") return "Все товары можно забрать сегодня";
+  if (kind === "today_later") {
+    return `${summary.reserveUnits} ${pluralizeProducts(summary.reserveUnits)} сегодня · ${summary.collectUnits} позже`;
+  }
+  if (kind === "later_all") return pickupCollectAllStoreLine(summary);
+  if (kind === "later_partial") return `Сможем привезти ${summary.availableUnits} из ${summary.totalUnits} товаров`;
+  if (summary.availableUnits > 0) return `Доступно ${summary.availableUnits} из ${summary.totalUnits} товаров`;
+  return `Доступно 0 из ${summary.totalUnits} товаров`;
 }
 
 function pickupStorePinEmphasisClass(
   summary: PickupStoreSummary | undefined,
   opts: { recommended: boolean; pinOpen: boolean },
 ): string {
-  const kind = pickupPinKind(summary);
+  const kind = pickupStoreScenarioKind(summary);
   if (opts.pinOpen) return "z-[35] scale-[1.05] ring-4 ring-black/15";
-  if ((kind === "ideal" || kind === "split_full") && opts.recommended) return "z-[14] scale-[1.03] ring-2 ring-black/10";
-  if (kind === "incomplete") return "z-[8] scale-[0.95] opacity-70";
-  if (kind === "split_full") return "z-[10]";
+  if ((kind === "today_all" || kind === "today_later") && opts.recommended) return "z-[14] scale-[1.03] ring-2 ring-black/10";
+  if (kind === "incomplete" || kind === "later_partial") return "z-[8] scale-[0.95] opacity-70";
+  if (kind === "later_all") return "z-[9] opacity-80";
+  if (kind === "today_later") return "z-[10]";
   return "z-[11]";
 }
 
-type PickupStoreListFilter = "all" | "full" | "today" | "partial";
+type PickupStoreListFilter = "all" | "today_all" | "today_later";
 type PickupBottomSheetMode = "collapsed" | "preview" | "expanded";
+
+function pickupStoreIsTodayAll(store: PickupStoreOption): boolean {
+  const s = store.summary;
+  return !!s && s.availableUnits > 0 && s.hasFullCoverage && s.collectUnits === 0 && s.remainderUnits === 0;
+}
+
+function pickupStoreIsTodayLater(store: PickupStoreOption): boolean {
+  const s = store.summary;
+  return !!s && s.availableUnits > 0 && s.hasFullCoverage && s.reserveUnits > 0 && s.collectUnits > 0;
+}
+
+function pickupStoreCanSelect(summary?: PickupStoreSummary): boolean {
+  return !!summary && summary.availableUnits > 0 && summary.hasFullCoverage;
+}
 
 function storeMatchesPickupListFilter(store: PickupStoreOption, filter: PickupStoreListFilter): boolean {
   if (filter === "all") return true;
-  const s = store.summary;
-  if (!s || s.availableUnits <= 0) return false;
   switch (filter) {
-    case "full":
-      return s.hasFullCoverage;
-    case "today":
-      return s.hasFullCoverage && s.collectUnits === 0 && s.remainderUnits === 0;
-    case "partial":
-      return !s.hasFullCoverage;
+    case "today_all":
+      return pickupStoreIsTodayAll(store);
+    case "today_later":
+      return pickupStoreIsTodayLater(store);
     default:
       return true;
   }
@@ -661,14 +757,13 @@ function pvzPointStatusTitle(summary?: MethodSummary) {
   return "Доступна часть заказа";
 }
 
-function pvzPointStatusDetail(summary?: MethodSummary) {
-  if (!summary || summary.totalUnits <= 0) return "Нет данных по текущей корзине.";
-  if (summary.availableUnits <= 0)
-    return "ПВЗ обслуживается со склада: для выбранных позиций нет остатка с отгрузкой в пункт (или товар есть только в магазинах — их ПВЗ не использует). Попробуйте курьера или самовывоз.";
+function pvzPointStatusDetail(summary: MethodSummary | undefined, copy: SelectorCopy["pvz"] = FALLBACK_SELECTOR_COPY.pvz) {
+  if (!summary || summary.totalUnits <= 0) return copy.noCart;
+  if (summary.availableUnits <= 0) return copy.unavailable;
   if (summary.availableUnits >= summary.totalUnits) {
-    return `Все ${summary.totalUnits} товаров можно получить через пункт выдачи заказа.`;
+    return applyCopyTemplate(copy.allAvailable, { total: summary.totalUnits, available: summary.availableUnits });
   }
-  return `Через ПВЗ можно оформить ${summary.availableUnits} из ${summary.totalUnits} товаров. Остальные потребуется оформить другим способом.`;
+  return applyCopyTemplate(copy.partial, { total: summary.totalUnits, available: summary.availableUnits });
 }
 
 function pvzPointPinLine(summary?: MethodSummary): string {
@@ -855,6 +950,7 @@ function PickupStoreSelector({
   selectedStoreId,
   lastChosenStoreId,
   productsById,
+  copy,
   onSelect,
   onClose,
 }: {
@@ -863,6 +959,7 @@ function PickupStoreSelector({
   /** Подсказка «выбирали в прошлый раз» — без автоподстановки выбора */
   lastChosenStoreId?: string | null;
   productsById: Record<string, SheetProductRef>;
+  copy?: SelectorCopy["pickup"];
   onSelect: (storeId: string) => void;
   onClose: () => void;
 }) {
@@ -882,6 +979,15 @@ function PickupStoreSelector({
     return sortPickupStoresByScenario(base);
   }, [stores, storeSearch]);
 
+  const filterAvailability = useMemo(
+    () => ({
+      all: searchMatchedStores.length,
+      todayAll: searchMatchedStores.filter(pickupStoreIsTodayAll).length,
+      todayLater: searchMatchedStores.filter(pickupStoreIsTodayLater).length,
+    }),
+    [searchMatchedStores],
+  );
+
   const filteredStores = useMemo(() => {
     let base = searchMatchedStores;
     if (listFilter !== "all") {
@@ -889,6 +995,24 @@ function PickupStoreSelector({
     }
     return sortPickupStoresForList(base);
   }, [searchMatchedStores, listFilter]);
+
+  const todayAllAvailable = filterAvailability.todayAll > 0;
+  const todayLaterAvailable = filterAvailability.todayLater > 0;
+  const pickupSelectorCopy = copy ?? FALLBACK_SELECTOR_COPY.pickup;
+
+  const pickupFilterDisclaimer = useMemo(() => {
+    if (filterAvailability.all === 0) return null;
+    if (!todayAllAvailable && !todayLaterAvailable) {
+      return pickupSelectorCopy.noTodayOptions;
+    }
+    if (!todayAllAvailable) {
+      return pickupSelectorCopy.noTodayAllButTodayLater;
+    }
+    if (!todayLaterAvailable) {
+      return pickupSelectorCopy.noTodayLater;
+    }
+    return null;
+  }, [filterAvailability.all, pickupSelectorCopy, todayAllAvailable, todayLaterAvailable]);
 
   const toggleExpandedStore = (id: string) => {
     setExpandedStoreIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -1004,23 +1128,38 @@ function PickupStoreSelector({
     }
   };
 
-  const filterChip = (id: PickupStoreListFilter, label: string) => (
-    <button
-      key={id}
-      type="button"
-      onClick={() => {
-        setListFilter(id);
-        setSearchActive(false);
-        setMapPreviewStoreId(null);
-        setSheetMode("collapsed");
-      }}
-      className={`shrink-0 rounded-full border px-3 py-2 text-[12px] font-semibold shadow-sm backdrop-blur-md transition ${
-        listFilter === id ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white/95 text-neutral-800"
-      }`}
-    >
-      {label}
-    </button>
-  );
+  const filterChip = (id: PickupStoreListFilter, label: string) => {
+    const disabled = (id === "today_all" && !todayAllAvailable) || (id === "today_later" && !todayLaterAvailable);
+    const active = !disabled && listFilter === id;
+    return (
+      <button
+        key={id}
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          setListFilter(id);
+          setMapPreviewStoreId(null);
+          if (searchActive) {
+            setSheetMode("expanded");
+          } else {
+            setSearchActive(false);
+            setSheetMode("collapsed");
+          }
+        }}
+        className={`shrink-0 rounded-full border px-3 py-1.5 text-[12px] font-semibold shadow-sm backdrop-blur-md transition ${
+          active
+            ? "border-neutral-900 bg-neutral-900 text-white"
+            : disabled
+              ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400 shadow-none"
+              : "border-neutral-200 bg-white/95 text-neutral-800"
+        }`}
+        aria-disabled={disabled}
+      >
+        {label}
+      </button>
+    );
+  };
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -1168,7 +1307,7 @@ function PickupStoreSelector({
         ) : null}
 
         {!showPreview ? (
-          <div className="shrink-0 px-4 pb-4">
+          <div className="shrink-0 px-4 pb-3">
             <div className="flex items-center gap-2">
               <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 focus-within:border-neutral-400">
                 <span className="sr-only">Поиск по магазинам</span>
@@ -1217,13 +1356,15 @@ function PickupStoreSelector({
                 </button>
               ) : null}
             </div>
-            {!searchActive ? (
-              <div className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {filterChip("all", "Все")}
-                {filterChip("full", "Есть всё")}
-                {filterChip("today", "Сегодня")}
-                {filterChip("partial", "Частично")}
-              </div>
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {filterChip("all", "Все магазины")}
+              {filterChip("today_all", "Забрать всё сегодня")}
+              {filterChip("today_later", "Сегодня + позже")}
+            </div>
+            {pickupFilterDisclaimer ? (
+              <p className="mt-1.5 px-1 text-[11px] leading-snug text-neutral-950">
+                {pickupFilterDisclaimer}
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -1255,15 +1396,17 @@ function PickupStoreSelector({
                   productsById={productsById}
                 />
               </div>
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={() => onSelect(sheetStore.id)}
-                  className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
-                >
-                  Выбрать
-                </button>
-              </div>
+              {pickupStoreCanSelect(sheetStore.summary) ? (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => onSelect(sheetStore.id)}
+                    className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                  >
+                    Выбрать
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -1274,9 +1417,11 @@ function PickupStoreSelector({
                   <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
                     {storeSearch.trim()
                       ? "По запросу магазины не найдены."
-                      : listFilter !== "all"
-                        ? "Нет магазинов с выбранным фильтром. Сбросьте фильтр или выберите все магазины."
-                        : "Магазины не найдены."}
+                      : listFilter === "today_all"
+                        ? pickupSelectorCopy.noTodayAllButTodayLater
+                        : listFilter === "today_later"
+                          ? pickupSelectorCopy.noTodayLater
+                          : "Магазины не найдены."}
                   </div>
                 ) : (
                   filteredStores.map((store) => {
@@ -1287,6 +1432,7 @@ function PickupStoreSelector({
                     const hasDetails =
                       !!store.summary?.immediateLines?.length ||
                       !!store.summary?.laterLines?.length;
+                    const canSelectStore = pickupStoreCanSelect(store.summary);
                     return (
                       <div
                         key={store.id}
@@ -1296,14 +1442,16 @@ function PickupStoreSelector({
                           <p className="min-w-0 flex-1 text-[17px] font-semibold leading-tight text-neutral-900">
                             {store.name}
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => onSelect(store.id)}
-                            className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
-                            aria-pressed={selected}
-                          >
-                            Выбрать
-                          </button>
+                          {canSelectStore ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelect(store.id)}
+                              className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
+                              aria-pressed={selected}
+                            >
+                              Выбрать
+                            </button>
+                          ) : null}
                         </div>
                         <div className="mt-3 space-y-3">
                           <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
@@ -1436,6 +1584,7 @@ function PickupStoreSelectionOverlay({
   selectedStoreId,
   lastChosenStoreId,
   productsById,
+  copy,
   onSelectStore,
   zOverlayClass = "z-[100]",
 }: {
@@ -1445,6 +1594,7 @@ function PickupStoreSelectionOverlay({
   selectedStoreId: string;
   lastChosenStoreId?: string | null;
   productsById: Record<string, SheetProductRef>;
+  copy?: SelectorCopy["pickup"];
   onSelectStore: (storeId: string) => void;
   zOverlayClass?: string;
 }) {
@@ -1463,6 +1613,7 @@ function PickupStoreSelectionOverlay({
             selectedStoreId={selectedStoreId}
             lastChosenStoreId={lastChosenStoreId}
             productsById={productsById}
+            copy={copy}
             onSelect={onSelectStore}
             onClose={onDismiss}
           />
@@ -1483,6 +1634,7 @@ function PvzPointSelectionOverlay({
   linePreview,
   pvzSheetThumbMeta,
   productsById,
+  copy,
   onSelectPoint,
   zOverlayClass = "z-[100]",
 }: {
@@ -1495,6 +1647,7 @@ function PvzPointSelectionOverlay({
   linePreview?: CartMethodSummariesResult["pvzLinePreview"];
   pvzSheetThumbMeta?: CartMethodSummariesResult["pvzSheetThumbMeta"];
   productsById: Record<string, SheetProductRef>;
+  copy?: SelectorCopy["pvz"];
   onSelectPoint: (pointId: string) => void;
   zOverlayClass?: string;
 }) {
@@ -1516,6 +1669,7 @@ function PvzPointSelectionOverlay({
             linePreview={linePreview}
             pvzSheetThumbMeta={pvzSheetThumbMeta}
             productsById={productsById}
+            copy={copy}
             onSelect={onSelectPoint}
             onClose={onDismiss}
           />
@@ -1574,6 +1728,7 @@ function PvzPointSelector({
   linePreview,
   pvzSheetThumbMeta,
   productsById,
+  copy,
   onSelect,
   onClose,
 }: {
@@ -1584,6 +1739,7 @@ function PvzPointSelector({
   linePreview?: CartMethodSummariesResult["pvzLinePreview"];
   pvzSheetThumbMeta?: CartMethodSummariesResult["pvzSheetThumbMeta"];
   productsById: Record<string, SheetProductRef>;
+  copy?: SelectorCopy["pvz"];
   onSelect: (pointId: string) => void;
   onClose: () => void;
 }) {
@@ -1668,6 +1824,8 @@ function PvzPointSelector({
   const showPreview = sheetMode === "preview" && !!sheetPoint;
   const sheetExpanded = sheetMode === "expanded";
   const scenarioLine = pvzPointCompactScenarioLine(summary);
+  const pvzSelectorCopy = copy ?? FALLBACK_SELECTOR_COPY.pvz;
+  const pvzStatusDetail = pvzPointStatusDetail(summary, pvzSelectorCopy);
   const hasDetails = !!linePreview && (linePreview.available.length > 0 || linePreview.unavailable.length > 0);
   const mapPointPosition = (pointId: string): { left: string; top: string } => {
     if (mapPreviewPointId === pointId) return { left: "50%", top: "25%" };
@@ -1940,7 +2098,9 @@ function PvzPointSelector({
                 <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
                   {scenarioLine}
                 </p>
-                <p className="text-sm leading-snug text-neutral-600">{pvzPointStatusDetail(summary)}</p>
+                {pvzStatusDetail ? (
+                  <p className="text-sm leading-snug text-neutral-600">{pvzStatusDetail}</p>
+                ) : null}
                 {lastChosenPointId === sheetPoint.id ? (
                   <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
                     Выбирали в прошлый раз
@@ -2036,10 +2196,12 @@ function PvzPointSelector({
 function PvzSelectedPointCard({
   point,
   summary,
+  copy,
   onChange,
 }: {
   point?: PvzPointOption;
   summary?: MethodSummary;
+  copy?: SelectorCopy["pvz"];
   onChange: () => void;
 }) {
   if (!point) {
@@ -2050,13 +2212,15 @@ function PvzSelectedPointCard({
     );
   }
 
+  const statusDetail = pvzPointStatusDetail(summary, copy ?? FALLBACK_SELECTOR_COPY.pvz);
+
   return (
     <div className="mt-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">{point.name}</p>
           <p className="mt-1 text-xs text-neutral-500">{point.address}</p>
-          <p className="mt-1 text-xs text-neutral-500">{pvzPointStatusDetail(summary)}</p>
+          {statusDetail ? <p className="mt-1 text-xs text-neutral-500">{statusDetail}</p> : null}
         </div>
         <button
           type="button"
@@ -2565,6 +2729,7 @@ function SplitSelectionModal({
   resolution,
   productsById,
   pvzPoints,
+  selectorCopy: selectorUiCopy,
   selectedPvzId,
   onSelectPvz,
   courierAddress,
@@ -2578,6 +2743,7 @@ function SplitSelectionModal({
   resolution: RemainderResolution;
   productsById: Record<string, Bootstrap["products"][number]>;
   pvzPoints: PvzPointOption[];
+  selectorCopy?: SelectorCopy;
   selectedPvzId: string;
   onSelectPvz: (pointId: string) => void;
   courierAddress: string;
@@ -2796,6 +2962,7 @@ function SplitSelectionModal({
         selectedStoreId={selectedPickupStoreId}
         lastChosenStoreId={lastChosenPickupStoreId}
         productsById={productsById}
+        copy={selectorUiCopy?.pickup}
         onSelectStore={(nextStoreId) => {
           setSelectedPickupStoreId(nextStoreId);
           setPickupSelectorOpen(false);
@@ -2812,6 +2979,7 @@ function SplitSelectionModal({
         linePreview={splitPvzLinePreview}
         pvzSheetThumbMeta={splitPvzSheetThumbMeta}
         productsById={productsById}
+        copy={selectorUiCopy?.pvz}
         onSelectPoint={(nextPointId) => {
           onSelectPvz(nextPointId);
           setPvzSelectorOpen(false);
@@ -3660,6 +3828,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
     return undefined;
   }, [cartDetail?.lines?.length, cartScopedSummaries?.pvzSheetThumbMeta, scenario]);
+  const selectorUiCopy = boot?.checkoutSelectorCopy ?? FALLBACK_SELECTOR_COPY;
 
   const recommendedMethodCode = useMemo<DeliveryMethodCode | null>(() => {
     const full = deliveryOptions.filter((option) => {
@@ -4521,6 +4690,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                         <PvzSelectedPointCard
                           point={selectedPvzPoint}
                           summary={pvzSummary}
+                          copy={selectorUiCopy.pvz}
                           onChange={() => setPvzSelectorOpen(true)}
                         />
                       ) : method === "pvz" ? (
@@ -4937,6 +5107,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           selectedStoreId={storeId}
           lastChosenStoreId={lastPickupMemoryId}
           productsById={productsById}
+          copy={selectorUiCopy.pickup}
           onSelectStore={(nextStoreId) => {
             setStoreId(nextStoreId);
             setPickupSelectorOpen(false);
@@ -4954,6 +5125,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           linePreview={cartDetail?.lines?.length ? cartScopedSummaries?.pvzLinePreview : undefined}
           pvzSheetThumbMeta={pvzOverlayThumbMeta}
           productsById={productsById}
+          copy={selectorUiCopy.pvz}
           onSelectPoint={(nextPointId) => {
             setPvzId(nextPointId);
             setPvzSelectorOpen(false);
@@ -4976,6 +5148,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           saving={splitSubmitting}
           lastChosenPickupStoreId={lastPickupMemoryId}
           lastChosenPvzPointId={lastPvzMemoryId}
+          selectorCopy={selectorUiCopy}
         />
       ) : null}
       {courierAddressModalTarget ? (
