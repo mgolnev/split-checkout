@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadCourierAddress, saveCourierAddress } from "@/lib/courier-address-storage";
 import { loadCheckoutCart } from "@/lib/checkout-cart-storage";
@@ -721,25 +721,6 @@ function pvzPointCompactScenarioLine(summary?: MethodSummary): string {
   return `${summary.availableUnits} из ${summary.totalUnits}`;
 }
 
-function pvzPointMarkerClass(summary?: MethodSummary) {
-  if (!summary || summary.availableUnits <= 0) return "border-neutral-300 bg-white text-neutral-500";
-  if (summary.availableUnits >= summary.totalUnits) return "border-neutral-950 bg-neutral-950 text-white";
-  return "border-neutral-300 bg-white text-neutral-700";
-}
-
-function pvzPointLogoClass(summary?: MethodSummary) {
-  if (summary && summary.availableUnits > 0 && summary.availableUnits >= summary.totalUnits) {
-    return "bg-white text-neutral-950";
-  }
-  return "bg-neutral-950 text-white";
-}
-
-function pvzPointTailClass(summary?: MethodSummary) {
-  if (!summary || summary.availableUnits <= 0) return "bg-neutral-400";
-  if (summary.availableUnits >= summary.totalUnits) return "bg-neutral-950";
-  return "bg-neutral-500";
-}
-
 function pvzPointEmphasisClass(
   summary: MethodSummary | undefined,
   opts: { recommended: boolean; pinOpen: boolean },
@@ -887,34 +868,38 @@ function PickupStoreFulfillmentBlock({
   );
 }
 
-/** Fixed-шторка при фокусе поиска: сразу задаём top/bottom от visualViewport (без кадра без стиля до setState). */
-function getSearchFocusSheetInsets(): { top: number; bottom: number } {
+/** Прямоугольник видимой области Safari/iOS (над клавиатурой). */
+function readVisualViewportFrame(): { top: number; left: number; width: number; height: number } {
   if (typeof window === "undefined") {
-    return { top: 0, bottom: 0 };
+    return { top: 0, left: 0, width: 0, height: 0 };
   }
-  const viewport = window.visualViewport;
-  if (!viewport) {
-    return { top: 88, bottom: 0 };
+  const vv = window.visualViewport;
+  if (!vv) {
+    return { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
   }
   return {
-    top: Math.max(16, Math.round(viewport.offsetTop + 16)),
-    bottom: Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
+    top: Math.round(vv.offsetTop),
+    left: Math.round(vv.offsetLeft),
+    width: Math.max(1, Math.round(vv.width)),
+    height: Math.max(1, Math.round(vv.height)),
   };
 }
 
-/** Пересчёт при смене вьюпорта/размера контейнера — иначе слой «карты» (absolute inset-0) может визуально «залипать» при fixed-шторке (Safari/WebKit). */
-function useSelectorMapLayoutResync(
-  setViewportRev: Dispatch<SetStateAction<number>>,
-  containerRef: RefObject<HTMLDivElement | null>,
-) {
+/**
+ * Пока active — подписываемся на visualViewport (resize + scroll): на iOS при клавиатуре
+ * layout viewport и «absolute bottom» внутри flex дают смещение; fixed с этими числами прилипает к видимой области.
+ */
+function useVisualViewportFrame(active: boolean) {
+  const [frame, setFrame] = useState(readVisualViewportFrame);
+
   useLayoutEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!active || typeof window === "undefined") return;
     let raf = 0;
     const schedule = () => {
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
-        setViewportRev((n) => n + 1);
+        setFrame(readVisualViewportFrame());
       });
     };
     schedule();
@@ -922,21 +907,15 @@ function useSelectorMapLayoutResync(
     vv?.addEventListener("resize", schedule);
     vv?.addEventListener("scroll", schedule);
     window.addEventListener("resize", schedule);
-    window.addEventListener("orientationchange", schedule);
-    const root = containerRef.current;
-    let ro: ResizeObserver | undefined;
-    if (root && typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(schedule);
-      ro.observe(root);
-    }
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       vv?.removeEventListener("resize", schedule);
       vv?.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
-      window.removeEventListener("orientationchange", schedule);
-      ro?.disconnect();
     };
-  }, [setViewportRev, containerRef]);
+  }, [active]);
+
+  return active ? frame : null;
 }
 
 function PickupStoreSelector({
@@ -963,10 +942,9 @@ function PickupStoreSelector({
   const [expandedStoreIds, setExpandedStoreIds] = useState<Record<string, boolean>>({});
   const [mapPreviewStoreId, setMapPreviewStoreId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
-  const [searchViewportRev, setSearchViewportRev] = useState(0);
-  const selectorRootRef = useRef<HTMLDivElement | null>(null);
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
+  const vvSheet = useVisualViewportFrame(searchActive);
 
   const searchMatchedStores = useMemo(() => {
     const q = storeSearch.trim().toLocaleLowerCase("ru");
@@ -1025,8 +1003,6 @@ function PickupStoreSelector({
     }
   }, [filteredStores, mapPreviewStoreId]);
 
-  useSelectorMapLayoutResync(setSearchViewportRev, selectorRootRef);
-
   const recommendedStore = filteredStores[0] ?? null;
   const recommendedStoreId = recommendedStore?.id ?? null;
   const mapPinPosition = useMemo(() => {
@@ -1046,26 +1022,42 @@ function PickupStoreSelector({
   const sheetScenarioLine = sheetStore ? pickupStoreCompactScenarioLine(sheetStore.summary) : "";
   const sheetExpanded = sheetMode === "expanded";
   const showPreview = sheetMode === "preview" && !!sheetStore;
-  const sheetClass =
-    searchActive
-      ? "min-h-0 max-h-[100dvh]"
-      : sheetMode === "expanded"
-        ? "max-h-[78dvh]"
-        : showPreview
-          ? "max-h-[calc(100dvh-7rem)]"
-          : "max-h-[34dvh]";
-  const sheetScrollClass = searchActive
-    ? "min-h-0 flex-1"
-    : showPreview
-      ? "max-h-[calc(100dvh-12rem)]"
-      : "max-h-[calc(78dvh-5.5rem)]";
-  const sheetPositionClass = searchActive ? "fixed bottom-0 left-0 right-0" : "absolute bottom-0 left-0 right-0";
-  const sheetTransitionClass = searchActive ? "transition-none" : "transition-[max-height,top] duration-200";
-  const sheetStyle = useMemo(() => {
-    if (!searchActive) return undefined;
-    void searchViewportRev;
-    return getSearchFocusSheetInsets();
-  }, [searchActive, searchViewportRev]);
+  /** Без vv: как после свайпа. С vv (фокус поиска + клавиатура iOS): высота/позиция задаются инлайном от visualViewport. */
+  const sheetClass = vvSheet
+    ? "max-h-none"
+    : sheetMode === "expanded" || searchActive
+      ? "max-h-[78dvh]"
+      : showPreview
+        ? "max-h-[calc(100dvh-7rem)]"
+        : "max-h-[34dvh]";
+  const sheetScrollClass = showPreview
+    ? "max-h-[calc(100dvh-12rem)]"
+    : "max-h-[calc(78dvh-5.5rem)]";
+  const sheetScrollClassEffective = vvSheet ? "min-h-0 flex-1" : sheetScrollClass;
+  const sheetPositionClass = vvSheet ? "" : "absolute bottom-0 left-0 right-0";
+  const sheetTransitionClass = vvSheet ? "transition-none" : "transition-[max-height,top] duration-200";
+  const sheetFixedStyle: CSSProperties | undefined = vvSheet
+    ? {
+        position: "fixed",
+        top: vvSheet.top,
+        left: vvSheet.left,
+        width: vvSheet.width,
+        height: vvSheet.height,
+        right: "auto",
+        bottom: "auto",
+      }
+    : undefined;
+  const mapFixedStyle: CSSProperties | undefined = vvSheet
+    ? {
+        position: "fixed",
+        top: vvSheet.top,
+        left: vvSheet.left,
+        width: vvSheet.width,
+        height: vvSheet.height,
+        right: "auto",
+        bottom: "auto",
+      }
+    : undefined;
 
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
@@ -1132,32 +1124,36 @@ function PickupStoreSelector({
   }
 
   return (
-    <div
-      ref={selectorRootRef}
-      className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate [contain:layout]"
-    >
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate">
       <CheckoutCloseCrossButton
         ariaLabel="Закрыть карту выбора магазина"
         onClick={onClose}
-        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+        className={
+          vvSheet ? "fixed right-4 z-30" : "fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+        }
+        style={vvSheet ? { top: Math.max(16, vvSheet.top + 4) } : undefined}
       />
       <div
-        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] [transform:translateZ(0)] [backface-visibility:hidden]"
-        onClick={() => {
-          setSearchActive(false);
-          setMapPreviewStoreId(null);
-          setSheetMode("collapsed");
-        }}
-        aria-hidden
-      />
-      <div
-        className="absolute inset-0 z-[1] overflow-hidden [transform:translateZ(0)] [backface-visibility:hidden]"
-        onClick={() => {
-          setSearchActive(false);
-          setMapPreviewStoreId(null);
-          setSheetMode("collapsed");
-        }}
+        className={`overflow-hidden [backface-visibility:hidden] ${vvSheet ? "fixed z-[1]" : "fixed inset-0 z-[1]"}`}
+        style={mapFixedStyle}
       >
+        <div
+          className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+          onClick={() => {
+            setSearchActive(false);
+            setMapPreviewStoreId(null);
+            setSheetMode("collapsed");
+          }}
+          aria-hidden
+        />
+        <div
+          className="absolute inset-0 z-[1] overflow-hidden"
+          onClick={() => {
+            setSearchActive(false);
+            setMapPreviewStoreId(null);
+            setSheetMode("collapsed");
+          }}
+        >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
         {showPreview ? <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden /> : null}
@@ -1191,13 +1187,14 @@ function PickupStoreSelector({
             </button>
           );
         })}
+        </div>
       </div>
 
       <div
         role="region"
         aria-label="Результаты поиска магазинов"
-        className={`${sheetPositionClass} z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
-        style={sheetStyle}
+        className={`z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass} ${vvSheet ? "fixed" : sheetPositionClass}`}
+        style={sheetFixedStyle}
       >
         <div
           className="cursor-grab shrink-0 px-4 pb-2 pt-2 active:cursor-grabbing"
@@ -1301,7 +1298,9 @@ function PickupStoreSelector({
           </div>
         ) : null}
 
-        <div className={`${sheetScrollClass} overflow-y-auto overscroll-y-contain px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
+        <div
+          className={`${sheetScrollClassEffective} overflow-y-auto overscroll-y-contain px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}
+        >
           {showPreview && sheetStore && !sheetExpanded ? (
             <div className="pb-1">
               <div className="space-y-3">
@@ -1333,7 +1332,7 @@ function PickupStoreSelector({
                   <button
                     type="button"
                     onClick={() => onSelect(sheetStore.id)}
-                    className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                    className="w-full rounded-xl border border-neutral-900 bg-white py-3 text-sm font-semibold text-neutral-900 transition hover:bg-neutral-50"
                   >
                     Выбрать
                   </button>
@@ -1378,7 +1377,7 @@ function PickupStoreSelector({
                             <button
                               type="button"
                               onClick={() => onSelect(store.id)}
-                              className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
+                              className="shrink-0 rounded-xl border border-neutral-900 bg-white px-4 py-2 text-xs font-semibold text-neutral-900 transition hover:bg-neutral-50"
                               aria-pressed={selected}
                             >
                               Выбрать
@@ -1449,16 +1448,19 @@ function CheckoutCloseCrossButton({
   ariaLabel,
   onClick,
   className = "",
+  style,
 }: {
   ariaLabel: string;
   onClick: () => void;
   className?: string;
+  style?: CSSProperties;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
+      style={style}
       className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md ${className}`}
     >
       <span aria-hidden>×</span>
@@ -1738,10 +1740,9 @@ function PvzPointSelector({
   const [expandedPointIds, setExpandedPointIds] = useState<Record<string, boolean>>({});
   const [mapPreviewPointId, setMapPreviewPointId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
-  const [searchViewportRev, setSearchViewportRev] = useState(0);
-  const selectorRootRef = useRef<HTMLDivElement | null>(null);
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
+  const vvSheet = useVisualViewportFrame(searchActive);
 
   const filteredPoints = useMemo(() => {
     const q = pvzSearch.trim().toLocaleLowerCase("ru");
@@ -1769,8 +1770,6 @@ function PvzPointSelector({
     }
   }, [filteredPoints, mapPreviewPointId]);
 
-  useSelectorMapLayoutResync(setSearchViewportRev, selectorRootRef);
-
   const mapPoints = filteredPoints;
   const recommendedPoint = filteredPoints[0] ?? null;
   const recommendedPointId = recommendedPoint?.id ?? null;
@@ -1789,26 +1788,41 @@ function PvzPointSelector({
     const p = PICKUP_MAP_POSITIONS[(ix >= 0 ? ix : 0) % PICKUP_MAP_POSITIONS.length]!;
     return { left: p.left, top: p.top };
   };
-  const sheetClass =
-    searchActive
-      ? "min-h-0 max-h-[100dvh]"
-      : sheetMode === "expanded"
-        ? "max-h-[78dvh]"
-        : showPreview
-          ? "max-h-[calc(100dvh-7rem)]"
-          : "max-h-[28dvh]";
-  const sheetScrollClass = searchActive
-    ? "min-h-0 flex-1"
-    : showPreview
-      ? "max-h-[calc(100dvh-12rem)]"
-      : "max-h-[calc(78dvh-5.5rem)]";
-  const sheetPositionClass = searchActive ? "fixed bottom-0 left-0 right-0" : "absolute bottom-0 left-0 right-0";
-  const sheetTransitionClass = searchActive ? "transition-none" : "transition-[max-height,top] duration-200";
-  const sheetStyle = useMemo(() => {
-    if (!searchActive) return undefined;
-    void searchViewportRev;
-    return getSearchFocusSheetInsets();
-  }, [searchActive, searchViewportRev]);
+  const sheetClass = vvSheet
+    ? "max-h-none"
+    : sheetMode === "expanded" || searchActive
+      ? "max-h-[78dvh]"
+      : showPreview
+        ? "max-h-[calc(100dvh-7rem)]"
+        : "max-h-[28dvh]";
+  const sheetScrollClass = showPreview
+    ? "max-h-[calc(100dvh-12rem)]"
+    : "max-h-[calc(78dvh-5.5rem)]";
+  const sheetScrollClassEffective = vvSheet ? "min-h-0 flex-1" : sheetScrollClass;
+  const sheetPositionClass = vvSheet ? "" : "absolute bottom-0 left-0 right-0";
+  const sheetTransitionClass = vvSheet ? "transition-none" : "transition-[max-height,top] duration-200";
+  const sheetFixedStyle: CSSProperties | undefined = vvSheet
+    ? {
+        position: "fixed",
+        top: vvSheet.top,
+        left: vvSheet.left,
+        width: vvSheet.width,
+        height: vvSheet.height,
+        right: "auto",
+        bottom: "auto",
+      }
+    : undefined;
+  const mapFixedStyle: CSSProperties | undefined = vvSheet
+    ? {
+        position: "fixed",
+        top: vvSheet.top,
+        left: vvSheet.left,
+        width: vvSheet.width,
+        height: vvSheet.height,
+        right: "auto",
+        bottom: "auto",
+      }
+    : undefined;
 
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
@@ -1861,32 +1875,36 @@ function PvzPointSelector({
   }
 
   return (
-    <div
-      ref={selectorRootRef}
-      className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate [contain:layout]"
-    >
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate">
       <CheckoutCloseCrossButton
         ariaLabel="Закрыть карту выбора ПВЗ"
         onClick={onClose}
-        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+        className={
+          vvSheet ? "fixed right-4 z-30" : "fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+        }
+        style={vvSheet ? { top: Math.max(16, vvSheet.top + 4) } : undefined}
       />
       <div
-        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] [transform:translateZ(0)] [backface-visibility:hidden]"
-        onClick={() => {
-          setSearchActive(false);
-          setMapPreviewPointId(null);
-          setSheetMode("collapsed");
-        }}
-        aria-hidden
-      />
-      <div
-        className="absolute inset-0 z-[1] overflow-hidden [transform:translateZ(0)] [backface-visibility:hidden]"
-        onClick={() => {
-          setSearchActive(false);
-          setMapPreviewPointId(null);
-          setSheetMode("collapsed");
-        }}
+        className={`overflow-hidden [backface-visibility:hidden] ${vvSheet ? "fixed z-[1]" : "fixed inset-0 z-[1]"}`}
+        style={mapFixedStyle}
       >
+        <div
+          className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+          onClick={() => {
+            setSearchActive(false);
+            setMapPreviewPointId(null);
+            setSheetMode("collapsed");
+          }}
+          aria-hidden
+        />
+        <div
+          className="absolute inset-0 z-[1] overflow-hidden"
+          onClick={() => {
+            setSearchActive(false);
+            setMapPreviewPointId(null);
+            setSheetMode("collapsed");
+          }}
+        >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
         {showPreview ? <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden /> : null}
@@ -1895,11 +1913,7 @@ function PvzPointSelector({
             const pinOpen = mapPreviewPointId === point.id;
             const recommended = recommendedPointId === point.id;
             const wasLastChoice = lastChosenPointId === point.id;
-            const markerClass = pvzPointMarkerClass(summary);
-            const logoClass = pvzPointLogoClass(summary);
-            const tailClass = pvzPointTailClass(summary);
             const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
-            const primary = pinOpen || recommended;
             return (
               <button
                 key={point.id}
@@ -1910,50 +1924,30 @@ function PvzPointSelector({
                   setMapPreviewPointId(point.id);
                   setSheetMode("preview");
                 }}
-                className={`pointer-events-auto relative flex max-w-[10rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2 border-2 text-left transition ${markerClass} ${
-                  primary
-                    ? "min-w-[7.4rem] rounded-2xl px-2.5 py-2 shadow-[0_10px_22px_rgba(0,0,0,0.22)]"
-                    : "min-w-[6.4rem] rounded-2xl px-2.5 py-1.5 shadow-[0_6px_14px_rgba(0,0,0,0.12)]"
-                } ${emphasis} ${!pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25" : ""}`}
-                style={{ position: "absolute", left: pos.left, top: pos.top }}
+                className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis} ${
+                  !pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : ""
+                }`}
+                style={{ left: pos.left, top: pos.top }}
                 aria-pressed={pinOpen}
                 aria-expanded={pinOpen}
                 aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
               >
-                <span className={`absolute left-1/2 top-full h-4 w-0.5 -translate-x-1/2 ${tailClass}`} aria-hidden />
-                <span
-                  className={`absolute left-1/2 top-[calc(100%+0.85rem)] h-3.5 w-3.5 -translate-x-1/2 rounded-full border-[3px] border-white shadow-[0_2px_6px_rgba(0,0,0,0.2)] ${tailClass}`}
-                  aria-hidden
+                <MapStorePin
+                  brandMark="ПВЗ"
+                  line1={pvzPointPinLine(summary)}
+                  wasLastChoice={wasLastChoice}
                 />
-                {wasLastChoice ? (
-                  <span
-                    className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white"
-                    title="Выбирали в прошлый раз"
-                  >
-                    ↻
-                  </span>
-                ) : null}
-                <span
-                  className={`relative z-[1] flex shrink-0 items-center justify-center rounded-lg font-black leading-none tracking-normal ${logoClass} ${
-                    primary ? "h-8 w-12 text-[11px]" : "h-7 w-10 text-[10px]"
-                  }`}
-                  aria-hidden
-                >
-                  ПВЗ
-                </span>
-                <span className={`relative z-[1] font-bold leading-tight ${primary ? "text-[14px]" : "text-[12px]"}`}>
-                  {pvzPointPinLine(summary)}
-                </span>
               </button>
             );
         })}
+        </div>
       </div>
 
       <div
         role="region"
         aria-label="Результаты поиска ПВЗ"
-        className={`${sheetPositionClass} z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
-        style={sheetStyle}
+        className={`z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass} ${vvSheet ? "fixed" : sheetPositionClass}`}
+        style={sheetFixedStyle}
       >
         <div
           className="cursor-grab shrink-0 px-4 pb-2 pt-2 active:cursor-grabbing"
@@ -2053,7 +2047,9 @@ function PvzPointSelector({
           </div>
         ) : null}
 
-        <div className={`${sheetScrollClass} overflow-y-auto overscroll-y-contain px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
+        <div
+          className={`${sheetScrollClassEffective} overflow-y-auto overscroll-y-contain px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}
+        >
           {showPreview && sheetPoint && !sheetExpanded ? (
             <div className="pb-1">
               <div className="space-y-3">
@@ -2074,7 +2070,7 @@ function PvzPointSelector({
                 <button
                   type="button"
                   onClick={() => onSelect(sheetPoint.id)}
-                  className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                  className="w-full rounded-xl border border-neutral-900 bg-white py-3 text-sm font-semibold text-neutral-900 transition hover:bg-neutral-50"
                 >
                   Выбрать
                 </button>
@@ -2107,7 +2103,7 @@ function PvzPointSelector({
                           <button
                             type="button"
                             onClick={() => onSelect(point.id)}
-                            className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
+                            className="shrink-0 rounded-xl border border-neutral-900 bg-white px-4 py-2 text-xs font-semibold text-neutral-900 transition hover:bg-neutral-50"
                             aria-pressed={selected}
                           >
                             Выбрать

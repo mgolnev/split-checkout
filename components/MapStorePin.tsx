@@ -4,6 +4,8 @@
 export const MAP_STORE_PIN_ANCHOR_OFFSET_X_PX = 38;
 
 type MapStorePinProps = {
+  /** Текст в чёрном круге: по умолчанию GJ; для ПВЗ на карте — «ПВЗ». */
+  brandMark?: string;
   /** Готовые подписи (как из pickupStorePinLines) */
   line1?: string;
   line2?: string | null;
@@ -16,10 +18,11 @@ type MapStorePinProps = {
 };
 
 /**
- * Кастомный HTML-overlay пина: круг GJ + белая плашка + указатель.
+ * Кастомный HTML-overlay пина: круг (GJ или ПВЗ) + белая плашка + указатель.
  * Якорь геоточки — центр нижней круглой точки; позиционируйте контейнер с учётом {@link MAP_STORE_PIN_ANCHOR_OFFSET_X_PX}.
  */
 export function MapStorePin({
+  brandMark = "GJ",
   line1: line1Prop,
   line2: line2Prop,
   todayCount,
@@ -45,8 +48,12 @@ export function MapStorePin({
     >
       {/* Колонка: круг + хвост — треугольник без зазора под кругом */}
       <div className="flex w-[76px] shrink-0 flex-col items-center">
-        <div className="relative z-10 flex h-[76px] w-[76px] shrink-0 items-center justify-center rounded-full bg-[#050505] text-[18px] font-bold tracking-[0.5px] text-white">
-          GJ
+        <div
+          className={`relative z-10 flex h-[76px] w-[76px] shrink-0 items-center justify-center rounded-full bg-[#050505] font-bold tracking-[0.5px] text-white ${
+            brandMark.length > 2 ? "text-[12px] leading-tight sm:text-[13px]" : "text-[18px]"
+          }`}
+        >
+          <span className="whitespace-nowrap px-0.5 text-center">{brandMark}</span>
           {wasLastChoice ? (
             <span
               className="absolute -right-0.5 -top-0.5 z-[1] flex h-3.5 w-3.5 items-center justify-center rounded-full bg-neutral-800 text-[7px] leading-none text-white"
