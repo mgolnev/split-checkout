@@ -24,6 +24,7 @@ import {
 } from "@/lib/cart-method-summaries";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { formatHoldNoticeForPart } from "@/lib/hold-display";
+import { MapStorePin } from "@/components/MapStorePin";
 import type {
   AlternativeMethodOption,
   CartLine,
@@ -502,6 +503,11 @@ function pickupCollectDateLong(summary?: PickupStoreSummary): string | null {
   return match?.[1] ?? null;
 }
 
+function pickupCollectAllStoreLine(summary?: PickupStoreSummary): string {
+  const longDate = pickupCollectDateLong(summary);
+  return longDate ? `Привезём все товары в этот магазин ${longDate}` : "Привезём все товары в этот магазин";
+}
+
 function pickupCollectDateShort(summary?: PickupStoreSummary): string | null {
   const raw = summary?.collectThumb?.leadText?.trim();
   if (!raw) return null;
@@ -523,9 +529,15 @@ function pickupCollectPinLine(summary?: PickupStoreSummary): string {
   return shortDate ? `Привезём ${shortDate}` : "Привезём позже";
 }
 
-function pickupCollectAllStoreLine(summary?: PickupStoreSummary): string {
-  const longDate = pickupCollectDateLong(summary);
-  return longDate ? `Привезём все товары в этот магазин ${longDate}` : "Привезём все товары в этот магазин";
+/** Строки на пине карты (как подпись в балуне Яндекса). */
+function pickupStorePinLines(summary?: PickupStoreSummary): { line1: string; line2?: string } {
+  const kind = pickupStoreScenarioKind(summary);
+  if (kind === "empty" || !summary) return { line1: "—" };
+  if (kind === "today_all") return { line1: "Все сегодня" };
+  if (kind === "today_later") return { line1: `${summary.reserveUnits} сегодня`, line2: `${summary.collectUnits} позже` };
+  if (kind === "later_all") return { line1: pickupCollectPinLine(summary) };
+  if (kind === "later_partial") return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
+  return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
 }
 
 /** Выше = лучше: всё сегодня → сегодня+позже → всё позже → частично позже → не собрать. */
@@ -546,17 +558,6 @@ function pickupStoreSortScore(summary?: PickupStoreSummary): number {
     default:
       return -100_000 - (summary.remainderUnits ?? 0);
   }
-}
-
-/** Строки на пине карты: решение для клиента, без `0 сегодня`. */
-function pickupStorePinLines(summary?: PickupStoreSummary): { line1: string; line2?: string } {
-  const kind = pickupStoreScenarioKind(summary);
-  if (kind === "empty" || !summary) return { line1: "—" };
-  if (kind === "today_all") return { line1: "Все сегодня" };
-  if (kind === "today_later") return { line1: `${summary.reserveUnits} сегодня`, line2: `${summary.collectUnits} позже` };
-  if (kind === "later_all") return { line1: pickupCollectPinLine(summary) };
-  if (kind === "later_partial") return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
-  return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
 }
 
 function sortPickupStoresByScenario(list: PickupStoreOption[]): PickupStoreOption[] {
@@ -620,71 +621,6 @@ function pickupStoreTone(summary?: PickupStoreSummary) {
   };
 }
 
-function pickupStorePinTailClass(summary?: PickupStoreSummary) {
-  const kind = pickupStoreScenarioKind(summary);
-  if (kind === "today_all" || kind === "today_later") return "bg-neutral-950";
-  if (kind === "later_all" || kind === "later_partial") return "bg-neutral-500";
-  if (kind === "incomplete") return "bg-neutral-400";
-  return "bg-neutral-300";
-}
-
-function pickupStoreGjMarkerClass(summary?: PickupStoreSummary) {
-  const kind = pickupStoreScenarioKind(summary);
-  if (kind === "today_all" || kind === "today_later") return "border-neutral-950 bg-neutral-950 text-white";
-  if (kind === "later_all" || kind === "later_partial") return "border-neutral-300 bg-white text-neutral-700";
-  if (kind === "incomplete") return "border-neutral-300 bg-white text-neutral-700";
-  return "border-neutral-300 bg-white text-neutral-500";
-}
-
-function pickupStoreGjLogoClass(summary?: PickupStoreSummary) {
-  const kind = pickupStoreScenarioKind(summary);
-  if (kind === "today_all" || kind === "today_later") return "bg-white text-neutral-950";
-  return "bg-neutral-950 text-white";
-}
-
-function pickupStoreGjPinSizeClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupStoreScenarioKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
-  if (primary) return "min-w-[8rem] rounded-2xl px-2.5 py-2";
-  return "min-w-[6.6rem] rounded-2xl px-2.5 py-1.5";
-}
-
-function pickupStoreGjPinShadowClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupStoreScenarioKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
-  if (primary) return "shadow-[0_10px_22px_rgba(0,0,0,0.22)]";
-  return "shadow-[0_6px_14px_rgba(0,0,0,0.12)]";
-}
-
-function pickupStoreGjLogoSizeClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupStoreScenarioKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
-  if (primary) return "h-8 w-12 rounded-lg text-[13px]";
-  return "h-7 w-10 rounded-lg text-[11px]";
-}
-
-function pickupStoreGjTextClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupStoreScenarioKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
-  if (primary) return { line1: "text-[15px] font-bold leading-tight", line2: "text-[13px] font-bold leading-tight" };
-  return { line1: "text-[13px] font-bold leading-tight", line2: "text-[11px] font-bold leading-tight" };
-}
-
-function pickupStoreGjAnchorClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
-  const kind = pickupStoreScenarioKind(summary);
-  const primary = opts.pinOpen || (opts.recommended && (kind === "today_all" || kind === "today_later"));
-  if (primary) {
-    return {
-      stem: "top-full h-4 w-0.5",
-      dot: "top-[calc(100%+0.85rem)] h-3.5 w-3.5 border-[3px]",
-    };
-  }
-  return {
-    stem: "top-full h-3.5 w-0.5",
-    dot: "top-[calc(100%+0.75rem)] h-3 w-3 border-2",
-  };
-}
-
 /** Одна строка под названием магазина в свёрнутой карточке (тот же смысл, что на пине). */
 function pickupStoreCompactScenarioLine(summary?: PickupStoreSummary): string {
   if (!summary || summary.totalUnits <= 0) return "Нет состава корзины для оценки";
@@ -704,7 +640,7 @@ function pickupStorePinEmphasisClass(
   opts: { recommended: boolean; pinOpen: boolean },
 ): string {
   const kind = pickupStoreScenarioKind(summary);
-  if (opts.pinOpen) return "z-[35] scale-[1.05] ring-4 ring-black/15";
+  if (opts.pinOpen) return "z-[35] scale-[1.06] ring-2 ring-black/25";
   if ((kind === "today_all" || kind === "today_later") && opts.recommended) return "z-[14] scale-[1.03] ring-2 ring-black/10";
   if (kind === "incomplete" || kind === "later_partial") return "z-[8] scale-[0.95] opacity-70";
   if (kind === "later_all") return "z-[9] opacity-80";
@@ -1194,20 +1130,12 @@ function PickupStoreSelector({
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
         {showPreview ? <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden /> : null}
         {mapStores.map((store) => {
-          const markerClass = pickupStoreGjMarkerClass(store.summary);
-          const logoClass = pickupStoreGjLogoClass(store.summary);
-          const tailClass = pickupStorePinTailClass(store.summary);
+          const pinLines = pickupStorePinLines(store.summary);
           const pos = mapPinPosition(store.id);
           const pinOpen = mapPreviewStoreId === store.id;
-          const wasLastChoice = lastChosenStoreId === store.id;
-          const pinLines = pickupStorePinLines(store.summary);
           const recommended = recommendedStoreId === store.id;
           const emphasis = pickupStorePinEmphasisClass(store.summary, { recommended, pinOpen });
-          const pinSize = pickupStoreGjPinSizeClass(store.summary, { recommended, pinOpen });
-          const pinShadow = pickupStoreGjPinShadowClass(store.summary, { recommended, pinOpen });
-          const logoSize = pickupStoreGjLogoSizeClass(store.summary, { recommended, pinOpen });
-          const textSize = pickupStoreGjTextClass(store.summary, { recommended, pinOpen });
-          const anchorSize = pickupStoreGjAnchorClass(store.summary, { recommended, pinOpen });
+          const selected = !pinOpen && selectedStoreId === store.id;
           return (
             <button
               key={store.id}
@@ -1218,42 +1146,18 @@ function PickupStoreSelector({
                 setMapPreviewStoreId(store.id);
                 setSheetMode("preview");
               }}
-              className={`pointer-events-auto relative flex max-w-[10rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2 border-2 text-left transition ${markerClass} ${pinSize} ${pinShadow} ${emphasis} ${
-                !pinOpen && selectedStoreId === store.id ? "ring-2 ring-black/25" : ""
-              }`}
-              style={{ position: "absolute", left: pos.left, top: pos.top }}
+              className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis}`}
+              style={{ left: pos.left, top: pos.top }}
               aria-pressed={pinOpen}
               aria-expanded={pinOpen}
               aria-label={`${store.name}. ${pickupStoreCompactScenarioLine(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
             >
-              <span
-                className={`absolute left-1/2 -translate-x-1/2 ${anchorSize.stem} ${tailClass}`}
-                aria-hidden
+              <MapStorePin
+                line1={pinLines.line1}
+                line2={pinLines.line2}
+                selected={selected}
+                wasLastChoice={lastChosenStoreId === store.id}
               />
-              <span
-                className={`absolute left-1/2 -translate-x-1/2 rounded-full border-white shadow-[0_2px_6px_rgba(0,0,0,0.2)] ${anchorSize.dot} ${tailClass}`}
-                aria-hidden
-              />
-              {wasLastChoice ? (
-                <span
-                  className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white"
-                  title="Выбирали в прошлый раз"
-                >
-                  ↻
-                </span>
-              ) : null}
-              <span
-                className={`relative z-[1] flex shrink-0 items-center justify-center font-black leading-none tracking-normal ${logoClass} ${logoSize}`}
-                aria-hidden
-              >
-                GJ
-              </span>
-              <span className="relative z-[1] flex min-w-0 flex-col gap-0 leading-tight">
-                <span className={textSize.line1}>{pinLines.line1}</span>
-                {pinLines.line2 ? (
-                  <span className={`${textSize.line2} opacity-95`}>{pinLines.line2}</span>
-                ) : null}
-              </span>
             </button>
           );
         })}
