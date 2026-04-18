@@ -141,14 +141,6 @@ function remainderLinesMultisetEqual(a: ReadonlyArray<RemainderLine>, b: Readonl
   return true;
 }
 
-function pluralizeDays(n: number) {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "день";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "дня";
-  return "дней";
-}
-
 function pluralizeProducts(n: number) {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -454,17 +446,45 @@ function methodSummaryFromPvzOption(option: AlternativeMethodOption | null | und
   };
 }
 
-function pickupStoreRank(summary?: PickupStoreSummary) {
-  if (!summary || summary.availableUnits <= 0) return 0;
-  if (summary.hasFullCoverage && summary.collectUnits === 0) return 4;
-  if (summary.hasFullCoverage) return 3;
-  return 2;
+/** Выше = лучше для сортировки: все сейчас → полная корзина с позже → неполная корзина. */
+function pickupStoreSortScore(summary?: PickupStoreSummary): number {
+  if (!summary || summary.totalUnits <= 0) return 0;
+  if (summary.availableUnits <= 0) return -100_000 - (summary.remainderUnits ?? 0);
+  if (summary.hasFullCoverage && summary.collectUnits === 0) {
+    return 1_000_000 + summary.reserveUnits * 100 + summary.totalUnits;
+  }
+  if (summary.hasFullCoverage) {
+    return 500_000 + summary.reserveUnits * 1_000 + summary.collectUnits;
+  }
+  return 100_000 + summary.availableUnits * 1_000 + summary.reserveUnits;
 }
 
-function pickupStoreCountLabel(summary?: PickupStoreSummary) {
-  if (!summary || summary.totalUnits <= 0) return "Нет данных";
-  if (summary.availableUnits <= 0) return `0 из ${summary.totalUnits} товаров`;
-  return `${summary.availableUnits} из ${summary.totalUnits} товаров`;
+type PickupPinKind = "ideal" | "split_full" | "incomplete" | "empty";
+
+function pickupPinKind(summary?: PickupStoreSummary): PickupPinKind {
+  if (!summary || summary.totalUnits <= 0) return "empty";
+  if (summary.availableUnits <= 0) return "incomplete";
+  if (!summary.hasFullCoverage) return "incomplete";
+  if (summary.collectUnits === 0) return "ideal";
+  return "split_full";
+}
+
+/** Строки на пине карты (единый язык: A — одна строка, B — две, C — только «X из Y»). */
+function pickupStorePinLines(summary?: PickupStoreSummary): { line1: string; line2?: string } {
+  const k = pickupPinKind(summary);
+  if (k === "empty" || !summary) return { line1: "—" };
+  if (summary.availableUnits <= 0) return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
+  if (k === "ideal") return { line1: "Все сейчас" };
+  if (k === "split_full") return { line1: `${summary.reserveUnits} сейчас`, line2: `${summary.collectUnits} позже` };
+  return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
+}
+
+function sortPickupStoresByScenario(list: PickupStoreOption[]): PickupStoreOption[] {
+  return [...list].sort((a, b) => {
+    const d = pickupStoreSortScore(b.summary) - pickupStoreSortScore(a.summary);
+    if (d !== 0) return d;
+    return a.name.localeCompare(b.name, "ru");
+  });
 }
 
 function pickupStoreStatusTitle(summary?: PickupStoreSummary) {
@@ -504,16 +524,128 @@ function pickupStoreTone(summary?: PickupStoreSummary) {
   }
   if (summary.hasFullCoverage) {
     return {
-      marker: "border-blue-600 bg-blue-600 text-white",
-      accent: "bg-blue-100 text-blue-800",
-      card: "border-blue-200 bg-blue-50/60",
+      marker: "border-amber-500 bg-amber-500 text-neutral-950",
+      accent: "bg-amber-100 text-amber-950",
+      card: "border-amber-200 bg-amber-50/60",
     };
   }
   return {
-    marker: "border-amber-500 bg-amber-500 text-white",
-    accent: "bg-amber-100 text-amber-800",
-    card: "border-amber-200 bg-amber-50/60",
+    marker: "border-neutral-400 bg-neutral-200 text-neutral-700",
+    accent: "bg-neutral-100 text-neutral-600",
+    card: "border-neutral-200 bg-neutral-50/90",
   };
+}
+
+function pickupStorePinTailClass(summary?: PickupStoreSummary) {
+  const kind = pickupPinKind(summary);
+  if (kind === "ideal") return "bg-neutral-950";
+  if (kind === "split_full") return "bg-neutral-900";
+  if (kind === "incomplete") return "bg-neutral-400";
+  return "bg-neutral-300";
+}
+
+function pickupStoreGjMarkerClass(summary?: PickupStoreSummary) {
+  const kind = pickupPinKind(summary);
+  if (kind === "ideal") return "border-neutral-950 bg-neutral-950 text-white";
+  if (kind === "split_full") return "border-neutral-900 bg-neutral-900 text-white";
+  if (kind === "incomplete") return "border-neutral-300 bg-white text-neutral-700";
+  return "border-neutral-300 bg-white text-neutral-500";
+}
+
+function pickupStoreGjLogoClass(summary?: PickupStoreSummary) {
+  const kind = pickupPinKind(summary);
+  if (kind === "ideal" || kind === "split_full") return "bg-white text-neutral-950";
+  return "bg-neutral-950 text-white";
+}
+
+function pickupStoreGjPinSizeClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
+  const kind = pickupPinKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  if (primary) return "min-w-[8rem] rounded-2xl px-2.5 py-2";
+  return "min-w-[6.6rem] rounded-2xl px-2.5 py-1.5";
+}
+
+function pickupStoreGjPinShadowClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
+  const kind = pickupPinKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  if (primary) return "shadow-[0_10px_22px_rgba(0,0,0,0.22)]";
+  return "shadow-[0_6px_14px_rgba(0,0,0,0.12)]";
+}
+
+function pickupStoreGjLogoSizeClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
+  const kind = pickupPinKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  if (primary) return "h-8 w-12 rounded-lg text-[13px]";
+  return "h-7 w-10 rounded-lg text-[11px]";
+}
+
+function pickupStoreGjTextClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
+  const kind = pickupPinKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  if (primary) return { line1: "text-[15px] font-bold leading-tight", line2: "text-[13px] font-bold leading-tight" };
+  return { line1: "text-[13px] font-bold leading-tight", line2: "text-[11px] font-bold leading-tight" };
+}
+
+function pickupStoreGjAnchorClass(summary: PickupStoreSummary | undefined, opts: { recommended: boolean; pinOpen: boolean }) {
+  const kind = pickupPinKind(summary);
+  const primary = opts.pinOpen || (opts.recommended && (kind === "ideal" || kind === "split_full"));
+  if (primary) {
+    return {
+      stem: "top-full h-4 w-0.5",
+      dot: "top-[calc(100%+0.85rem)] h-3.5 w-3.5 border-[3px]",
+    };
+  }
+  return {
+    stem: "top-full h-3.5 w-0.5",
+    dot: "top-[calc(100%+0.75rem)] h-3 w-3 border-2",
+  };
+}
+
+/** Одна строка под названием магазина в свёрнутой карточке (тот же смысл, что на пине). */
+function pickupStoreCompactScenarioLine(summary?: PickupStoreSummary): string {
+  if (!summary || summary.totalUnits <= 0) return "Нет состава корзины для оценки";
+  if (summary.availableUnits <= 0) return "Нет доступных позиций для самовывоза";
+  const { line1, line2 } = pickupStorePinLines(summary);
+  return line2 ? `${line1} · ${line2}` : line1;
+}
+
+function pickupStorePinEmphasisClass(
+  summary: PickupStoreSummary | undefined,
+  opts: { recommended: boolean; pinOpen: boolean },
+): string {
+  const kind = pickupPinKind(summary);
+  if (opts.pinOpen) return "z-[35] scale-[1.05] ring-4 ring-black/15";
+  if ((kind === "ideal" || kind === "split_full") && opts.recommended) return "z-[14] scale-[1.03] ring-2 ring-black/10";
+  if (kind === "incomplete") return "z-[8] scale-[0.95] opacity-70";
+  if (kind === "split_full") return "z-[10]";
+  return "z-[11]";
+}
+
+type PickupStoreListFilter = "all" | "full" | "today" | "partial";
+type PickupBottomSheetMode = "collapsed" | "preview" | "expanded";
+
+function storeMatchesPickupListFilter(store: PickupStoreOption, filter: PickupStoreListFilter): boolean {
+  if (filter === "all") return true;
+  const s = store.summary;
+  if (!s || s.availableUnits <= 0) return false;
+  switch (filter) {
+    case "full":
+      return s.hasFullCoverage;
+    case "today":
+      return s.hasFullCoverage && s.collectUnits === 0 && s.remainderUnits === 0;
+    case "partial":
+      return !s.hasFullCoverage;
+    default:
+      return true;
+  }
+}
+
+function sortPickupStoresForList(list: PickupStoreOption[]): PickupStoreOption[] {
+  return [...list].sort((a, b) => {
+    const d = pickupStoreSortScore(b.summary) - pickupStoreSortScore(a.summary);
+    if (d !== 0) return d;
+    return a.name.localeCompare(b.name, "ru");
+  });
 }
 
 function pvzPointCountLabel(summary?: MethodSummary) {
@@ -539,26 +671,48 @@ function pvzPointStatusDetail(summary?: MethodSummary) {
   return `Через ПВЗ можно оформить ${summary.availableUnits} из ${summary.totalUnits} товаров. Остальные потребуется оформить другим способом.`;
 }
 
-function pvzPointTone(summary?: MethodSummary) {
-  if (!summary || summary.availableUnits <= 0) {
-    return {
-      marker: "border-neutral-300 bg-white text-neutral-500",
-      accent: "bg-neutral-100 text-neutral-700",
-      card: "border-neutral-200 bg-white",
-    };
+function pvzPointPinLine(summary?: MethodSummary): string {
+  if (!summary || summary.totalUnits <= 0) return "Нет данных";
+  if (summary.availableUnits >= summary.totalUnits) return "Все товары";
+  return `${summary.availableUnits} из ${summary.totalUnits}`;
+}
+
+function pvzPointCompactScenarioLine(summary?: MethodSummary): string {
+  if (!summary || summary.totalUnits <= 0) return "Нет данных по корзине";
+  if (summary.availableUnits <= 0) return `0 из ${summary.totalUnits}`;
+  if (summary.availableUnits >= summary.totalUnits) return "Все товары доступны";
+  return `${summary.availableUnits} из ${summary.totalUnits}`;
+}
+
+function pvzPointMarkerClass(summary?: MethodSummary) {
+  if (!summary || summary.availableUnits <= 0) return "border-neutral-300 bg-white text-neutral-500";
+  if (summary.availableUnits >= summary.totalUnits) return "border-neutral-950 bg-neutral-950 text-white";
+  return "border-neutral-300 bg-white text-neutral-700";
+}
+
+function pvzPointLogoClass(summary?: MethodSummary) {
+  if (summary && summary.availableUnits > 0 && summary.availableUnits >= summary.totalUnits) {
+    return "bg-white text-neutral-950";
   }
-  if (summary.availableUnits >= summary.totalUnits) {
-    return {
-      marker: "border-emerald-600 bg-emerald-600 text-white",
-      accent: "bg-emerald-100 text-emerald-800",
-      card: "border-emerald-200 bg-emerald-50/60",
-    };
+  return "bg-neutral-950 text-white";
+}
+
+function pvzPointTailClass(summary?: MethodSummary) {
+  if (!summary || summary.availableUnits <= 0) return "bg-neutral-400";
+  if (summary.availableUnits >= summary.totalUnits) return "bg-neutral-950";
+  return "bg-neutral-500";
+}
+
+function pvzPointEmphasisClass(
+  summary: MethodSummary | undefined,
+  opts: { recommended: boolean; pinOpen: boolean },
+): string {
+  if (opts.pinOpen) return "z-[35] scale-[1.05] ring-4 ring-black/15";
+  if (opts.recommended && summary && summary.availableUnits > 0) return "z-[14] scale-[1.03] ring-2 ring-black/10";
+  if (!summary || summary.availableUnits <= 0 || summary.availableUnits < summary.totalUnits) {
+    return "z-[8] scale-[0.95] opacity-75";
   }
-  return {
-    marker: "border-neutral-500 bg-neutral-600 text-white",
-    accent: "bg-neutral-100 text-neutral-800",
-    card: "border-neutral-200 bg-white",
-  };
+  return "z-[11]";
 }
 
 const PRODUCT_PLACEHOLDER = "/product-placeholder.svg";
@@ -647,48 +801,48 @@ function Stepper({
 
 type SheetProductRef = { image: string; name?: string };
 
-function SheetThumbLabeledRow({
-  label,
+function PickupStoreFulfillmentBlock({
+  title,
+  leadText,
+  benefitText,
   items,
   productsById,
-  leadText,
-  holdText,
 }: {
-  label: string;
+  title: string;
+  leadText?: string;
+  benefitText?: string;
   items: { productId: string; quantity: number }[];
   productsById: Record<string, SheetProductRef>;
-  /** Срок готовности / доставки (как в карточке отправления) */
-  leadText?: string;
-  /** Срок хранения (как в PartCard) */
-  holdText?: string;
 }) {
   if (items.length === 0) return null;
+  const compactTitle =
+    title === "Привезём в магазин" && leadText?.startsWith("Доставим в магазин ")
+      ? `Привезём в магазин ${leadText.replace("Доставим в магазин ", "")}`
+      : leadText
+        ? `${title} · ${leadText}`
+        : title;
   return (
-    <div className="rounded-xl border border-neutral-100 bg-neutral-50/70 p-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">{label}</p>
-      {leadText || holdText ? (
-        <div className="mt-1 space-y-0.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-neutral-600">
-          {leadText ? <p>{leadText}</p> : null}
-          {holdText ? <p>{holdText}</p> : null}
-        </div>
-      ) : null}
-      <div className="mt-2 flex flex-wrap gap-2">
+    <div className="border-t border-neutral-100 pt-3 first:border-t-0 first:pt-0">
+      <p className="text-[13px] font-semibold leading-snug text-neutral-700">{compactTitle}</p>
+      {benefitText ? <p className="cu-benefit mt-1 inline-flex">{benefitText}</p> : null}
+      <div className="mt-2 flex flex-wrap gap-2.5">
         {items.map((it, ix) => (
-          <div key={`${it.productId}-${ix}`} className="flex flex-col items-center gap-0.5">
-            <div className="relative aspect-[3/4] w-12 overflow-hidden rounded-md bg-neutral-100">
-              <SafeProductImage
-                src={productsById[it.productId]?.image ?? ""}
-                alt={productsById[it.productId]?.name ?? ""}
-                fill
-                className="object-cover"
-                sizes="48px"
-              />
-              {it.quantity >= 2 ? (
-                <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[2px] text-[7px] font-semibold leading-none text-white ring-1 ring-white/30">
-                  {it.quantity}
-                </span>
-              ) : null}
-            </div>
+          <div
+            key={`${title}-${it.productId}-${ix}`}
+            className="relative h-14 w-11 shrink-0 overflow-hidden rounded-lg bg-neutral-100 ring-1 ring-neutral-100"
+          >
+            <SafeProductImage
+              src={productsById[it.productId]?.image ?? ""}
+              alt={productsById[it.productId]?.name ?? ""}
+              fill
+              className="object-cover"
+              sizes="48px"
+            />
+            {it.quantity >= 2 ? (
+              <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-[8px] font-semibold leading-none text-white ring-1 ring-white/30">
+                {it.quantity}
+              </span>
+            ) : null}
           </div>
         ))}
       </div>
@@ -702,6 +856,7 @@ function PickupStoreSelector({
   lastChosenStoreId,
   productsById,
   onSelect,
+  onClose,
 }: {
   stores: PickupStoreOption[];
   selectedStoreId: string;
@@ -709,14 +864,92 @@ function PickupStoreSelector({
   lastChosenStoreId?: string | null;
   productsById: Record<string, SheetProductRef>;
   onSelect: (storeId: string) => void;
+  onClose: () => void;
 }) {
   const [storeSearch, setStoreSearch] = useState("");
+  const [listFilter, setListFilter] = useState<PickupStoreListFilter>("all");
+  const [searchActive, setSearchActive] = useState(false);
+  const [expandedStoreIds, setExpandedStoreIds] = useState<Record<string, boolean>>({});
+  const [mapPreviewStoreId, setMapPreviewStoreId] = useState<string | null>(null);
+  const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
+  const [searchViewportStyle, setSearchViewportStyle] = useState<{ top: number; bottom: number } | null>(null);
+  const sheetDragRef = useRef<{ startY: number } | null>(null);
+  const ignoreSheetClickRef = useRef(false);
+
+  const searchMatchedStores = useMemo(() => {
+    const q = storeSearch.trim().toLocaleLowerCase("ru");
+    const base = !q ? stores : stores.filter((store) => store.name.toLocaleLowerCase("ru").includes(q));
+    return sortPickupStoresByScenario(base);
+  }, [stores, storeSearch]);
 
   const filteredStores = useMemo(() => {
-    const q = storeSearch.trim().toLocaleLowerCase("ru");
-    if (!q) return stores;
-    return stores.filter((store) => store.name.toLocaleLowerCase("ru").includes(q));
-  }, [stores, storeSearch]);
+    let base = searchMatchedStores;
+    if (listFilter !== "all") {
+      base = base.filter((s) => storeMatchesPickupListFilter(s, listFilter));
+    }
+    return sortPickupStoresForList(base);
+  }, [searchMatchedStores, listFilter]);
+
+  const toggleExpandedStore = (id: string) => {
+    setExpandedStoreIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const mapPreviewStore = useMemo(
+    () => (mapPreviewStoreId ? filteredStores.find((s) => s.id === mapPreviewStoreId) ?? null : null),
+    [filteredStores, mapPreviewStoreId],
+  );
+
+  useEffect(() => {
+    if (mapPreviewStoreId && !filteredStores.some((s) => s.id === mapPreviewStoreId)) {
+      setMapPreviewStoreId(null);
+      setSheetMode("collapsed");
+    }
+  }, [filteredStores, mapPreviewStoreId]);
+
+  useLayoutEffect(() => {
+    if (!searchActive) {
+      setSearchViewportStyle(null);
+      return;
+    }
+
+    const updateSearchViewportStyle = () => {
+      const viewport = window.visualViewport;
+      if (!viewport) {
+        setSearchViewportStyle({ top: 88, bottom: 0 });
+        return;
+      }
+
+      setSearchViewportStyle({
+        top: Math.max(16, Math.round(viewport.offsetTop + 16)),
+        bottom: Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
+      });
+    };
+
+    updateSearchViewportStyle();
+    window.visualViewport?.addEventListener("resize", updateSearchViewportStyle);
+    window.visualViewport?.addEventListener("scroll", updateSearchViewportStyle);
+    window.addEventListener("orientationchange", updateSearchViewportStyle);
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateSearchViewportStyle);
+      window.visualViewport?.removeEventListener("scroll", updateSearchViewportStyle);
+      window.removeEventListener("orientationchange", updateSearchViewportStyle);
+    };
+  }, [searchActive]);
+
+  const recommendedStore = filteredStores[0] ?? null;
+  const recommendedStoreId = recommendedStore?.id ?? null;
+  const mapPinPosition = useMemo(() => {
+    const rec = recommendedStoreId;
+    const others = filteredStores.filter((s) => s.id !== rec);
+    return (storeId: string): { left: string; top: string } => {
+      if (mapPreviewStoreId === storeId) return { left: "50%", top: "25%" };
+      if (rec && storeId === rec) return { left: "50%", top: "42%" };
+      const ix = others.findIndex((s) => s.id === storeId);
+      const p = PICKUP_MAP_POSITIONS[(ix >= 0 ? ix : 0) % PICKUP_MAP_POSITIONS.length]!;
+      return { left: p.left, top: p.top };
+    };
+  }, [filteredStores, mapPreviewStoreId, recommendedStoreId]);
 
   if (stores.length === 0) {
     return (
@@ -727,118 +960,471 @@ function PickupStoreSelector({
   }
 
   const mapStores = filteredStores;
+  const sheetStore = mapPreviewStore ?? recommendedStore ?? filteredStores[0] ?? null;
+  const sheetScenarioLine = sheetStore ? pickupStoreCompactScenarioLine(sheetStore.summary) : "";
+  const sheetExpanded = sheetMode === "expanded";
+  const showPreview = sheetMode === "preview" && !!sheetStore;
+  const sheetClass =
+    searchActive
+      ? "max-h-none"
+      : sheetMode === "expanded"
+        ? "max-h-[78dvh]"
+        : showPreview
+          ? "max-h-[calc(100dvh-7rem)]"
+          : "max-h-[34dvh]";
+  const sheetScrollClass = searchActive
+    ? "min-h-0 flex-1 max-h-none"
+    : showPreview
+      ? "max-h-[calc(100dvh-12rem)]"
+      : "max-h-[calc(78dvh-5.5rem)]";
+  const sheetPositionClass = searchActive ? "fixed bottom-0 left-0 right-0" : "absolute bottom-0 left-0 right-0";
+  const sheetTransitionClass = searchActive ? "transition-none" : "transition-[max-height,top] duration-200";
+  const sheetStyle = searchActive && searchViewportStyle ? searchViewportStyle : undefined;
+
+  const handleSheetPointerUp = (clientY: number) => {
+    const start = sheetDragRef.current?.startY;
+    sheetDragRef.current = null;
+    if (start == null) return;
+    const delta = clientY - start;
+    if (delta < -28) {
+      ignoreSheetClickRef.current = true;
+      window.setTimeout(() => {
+        ignoreSheetClickRef.current = false;
+      }, 0);
+      setSheetMode("expanded");
+      return;
+    }
+    if (delta > 28) {
+      ignoreSheetClickRef.current = true;
+      window.setTimeout(() => {
+        ignoreSheetClickRef.current = false;
+      }, 0);
+      setSheetMode(mapPreviewStore ? "preview" : "collapsed");
+      setSearchActive(false);
+    }
+  };
+
+  const filterChip = (id: PickupStoreListFilter, label: string) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => {
+        setListFilter(id);
+        setSearchActive(false);
+        setMapPreviewStoreId(null);
+        setSheetMode("collapsed");
+      }}
+      className={`shrink-0 rounded-full border px-3 py-2 text-[12px] font-semibold shadow-sm backdrop-blur-md transition ${
+        listFilter === id ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white/95 text-neutral-800"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-2xl border border-neutral-200 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] p-3">
-        <div className="relative h-52 overflow-hidden rounded-xl border border-white/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]">
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-          {mapStores.map((store) => {
-            const tone = pickupStoreTone(store.summary);
-            const storeIx = stores.findIndex((s) => s.id === store.id);
-            const pos = PICKUP_MAP_POSITIONS[(storeIx >= 0 ? storeIx : 0) % PICKUP_MAP_POSITIONS.length]!;
-            const selected = selectedStoreId === store.id;
-            const wasLastChoice = lastChosenStoreId === store.id;
-            return (
-              <button
-                key={store.id}
-                type="button"
-                onClick={() => onSelect(store.id)}
-                className={`relative absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-1 text-[11px] font-semibold shadow-sm transition ${tone.marker} ${selected ? "scale-110 ring-4 ring-black/10" : ""}`}
-                style={{ left: pos.left, top: pos.top }}
-                aria-pressed={selected}
-                aria-label={`${store.name}. ${pickupStoreCountLabel(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md"
+        aria-label="Закрыть карту выбора магазина"
+      >
+        ×
+      </button>
+      <div
+        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+        onClick={() => {
+          setSearchActive(false);
+          setMapPreviewStoreId(null);
+          setSheetMode("collapsed");
+        }}
+        aria-hidden
+      />
+      <div
+        className="absolute inset-0 z-[1] overflow-hidden"
+        onClick={() => {
+          setSearchActive(false);
+          setMapPreviewStoreId(null);
+          setSheetMode("collapsed");
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
+        {showPreview ? <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden /> : null}
+        {mapStores.map((store) => {
+          const markerClass = pickupStoreGjMarkerClass(store.summary);
+          const logoClass = pickupStoreGjLogoClass(store.summary);
+          const tailClass = pickupStorePinTailClass(store.summary);
+          const pos = mapPinPosition(store.id);
+          const pinOpen = mapPreviewStoreId === store.id;
+          const wasLastChoice = lastChosenStoreId === store.id;
+          const pinLines = pickupStorePinLines(store.summary);
+          const recommended = recommendedStoreId === store.id;
+          const emphasis = pickupStorePinEmphasisClass(store.summary, { recommended, pinOpen });
+          const pinSize = pickupStoreGjPinSizeClass(store.summary, { recommended, pinOpen });
+          const pinShadow = pickupStoreGjPinShadowClass(store.summary, { recommended, pinOpen });
+          const logoSize = pickupStoreGjLogoSizeClass(store.summary, { recommended, pinOpen });
+          const textSize = pickupStoreGjTextClass(store.summary, { recommended, pinOpen });
+          const anchorSize = pickupStoreGjAnchorClass(store.summary, { recommended, pinOpen });
+          return (
+            <button
+              key={store.id}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSearchActive(false);
+                setMapPreviewStoreId(store.id);
+                setSheetMode("preview");
+              }}
+              className={`pointer-events-auto relative flex max-w-[10rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2 border-2 text-left transition ${markerClass} ${pinSize} ${pinShadow} ${emphasis} ${
+                !pinOpen && selectedStoreId === store.id ? "ring-2 ring-black/25" : ""
+              }`}
+              style={{ position: "absolute", left: pos.left, top: pos.top }}
+              aria-pressed={pinOpen}
+              aria-expanded={pinOpen}
+              aria-label={`${store.name}. ${pickupStoreCompactScenarioLine(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
+            >
+              <span
+                className={`absolute left-1/2 -translate-x-1/2 ${anchorSize.stem} ${tailClass}`}
+                aria-hidden
+              />
+              <span
+                className={`absolute left-1/2 -translate-x-1/2 rounded-full border-white shadow-[0_2px_6px_rgba(0,0,0,0.2)] ${anchorSize.dot} ${tailClass}`}
+                aria-hidden
+              />
+              {wasLastChoice ? (
+                <span
+                  className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white"
+                  title="Выбирали в прошлый раз"
+                >
+                  ↻
+                </span>
+              ) : null}
+              <span
+                className={`relative z-[1] flex shrink-0 items-center justify-center font-black leading-none tracking-normal ${logoClass} ${logoSize}`}
+                aria-hidden
               >
-                {wasLastChoice ? (
-                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white" title="Выбирали в прошлый раз">
-                    ↻
-                  </span>
+                GJ
+              </span>
+              <span className="relative z-[1] flex min-w-0 flex-col gap-0 leading-tight">
+                <span className={textSize.line1}>{pinLines.line1}</span>
+                {pinLines.line2 ? (
+                  <span className={`${textSize.line2} opacity-95`}>{pinLines.line2}</span>
                 ) : null}
-                {store.summary?.availableUnits ?? 0}/{store.summary?.totalUnits ?? 0}
-              </button>
-            );
-          })}
-        </div>
-        <label className="mt-3 block">
-          <span className="sr-only">Поиск магазина</span>
-          <input
-            type="search"
-            value={storeSearch}
-            onChange={(e) => setStoreSearch(e.target.value)}
-            placeholder="Найти магазин"
-            autoComplete="off"
-            className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-base outline-none focus:border-neutral-400"
-          />
-        </label>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="space-y-2">
-        {filteredStores.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-            По запросу магазины не найдены.
+      <div
+        role="region"
+        aria-label="Результаты поиска магазинов"
+        className={`${sheetPositionClass} z-40 flex flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
+        style={sheetStyle}
+      >
+        <div
+          className="cursor-grab px-4 pb-2 pt-2 active:cursor-grabbing"
+          onPointerDown={(event) => {
+            sheetDragRef.current = { startY: event.clientY };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerUp={(event) => handleSheetPointerUp(event.clientY)}
+          onPointerCancel={() => {
+            sheetDragRef.current = null;
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              if (ignoreSheetClickRef.current) return;
+              setSheetMode((prev) => (prev === "expanded" ? (mapPreviewStore ? "preview" : "collapsed") : "expanded"));
+            }}
+            className="block w-full rounded-xl outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-neutral-900"
+            aria-expanded={sheetExpanded}
+          >
+            <span className="mx-auto block h-1 w-10 rounded-full bg-neutral-200" aria-hidden />
+          </button>
+        </div>
+        {showPreview ? (
+          <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-2">
+            <p className="min-w-0 flex-1 truncate text-left text-[22px] font-semibold leading-tight text-neutral-900">
+              {sheetStore?.name}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchActive(false);
+                setMapPreviewStoreId(null);
+                setSheetMode("collapsed");
+              }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-sm"
+              aria-label="Закрыть карточку магазина"
+            >
+              ×
+            </button>
           </div>
-        ) : (
-          filteredStores.map((store) => {
-            const tone = pickupStoreTone(store.summary);
-            const selected = selectedStoreId === store.id;
-            const wasLastChoice = lastChosenStoreId === store.id;
-            return (
-              <button
-                key={store.id}
-                type="button"
-                onClick={() => onSelect(store.id)}
-                className={`group w-full rounded-2xl border p-4 text-left transition ${selected ? "border-black bg-white" : "border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm"}`}
-                aria-pressed={selected}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[15px] font-semibold leading-tight">{store.name}</span>
-                      {wasLastChoice ? (
-                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
-                          Выбирали в прошлый раз
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-1.5 text-xs leading-relaxed text-neutral-500">{pickupStoreStatusDetail(store.summary)}</div>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
-                    {pickupStoreStatusTitle(store.summary)}
-                  </span>
-                </div>
-                {store.summary?.immediateLines?.length ||
-                store.summary?.laterLines?.length ||
-                store.summary?.unavailableLines?.length ? (
-                  <div className="mt-3 space-y-2.5 border-t border-neutral-100 pt-3">
-                    <SheetThumbLabeledRow
-                      label="Сразу в магазине"
-                      items={store.summary?.immediateLines ?? []}
-                      productsById={productsById}
-                      leadText={store.summary?.reserveThumb?.leadText}
-                      holdText={store.summary?.reserveThumb?.holdText}
-                    />
-                    <SheetThumbLabeledRow
-                      label="Привезём в магазин"
-                      items={store.summary?.laterLines ?? []}
-                      productsById={productsById}
-                      leadText={store.summary?.collectThumb?.leadText}
-                      holdText={store.summary?.collectThumb?.holdText}
-                    />
-                    <SheetThumbLabeledRow
-                      label="Недоступно здесь"
-                      items={store.summary?.unavailableLines ?? []}
-                      productsById={productsById}
-                      leadText={store.summary?.unavailableThumb?.leadText}
-                      holdText={store.summary?.unavailableThumb?.holdText}
-                    />
-                  </div>
+        ) : null}
+
+        {!showPreview ? (
+          <div className="shrink-0 px-4 pb-4">
+            <div className="flex items-center gap-2">
+              <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 focus-within:border-neutral-400">
+                <span className="sr-only">Поиск по магазинам</span>
+                <svg
+                  className="h-5 w-5 shrink-0 text-neutral-700"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  aria-hidden
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m16.5 16.5 4 4" />
+                </svg>
+                <input
+                  type="search"
+                  value={storeSearch}
+                  onFocus={() => {
+                    setSearchActive(true);
+                    setSheetMode("expanded");
+                    setMapPreviewStoreId(null);
+                  }}
+                  onChange={(e) => {
+                    setSearchActive(true);
+                    setStoreSearch(e.target.value);
+                    setMapPreviewStoreId(null);
+                    setSheetMode("expanded");
+                  }}
+                  placeholder="Поиск по магазинам"
+                  autoComplete="off"
+                  className="min-w-0 flex-1 bg-transparent text-base outline-none"
+                />
+              </label>
+              {searchActive || storeSearch.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStoreSearch("");
+                    setSearchActive(false);
+                    setSheetMode("collapsed");
+                  }}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl leading-none text-neutral-950 shadow-sm"
+                  aria-label="Свернуть поиск"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+            {!searchActive ? (
+              <div className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {filterChip("all", "Все")}
+                {filterChip("full", "Есть всё")}
+                {filterChip("today", "Сегодня")}
+                {filterChip("partial", "Частично")}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className={`${sheetScrollClass} overflow-y-auto overscroll-y-contain px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
+          {showPreview && sheetStore && !sheetExpanded ? (
+            <div className="pb-1">
+              <div className="space-y-3">
+                <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
+                  {sheetScenarioLine}
+                </p>
+                {lastChosenStoreId === sheetStore.id ? (
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                    Выбирали в прошлый раз
+                  </p>
                 ) : null}
-              </button>
-            );
-          })
-        )}
+                <PickupStoreFulfillmentBlock
+                  title="Сразу в магазине"
+                  leadText={sheetStore.summary?.reserveThumb?.leadText}
+                  benefitText="Бесплатно · примерка"
+                  items={sheetStore.summary?.immediateLines ?? []}
+                  productsById={productsById}
+                />
+                <PickupStoreFulfillmentBlock
+                  title="Привезём в магазин"
+                  leadText={sheetStore.summary?.collectThumb?.leadText}
+                  benefitText="Бесплатно"
+                  items={sheetStore.summary?.laterLines ?? []}
+                  productsById={productsById}
+                />
+              </div>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => onSelect(sheetStore.id)}
+                  className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                >
+                  Выбрать
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {sheetExpanded ? (
+            <div className="pb-4">
+              <div className="space-y-2">
+                {filteredStores.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+                    {storeSearch.trim()
+                      ? "По запросу магазины не найдены."
+                      : listFilter !== "all"
+                        ? "Нет магазинов с выбранным фильтром. Сбросьте фильтр или выберите все магазины."
+                        : "Магазины не найдены."}
+                  </div>
+                ) : (
+                  filteredStores.map((store) => {
+                    const selected = selectedStoreId === store.id;
+                    const wasLastChoice = lastChosenStoreId === store.id;
+                    const scenarioLine = pickupStoreCompactScenarioLine(store.summary);
+                    const detailsOpen = !!expandedStoreIds[store.id];
+                    const hasDetails =
+                      !!store.summary?.immediateLines?.length ||
+                      !!store.summary?.laterLines?.length;
+                    return (
+                      <div
+                        key={store.id}
+                        className={`rounded-2xl border bg-white p-3 transition sm:p-4 ${selected ? "border-black" : "border-neutral-200"}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 flex-1 text-[17px] font-semibold leading-tight text-neutral-900">
+                            {store.name}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => onSelect(store.id)}
+                            className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
+                            aria-pressed={selected}
+                          >
+                            Выбрать
+                          </button>
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
+                            {scenarioLine}
+                          </p>
+                          {wasLastChoice ? (
+                            <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                              Выбирали в прошлый раз
+                            </p>
+                          ) : null}
+                          {hasDetails ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandedStore(store.id)}
+                              className="flex w-fit items-center gap-1 text-xs font-semibold text-neutral-700 transition hover:text-neutral-950"
+                              aria-expanded={detailsOpen}
+                            >
+                              <span>{detailsOpen ? "Свернуть" : "Подробнее"}</span>
+                              <svg
+                                className={`mt-px h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                aria-hidden
+                              >
+                                <path d="M4 6.5 8 10l4-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          ) : null}
+                          {detailsOpen ? (
+                            <div className="space-y-3 border-t border-neutral-100 pt-3">
+                              <PickupStoreFulfillmentBlock
+                                title="Сразу в магазине"
+                                leadText={store.summary?.reserveThumb?.leadText}
+                                benefitText="Бесплатно · примерка"
+                                items={store.summary?.immediateLines ?? []}
+                                productsById={productsById}
+                              />
+                              <PickupStoreFulfillmentBlock
+                                title="Привезём в магазин"
+                                leadText={store.summary?.collectThumb?.leadText}
+                                benefitText="Бесплатно"
+                                items={store.summary?.laterLines ?? []}
+                                productsById={productsById}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
+  );
+}
+
+/** Общая шапка bottom-sheet как у выбора магазина/ПВЗ на чекауте (sticky + «Закрыть»). */
+function CheckoutSheetStickyHeader({
+  title,
+  onClose,
+  variant = "sticky",
+}: {
+  title: string;
+  onClose: () => void;
+  /** Плавающая шапка поверх полноэкранной карты (как в Яндекс.Картах). */
+  variant?: "sticky" | "floating";
+}) {
+  return (
+    <div
+      className={
+        variant === "floating"
+          ? "pointer-events-auto absolute left-0 right-0 top-0 z-40 border-b border-neutral-100/80 bg-white/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-sm backdrop-blur-md sm:px-5 sm:pb-4"
+          : "sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5"
+      }
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="cu-sheet-title">{title}</h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
+        >
+          Закрыть
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Карточка способа получения в том же визуальном языке, что горизонтальные вкладки на чекауте. */
+function CheckoutDeliveryOptionCard({
+  label,
+  subtitle,
+  selected,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  subtitle: string;
+  selected: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex w-full min-h-[75px] flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition ${
+        selected
+          ? "border-black bg-black text-white"
+          : "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
+      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+    >
+      <span className="cu-label-primary leading-tight text-inherit">{label}</span>
+      <p className={`text-xs leading-tight ${selected ? "text-white/95" : "text-neutral-600"}`}>{subtitle}</p>
+    </button>
   );
 }
 
@@ -864,34 +1450,21 @@ function PickupStoreSelectionOverlay({
 }) {
   if (!open) return null;
   return (
-    <div
-      className={`fixed inset-0 ${zOverlayClass} flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6`}
-    >
+    <div className={`fixed inset-0 ${zOverlayClass} flex items-stretch justify-stretch bg-black/45 p-0`}>
       <button type="button" aria-label="Закрыть выбор магазина" className="absolute inset-0" onClick={onDismiss} />
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+        className="relative z-10 flex h-full max-h-none w-full max-w-none flex-col overflow-hidden rounded-none bg-white shadow-2xl"
       >
-        <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="cu-sheet-title">Самовывоз из магазина</h3>
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
-            >
-              Закрыть
-            </button>
-          </div>
-        </div>
-        <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <PickupStoreSelector
             stores={stores}
             selectedStoreId={selectedStoreId}
             lastChosenStoreId={lastChosenStoreId}
             productsById={productsById}
             onSelect={onSelectStore}
+            onClose={onDismiss}
           />
         </div>
       </div>
@@ -927,28 +1500,14 @@ function PvzPointSelectionOverlay({
 }) {
   if (!open) return null;
   return (
-    <div
-      className={`fixed inset-0 ${zOverlayClass} flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6`}
-    >
+    <div className={`fixed inset-0 ${zOverlayClass} flex items-stretch justify-stretch bg-black/45 p-0`}>
       <button type="button" aria-label="Закрыть выбор ПВЗ" className="absolute inset-0" onClick={onDismiss} />
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+        className="relative z-10 flex h-full max-h-none w-full max-w-none flex-col overflow-hidden rounded-none bg-white shadow-2xl"
       >
-        <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="cu-sheet-title">Пункт выдачи заказа</h3>
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
-            >
-              Закрыть
-            </button>
-          </div>
-        </div>
-        <div className="px-4 pb-4 pt-1 sm:px-5 sm:pb-5">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <PvzPointSelector
             points={points}
             selectedPointId={selectedPointId}
@@ -958,6 +1517,7 @@ function PvzPointSelectionOverlay({
             pvzSheetThumbMeta={pvzSheetThumbMeta}
             productsById={productsById}
             onSelect={onSelectPoint}
+            onClose={onDismiss}
           />
         </div>
       </div>
@@ -1015,6 +1575,7 @@ function PvzPointSelector({
   pvzSheetThumbMeta,
   productsById,
   onSelect,
+  onClose,
 }: {
   points: PvzPointOption[];
   selectedPointId: string;
@@ -1024,8 +1585,16 @@ function PvzPointSelector({
   pvzSheetThumbMeta?: CartMethodSummariesResult["pvzSheetThumbMeta"];
   productsById: Record<string, SheetProductRef>;
   onSelect: (pointId: string) => void;
+  onClose: () => void;
 }) {
   const [pvzSearch, setPvzSearch] = useState("");
+  const [searchActive, setSearchActive] = useState(false);
+  const [expandedPointIds, setExpandedPointIds] = useState<Record<string, boolean>>({});
+  const [mapPreviewPointId, setMapPreviewPointId] = useState<string | null>(null);
+  const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
+  const [searchViewportStyle, setSearchViewportStyle] = useState<{ top: number; bottom: number } | null>(null);
+  const sheetDragRef = useRef<{ startY: number } | null>(null);
+  const ignoreSheetClickRef = useRef(false);
 
   const filteredPoints = useMemo(() => {
     const q = pvzSearch.trim().toLocaleLowerCase("ru");
@@ -1037,6 +1606,53 @@ function PvzPointSelector({
     );
   }, [points, pvzSearch]);
 
+  const toggleExpandedPoint = (id: string) => {
+    setExpandedPointIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const mapPreviewPoint = useMemo(
+    () => (mapPreviewPointId ? filteredPoints.find((p) => p.id === mapPreviewPointId) ?? null : null),
+    [filteredPoints, mapPreviewPointId],
+  );
+
+  useEffect(() => {
+    if (mapPreviewPointId && !filteredPoints.some((p) => p.id === mapPreviewPointId)) {
+      setMapPreviewPointId(null);
+      setSheetMode("collapsed");
+    }
+  }, [filteredPoints, mapPreviewPointId]);
+
+  useLayoutEffect(() => {
+    if (!searchActive) {
+      setSearchViewportStyle(null);
+      return;
+    }
+
+    const updateSearchViewportStyle = () => {
+      const viewport = window.visualViewport;
+      if (!viewport) {
+        setSearchViewportStyle({ top: 88, bottom: 0 });
+        return;
+      }
+
+      setSearchViewportStyle({
+        top: Math.max(16, Math.round(viewport.offsetTop + 16)),
+        bottom: Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
+      });
+    };
+
+    updateSearchViewportStyle();
+    window.visualViewport?.addEventListener("resize", updateSearchViewportStyle);
+    window.visualViewport?.addEventListener("scroll", updateSearchViewportStyle);
+    window.addEventListener("orientationchange", updateSearchViewportStyle);
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateSearchViewportStyle);
+      window.visualViewport?.removeEventListener("scroll", updateSearchViewportStyle);
+      window.removeEventListener("orientationchange", updateSearchViewportStyle);
+    };
+  }, [searchActive]);
+
   if (points.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
@@ -1045,107 +1661,373 @@ function PvzPointSelector({
     );
   }
 
-  const tone = pvzPointTone(summary);
   const mapPoints = filteredPoints;
+  const recommendedPoint = filteredPoints[0] ?? null;
+  const recommendedPointId = recommendedPoint?.id ?? null;
+  const sheetPoint = mapPreviewPoint ?? recommendedPoint ?? filteredPoints[0] ?? null;
+  const showPreview = sheetMode === "preview" && !!sheetPoint;
+  const sheetExpanded = sheetMode === "expanded";
+  const scenarioLine = pvzPointCompactScenarioLine(summary);
+  const hasDetails = !!linePreview && (linePreview.available.length > 0 || linePreview.unavailable.length > 0);
+  const mapPointPosition = (pointId: string): { left: string; top: string } => {
+    if (mapPreviewPointId === pointId) return { left: "50%", top: "25%" };
+    if (recommendedPointId && pointId === recommendedPointId) return { left: "50%", top: "42%" };
+    const others = filteredPoints.filter((p) => p.id !== recommendedPointId);
+    const ix = others.findIndex((p) => p.id === pointId);
+    const p = PICKUP_MAP_POSITIONS[(ix >= 0 ? ix : 0) % PICKUP_MAP_POSITIONS.length]!;
+    return { left: p.left, top: p.top };
+  };
+  const sheetClass =
+    searchActive
+      ? "max-h-none"
+      : sheetMode === "expanded"
+        ? "max-h-[78dvh]"
+        : showPreview
+          ? "max-h-[calc(100dvh-7rem)]"
+          : "max-h-[28dvh]";
+  const sheetScrollClass = searchActive
+    ? "min-h-0 flex-1 max-h-none"
+    : showPreview
+      ? "max-h-[calc(100dvh-12rem)]"
+      : "max-h-[calc(78dvh-5.5rem)]";
+  const sheetPositionClass = searchActive ? "fixed bottom-0 left-0 right-0" : "absolute bottom-0 left-0 right-0";
+  const sheetTransitionClass = searchActive ? "transition-none" : "transition-[max-height,top] duration-200";
+  const sheetStyle = searchActive && searchViewportStyle ? searchViewportStyle : undefined;
+
+  const handleSheetPointerUp = (clientY: number) => {
+    const start = sheetDragRef.current?.startY;
+    sheetDragRef.current = null;
+    if (start == null) return;
+    const delta = clientY - start;
+    if (delta < -28) {
+      ignoreSheetClickRef.current = true;
+      window.setTimeout(() => {
+        ignoreSheetClickRef.current = false;
+      }, 0);
+      setSheetMode("expanded");
+      return;
+    }
+    if (delta > 28) {
+      ignoreSheetClickRef.current = true;
+      window.setTimeout(() => {
+        ignoreSheetClickRef.current = false;
+      }, 0);
+      setSheetMode(mapPreviewPoint ? "preview" : "collapsed");
+      setSearchActive(false);
+    }
+  };
+
+  const renderPvzDetails = () =>
+    hasDetails ? (
+      <div className="space-y-3">
+        <PickupStoreFulfillmentBlock
+          title="В пункте выдачи"
+          leadText={pvzSheetThumbMeta?.atPoint.leadText}
+          benefitText="Бесплатно · ПВЗ"
+          items={linePreview?.available ?? []}
+          productsById={productsById}
+        />
+        <PickupStoreFulfillmentBlock
+          title="В ПВЗ недоступно"
+          leadText="Можно выбрать другой способ доставки"
+          items={linePreview?.unavailable ?? []}
+          productsById={productsById}
+        />
+      </div>
+    ) : null;
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-2xl border border-neutral-200 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] p-3">
-        <div className="relative h-52 overflow-hidden rounded-xl border border-white/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]">
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-          {mapPoints.map((point) => {
-            const pointIx = points.findIndex((p) => p.id === point.id);
-            const pos = PICKUP_MAP_POSITIONS[(pointIx >= 0 ? pointIx : 0) % PICKUP_MAP_POSITIONS.length]!;
-            const selected = selectedPointId === point.id;
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md"
+        aria-label="Закрыть карту выбора ПВЗ"
+      >
+        ×
+      </button>
+      <div
+        className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+        onClick={() => {
+          setSearchActive(false);
+          setMapPreviewPointId(null);
+          setSheetMode("collapsed");
+        }}
+        aria-hidden
+      />
+      <div
+        className="absolute inset-0 z-[1] overflow-hidden"
+        onClick={() => {
+          setSearchActive(false);
+          setMapPreviewPointId(null);
+          setSheetMode("collapsed");
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
+        {showPreview ? <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden /> : null}
+        {mapPoints.map((point) => {
+            const pos = mapPointPosition(point.id);
+            const pinOpen = mapPreviewPointId === point.id;
+            const recommended = recommendedPointId === point.id;
             const wasLastChoice = lastChosenPointId === point.id;
+            const markerClass = pvzPointMarkerClass(summary);
+            const logoClass = pvzPointLogoClass(summary);
+            const tailClass = pvzPointTailClass(summary);
+            const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
+            const primary = pinOpen || recommended;
             return (
               <button
                 key={point.id}
                 type="button"
-                onClick={() => onSelect(point.id)}
-                className={`relative absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-1 text-[11px] font-semibold shadow-sm transition ${tone.marker} ${selected ? "scale-110 ring-4 ring-black/10" : ""}`}
-                style={{ left: pos.left, top: pos.top }}
-                aria-pressed={selected}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSearchActive(false);
+                  setMapPreviewPointId(point.id);
+                  setSheetMode("preview");
+                }}
+                className={`pointer-events-auto relative flex max-w-[10rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2 border-2 text-left transition ${markerClass} ${
+                  primary
+                    ? "min-w-[7.4rem] rounded-2xl px-2.5 py-2 shadow-[0_10px_22px_rgba(0,0,0,0.22)]"
+                    : "min-w-[6.4rem] rounded-2xl px-2.5 py-1.5 shadow-[0_6px_14px_rgba(0,0,0,0.12)]"
+                } ${emphasis} ${!pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25" : ""}`}
+                style={{ position: "absolute", left: pos.left, top: pos.top }}
+                aria-pressed={pinOpen}
+                aria-expanded={pinOpen}
                 aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
               >
+                <span className={`absolute left-1/2 top-full h-4 w-0.5 -translate-x-1/2 ${tailClass}`} aria-hidden />
+                <span
+                  className={`absolute left-1/2 top-[calc(100%+0.85rem)] h-3.5 w-3.5 -translate-x-1/2 rounded-full border-[3px] border-white shadow-[0_2px_6px_rgba(0,0,0,0.2)] ${tailClass}`}
+                  aria-hidden
+                />
                 {wasLastChoice ? (
-                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white" title="Выбирали в прошлый раз">
+                  <span
+                    className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-800 text-[9px] text-white"
+                    title="Выбирали в прошлый раз"
+                  >
                     ↻
                   </span>
                 ) : null}
-                {summary?.availableUnits ?? 0}/{summary?.totalUnits ?? 0}
+                <span
+                  className={`relative z-[1] flex shrink-0 items-center justify-center rounded-lg font-black leading-none tracking-normal ${logoClass} ${
+                    primary ? "h-8 w-12 text-[11px]" : "h-7 w-10 text-[10px]"
+                  }`}
+                  aria-hidden
+                >
+                  ПВЗ
+                </span>
+                <span className={`relative z-[1] font-bold leading-tight ${primary ? "text-[14px]" : "text-[12px]"}`}>
+                  {pvzPointPinLine(summary)}
+                </span>
               </button>
             );
-          })}
-        </div>
-        <label className="mt-3 block">
-          <span className="sr-only">Поиск пункта выдачи</span>
-          <input
-            type="search"
-            value={pvzSearch}
-            onChange={(e) => setPvzSearch(e.target.value)}
-            placeholder="Найти пункт или адрес"
-            autoComplete="off"
-            className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-base outline-none focus:border-neutral-400"
-          />
-        </label>
+        })}
       </div>
 
-      <div className="space-y-2">
-        {filteredPoints.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-            По запросу пункты не найдены.
-          </div>
-        ) : (
-          filteredPoints.map((point) => {
-          const selected = selectedPointId === point.id;
-          const wasLastChoice = lastChosenPointId === point.id;
-          return (
-            <button
-              key={point.id}
-              type="button"
-              onClick={() => onSelect(point.id)}
-              className={`group w-full rounded-2xl border p-4 text-left transition ${selected ? "border-black bg-white" : "border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm"}`}
-              aria-pressed={selected}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[15px] font-semibold leading-tight">{point.name}</span>
-                    {wasLastChoice ? (
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600">
-                        Выбирали в прошлый раз
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1.5 text-sm text-neutral-900">{point.address}</div>
-                  <div className="mt-1 text-xs leading-relaxed text-neutral-500">{pvzPointStatusDetail(summary)}</div>
-                </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${tone.accent}`}>
-                  {pvzPointCountLabel(summary)}
-                </span>
-              </div>
-              {linePreview && (linePreview.available.length > 0 || linePreview.unavailable.length > 0) ? (
-                <div className="mt-3 space-y-2.5 border-t border-neutral-100 pt-3">
-                  <SheetThumbLabeledRow
-                    label="В пункте выдачи"
-                    items={linePreview.available}
-                    productsById={productsById}
-                    leadText={pvzSheetThumbMeta?.atPoint.leadText}
-                    holdText={pvzSheetThumbMeta?.atPoint.holdText}
-                  />
-                  <SheetThumbLabeledRow
-                    label="В ПВЗ недоступно"
-                    items={linePreview.unavailable}
-                    productsById={productsById}
-                    leadText="Можно выбрать другой способ доставки"
-                  />
-                </div>
+      <div
+        role="region"
+        aria-label="Результаты поиска ПВЗ"
+        className={`${sheetPositionClass} z-40 flex flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass}`}
+        style={sheetStyle}
+      >
+        <div
+          className="cursor-grab px-4 pb-2 pt-2 active:cursor-grabbing"
+          onPointerDown={(event) => {
+            sheetDragRef.current = { startY: event.clientY };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerUp={(event) => handleSheetPointerUp(event.clientY)}
+          onPointerCancel={() => {
+            sheetDragRef.current = null;
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              if (ignoreSheetClickRef.current) return;
+              setSheetMode((prev) => (prev === "expanded" ? (mapPreviewPoint ? "preview" : "collapsed") : "expanded"));
+            }}
+            className="block w-full rounded-xl outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-neutral-900"
+            aria-expanded={sheetExpanded}
+          >
+            <span className="mx-auto block h-1 w-10 rounded-full bg-neutral-200" aria-hidden />
+          </button>
+        </div>
+
+        {showPreview ? (
+          <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-left text-[22px] font-semibold leading-tight text-neutral-900">
+                {sheetPoint?.name}
+              </p>
+              {sheetPoint?.address ? (
+                <p className="mt-1 truncate text-sm leading-snug text-neutral-500">{sheetPoint.address}</p>
               ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchActive(false);
+                setMapPreviewPointId(null);
+                setSheetMode("collapsed");
+              }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-sm"
+              aria-label="Закрыть карточку ПВЗ"
+            >
+              ×
             </button>
-          );
-          })
-        )}
+          </div>
+        ) : null}
+
+        {!showPreview ? (
+          <div className="shrink-0 px-4 pb-4">
+            <div className="flex items-center gap-2">
+              <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 focus-within:border-neutral-400">
+                <span className="sr-only">Поиск ПВЗ</span>
+                <svg
+                  className="h-5 w-5 shrink-0 text-neutral-700"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  aria-hidden
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m16.5 16.5 4 4" />
+                </svg>
+                <input
+                  type="search"
+                  value={pvzSearch}
+                  onFocus={() => {
+                    setSearchActive(true);
+                    setSheetMode("expanded");
+                    setMapPreviewPointId(null);
+                  }}
+                  onChange={(e) => {
+                    setSearchActive(true);
+                    setPvzSearch(e.target.value);
+                    setMapPreviewPointId(null);
+                    setSheetMode("expanded");
+                  }}
+                  placeholder="Поиск по ПВЗ"
+                  autoComplete="off"
+                  className="min-w-0 flex-1 bg-transparent text-base outline-none"
+                />
+              </label>
+              {searchActive || pvzSearch.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPvzSearch("");
+                    setSearchActive(false);
+                    setSheetMode("collapsed");
+                  }}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl leading-none text-neutral-950 shadow-sm"
+                  aria-label="Свернуть поиск"
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        <div className={`${sheetScrollClass} overflow-y-auto overscroll-y-contain px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
+          {showPreview && sheetPoint && !sheetExpanded ? (
+            <div className="pb-1">
+              <div className="space-y-3">
+                <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
+                  {scenarioLine}
+                </p>
+                <p className="text-sm leading-snug text-neutral-600">{pvzPointStatusDetail(summary)}</p>
+                {lastChosenPointId === sheetPoint.id ? (
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                    Выбирали в прошлый раз
+                  </p>
+                ) : null}
+                {renderPvzDetails()}
+              </div>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => onSelect(sheetPoint.id)}
+                  className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                >
+                  Выбрать
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {sheetExpanded ? (
+            <div className="pb-4">
+              <div className="space-y-2">
+                {filteredPoints.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+                    По запросу пункты не найдены.
+                  </div>
+                ) : (
+                  filteredPoints.map((point) => {
+                    const selected = selectedPointId === point.id;
+                    const wasLastChoice = lastChosenPointId === point.id;
+                    const detailsOpen = !!expandedPointIds[point.id];
+                    return (
+                      <div
+                        key={point.id}
+                        className={`rounded-2xl border bg-white p-3 transition sm:p-4 ${selected ? "border-black" : "border-neutral-200"}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[17px] font-semibold leading-tight text-neutral-900">{point.name}</p>
+                            <p className="mt-1 truncate text-sm leading-snug text-neutral-500">{point.address}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onSelect(point.id)}
+                            className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
+                            aria-pressed={selected}
+                          >
+                            Выбрать
+                          </button>
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
+                            {scenarioLine}
+                          </p>
+                          {wasLastChoice ? (
+                            <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                              Выбирали в прошлый раз
+                            </p>
+                          ) : null}
+                          {hasDetails ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandedPoint(point.id)}
+                              className="flex w-fit items-center gap-1 text-xs font-semibold text-neutral-700 transition hover:text-neutral-950"
+                              aria-expanded={detailsOpen}
+                            >
+                              <span>{detailsOpen ? "Свернуть" : "Подробнее"}</span>
+                              <svg
+                                className={`mt-px h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                aria-hidden
+                              >
+                                <path d="M4 6.5 8 10l4-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          ) : null}
+                          {detailsOpen ? <div className="space-y-3 border-t border-neutral-100 pt-3">{renderPvzDetails()}</div> : null}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -1375,7 +2257,7 @@ function CourierAddressModal({
             type="button"
             onClick={onClose}
             aria-label="Закрыть"
-            className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-100"
+            className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-950 shadow-sm transition hover:border-neutral-300"
           >
             <span className="text-2xl font-light leading-none" aria-hidden>
               ×
@@ -1802,61 +2684,35 @@ function SplitSelectionModal({
         role="dialog"
         aria-modal="true"
         aria-label="Выберите способ получения"
-        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
+        className="relative z-10 flex h-[95dvh] max-h-[95dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
       >
-        <div className="shrink-0 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="cu-sheet-title">Выберите способ получения</h3>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full border border-neutral-900 bg-white px-3 py-1 text-sm font-medium text-neutral-900"
-            >
-              Закрыть
-            </button>
-          </div>
-        </div>
+        <CheckoutSheetStickyHeader title="Выберите способ получения" onClose={onClose} />
 
-        <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-4 pb-4 pt-3 sm:max-h-[calc(90vh-10rem)] sm:flex-none sm:basis-auto sm:px-5 sm:pb-4 sm:pt-3">
-        <div className="rounded-xl bg-neutral-50 p-3">
+        <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-5 pb-4 pt-4">
+        <div className="rounded-xl bg-neutral-50/70 p-3.5 sm:p-4">
           <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
         </div>
 
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 space-y-3">
           {methodChoices.map((choice) => {
             const isSelected = selectedMethod === choice.key;
             return (
-              <button
+              <CheckoutDeliveryOptionCard
                 key={choice.key}
-                type="button"
+                label={choice.label}
+                subtitle={choice.summary}
+                selected={isSelected}
                 onClick={() => handleMethodSelect(choice.key)}
-                className={`w-full rounded-xl border p-3 text-left transition ${
-                  isSelected ? "border-black bg-neutral-50" : "border-neutral-200 bg-white hover:border-neutral-300"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">{choice.label}</p>
-                    <p className="mt-1 text-xs text-neutral-500">{choice.summary}</p>
-                  </div>
-                  {isSelected ? (
-                    <span className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase text-neutral-700">
-                      Активно
-                    </span>
-                  ) : null}
-                </div>
-              </button>
+              />
             );
           })}
         </div>
 
         {selectedMethod === "pickup" ? (
-          <div className="mt-4 rounded-xl border border-neutral-200 p-4">
+          <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-semibold">Магазин для этой части заказа</p>
+                <p className="cu-block-heading">Магазин для этой части заказа</p>
                 {selectedPickupOption ? (
                   <>
                     <p className="mt-2 text-sm text-neutral-900">{optionMethodLabel(selectedPickupOption)}</p>
@@ -1875,7 +2731,7 @@ function SplitSelectionModal({
             <button
               type="button"
               onClick={() => setPickupSelectorOpen(true)}
-              className="mt-3 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
+              className="mt-3 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-900"
             >
               {selectedPickupOption ? "Изменить магазин" : "Выбрать магазин"}
             </button>
@@ -1883,8 +2739,8 @@ function SplitSelectionModal({
         ) : null}
 
         {selectedMethod === "courier" ? (
-          <div className="mt-4 rounded-xl border border-neutral-200 p-4">
-            <p className="text-sm font-semibold">Адрес для этой доставки</p>
+          <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
+            <p className="cu-block-heading">Адрес для этой доставки</p>
             {courierAddress.trim() ? (
               <p className="mt-2 break-words text-sm leading-snug text-neutral-900">{courierAddress}</p>
             ) : (
@@ -1893,7 +2749,7 @@ function SplitSelectionModal({
             <button
               type="button"
               onClick={() => courierOption && onEditCourierAddress(courierOption)}
-              className="mt-3 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
+              className="mt-3 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-900"
             >
               {courierAddress.trim() ? "Изменить адрес" : "Указать адрес"}
             </button>
@@ -1901,8 +2757,8 @@ function SplitSelectionModal({
         ) : null}
 
         {selectedMethod === "pvz" ? (
-          <div className="mt-4 rounded-xl border border-neutral-200 p-4">
-            <p className="text-sm font-semibold">ПВЗ для этой части заказа</p>
+          <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
+            <p className="cu-block-heading">ПВЗ для этой части заказа</p>
             {selectedPvzPoint ? (
               <>
                 <p className="mt-2 text-sm text-neutral-900">{selectedPvzPoint.name}</p>
@@ -1914,7 +2770,7 @@ function SplitSelectionModal({
             <button
               type="button"
               onClick={() => setPvzSelectorOpen(true)}
-              className="mt-3 rounded-lg border border-neutral-900 bg-white px-3 py-2 text-xs font-medium text-neutral-900"
+              className="mt-3 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-900"
             >
               {selectedPvzPoint ? "Изменить ПВЗ" : "Выбрать ПВЗ"}
             </button>
@@ -1922,12 +2778,12 @@ function SplitSelectionModal({
         ) : null}
         </div>
 
-        <div className="shrink-0 border-t border-neutral-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
+        <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={() => selectedOption && onConfirm(selectedOption)}
             disabled={confirmDisabled}
-            className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+            className="w-full rounded-2xl bg-black px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
           >
             {saving ? "Подтверждаем…" : "Выбрать этот вариант"}
           </button>
@@ -1977,8 +2833,6 @@ function PartCard({
   selectedSlotIx,
   onDateChange,
   onSlotChange,
-  badgeLabel,
-  shipmentOrdinal,
   inGroup = false,
   courierDateLabels,
 }: {
@@ -1993,9 +2847,6 @@ function PartCard({
   selectedSlotIx?: number;
   onDateChange?: (dateIx: number) => void;
   onSlotChange?: (slotIx: number) => void;
-  badgeLabel?: string;
-  /** Номер отправления при сплите (1, 2, …); подпись в стиле `cu-block-heading` */
-  shipmentOrdinal?: number;
   /** Без отдельной рамки — внутри общего блока заказа */
   inGroup?: boolean;
   /** Подписи дат курьера (от календаря), по индексу совпадают с `selectedDateIx` */
@@ -2056,7 +2907,7 @@ function PartCard({
       : formatRuDayMonthLong(courierHeadingDate!)
     : null;
   const primaryHeading = isCourier ? (courierHeading ?? headingName) : (subtitle ?? headingName);
-  const secondaryHeading = primaryHeading === headingName ? null : headingName;
+  const secondaryHeading = isCourier || isGjStorePickup || primaryHeading === headingName ? null : headingName;
   /** Для курьера всегда показываем отдельный блок выбора даты/интервала. */
   const showCourierDeliveryRow = isCourier && Boolean(leadLabel);
 
@@ -2382,15 +3233,55 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   useLayoutEffect(() => {
     if (!checkoutSheetOpen) return;
+    const scrollY = window.scrollY;
     const { style } = document.body;
     const previousOverflow = style.overflow;
+    const previousPosition = style.position;
+    const previousTop = style.top;
+    const previousLeft = style.left;
+    const previousRight = style.right;
+    const previousWidth = style.width;
+
     style.overflow = "hidden";
+    style.position = "fixed";
+    style.top = `-${scrollY}px`;
+    style.left = "0";
+    style.right = "0";
+    style.width = "100%";
+
     return () => {
       if (previousOverflow) {
         style.overflow = previousOverflow;
       } else {
         style.removeProperty("overflow");
       }
+      if (previousPosition) {
+        style.position = previousPosition;
+      } else {
+        style.removeProperty("position");
+      }
+      if (previousTop) {
+        style.top = previousTop;
+      } else {
+        style.removeProperty("top");
+      }
+      if (previousLeft) {
+        style.left = previousLeft;
+      } else {
+        style.removeProperty("left");
+      }
+      if (previousRight) {
+        style.right = previousRight;
+      } else {
+        style.removeProperty("right");
+      }
+      if (previousWidth) {
+        style.width = previousWidth;
+      } else {
+        style.removeProperty("width");
+      }
+      window.scrollTo(0, scrollY);
+      requestAnimationFrame(() => window.scrollTo(0, scrollY));
     };
   }, [checkoutSheetOpen]);
 
@@ -2694,12 +3585,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         summary: summaries[store.id],
       }))
       .sort((a, b) => {
-        const rankDiff = pickupStoreRank(b.summary) - pickupStoreRank(a.summary);
-        if (rankDiff !== 0) return rankDiff;
-        const unitsDiff = (b.summary?.availableUnits ?? 0) - (a.summary?.availableUnits ?? 0);
-        if (unitsDiff !== 0) return unitsDiff;
-        const collectDiff = (a.summary?.collectUnits ?? 0) - (b.summary?.collectUnits ?? 0);
-        if (collectDiff !== 0) return collectDiff;
+        const scoreDiff = pickupStoreSortScore(b.summary) - pickupStoreSortScore(a.summary);
+        if (scoreDiff !== 0) return scoreDiff;
         return a.name.localeCompare(b.name, "ru");
       });
   }, [boot, cityId, cartDetail?.lines?.length, cartScopedSummaries?.pickupSummaryByStore]);
@@ -3350,28 +4237,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }
 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
-  /**
-   * Стабильная нумерация «Отправление N» по порядку в сценарии среди видимых карточек.
-   * Снятие галочки не сдвигает номера и не убирает подпись у соседних блоков (иначе UI прыгает).
-   * Вторичные сценарии нумеруются отдельно внутри каждого блока добора.
-   */
-  const shipmentOrdinalForPartKey = (key: string) => {
-    const primaryVisible = (scenario?.parts ?? []).filter(
-      (p) => !primaryPartKeysSupersededBySecondary.has(p.key),
-    );
-    const pi = primaryVisible.findIndex((p) => p.key === key);
-    if (pi >= 0) {
-      return primaryVisible.length > 1 ? pi + 1 : undefined;
-    }
-    for (const sel of secondaryDisplaySelections) {
-      const parts = sel.parts;
-      const si = parts.findIndex((p) => p.key === key);
-      if (si >= 0) {
-        return parts.length > 1 ? si + 1 : undefined;
-      }
-    }
-    return undefined;
-  };
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
   const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
   const displayGoodsSubtotal =
@@ -3708,7 +4573,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <div key={p.key} className={partIndex > 0 ? "border-t border-neutral-100" : ""}>
                 <PartCard
                   inGroup
-                  shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
                   part={p}
                   included={included[p.key] !== false}
                   onToggle={() =>
@@ -3749,7 +4613,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 .map((p, partIndex) => (
                 <PartCard
                   key={p.key}
-                  shipmentOrdinal={shipmentOrdinalForPartKey(p.key)}
                   courierDateLabels={courierDateLabels}
                   part={p}
                   included={included[p.key] !== false}
@@ -3801,7 +4664,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <PartCard
                 key={part.key}
                 inGroup
-                shipmentOrdinal={shipmentOrdinalForPartKey(part.key)}
                 part={part}
                 included={included[part.key] !== false}
                 onToggle={() =>
