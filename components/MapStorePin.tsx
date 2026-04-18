@@ -3,7 +3,7 @@
 /** Горизонтальное смещение: центр чёрного круга и нижней точки от левого края пина (круг 76px). */
 export const MAP_STORE_PIN_ANCHOR_OFFSET_X_PX = 38;
 
-type MapStorePinProps = {
+export type MapStorePinProps = {
   /** Текст в чёрном круге: по умолчанию GJ; для ПВЗ на карте — «ПВЗ». */
   brandMark?: string;
   /** Готовые подписи (как из pickupStorePinLines) */

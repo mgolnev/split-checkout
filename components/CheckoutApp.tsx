@@ -25,6 +25,7 @@ import {
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { formatHoldNoticeForPart } from "@/lib/hold-display";
 import { MapStorePin } from "@/components/MapStorePin";
+import { YandexCheckoutMap } from "@/components/YandexCheckoutMap";
 import type {
   AlternativeMethodOption,
   CartLine,
@@ -49,10 +50,20 @@ type Bootstrap = {
   cities: { id: string; name: string; hasClickCollect: boolean }[];
   deliveryMethods: { id: string; code: string; name: string }[];
   products: { id: string; name: string; price: number; image: string; sku: string; sizeLabel?: string | null }[];
-  storesByCity: Record<string, { id: string; name: string }[]>;
+  storesByCity: Record<
+    string,
+    { id: string; name: string; mapLat: number | null; mapLng: number | null }[]
+  >;
   pvzByCity: Record<
     string,
-    { id: string; name: string; address: string; requiresPrepayment: boolean }[]
+    {
+      id: string;
+      name: string;
+      address: string;
+      requiresPrepayment: boolean;
+      mapLat: number | null;
+      mapLng: number | null;
+    }[]
   >;
   allowedMethodsByCity: Record<string, string[]>;
   methodSummaryByCity: Record<
@@ -74,6 +85,8 @@ type PickupStoreOption = {
   id: string;
   name: string;
   summary?: PickupStoreSummary;
+  mapLat?: number | null;
+  mapLng?: number | null;
 };
 
 type PvzPointOption = Bootstrap["pvzByCity"][string][number];
@@ -1059,6 +1072,45 @@ function PickupStoreSelector({
       }
     : undefined;
 
+  const hasYandexMapsKey = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY);
+  const yandexPickupMarkers = useMemo(() => {
+    return filteredStores
+      .filter(
+        (s) =>
+          s.mapLat != null &&
+          s.mapLng != null &&
+          Number.isFinite(s.mapLat) &&
+          Number.isFinite(s.mapLng),
+      )
+      .map((s) => {
+        const pinLines = pickupStorePinLines(s.summary);
+        const pinOpen = mapPreviewStoreId === s.id;
+        const recommended = recommendedStoreId === s.id;
+        const emphasis = pickupStorePinEmphasisClass(s.summary, { recommended, pinOpen });
+        return {
+          id: s.id,
+          lng: s.mapLng!,
+          lat: s.mapLat!,
+          pinProps: {
+            line1: pinLines.line1,
+            line2: pinLines.line2,
+            wasLastChoice: lastChosenStoreId === s.id,
+            className: emphasis,
+          },
+        };
+      });
+  }, [filteredStores, mapPreviewStoreId, recommendedStoreId, lastChosenStoreId]);
+
+  const showYandexPickupMap = hasYandexMapsKey && yandexPickupMarkers.length > 0;
+  const yandexPickupFocus =
+    mapPreviewStore &&
+    mapPreviewStore.mapLat != null &&
+    mapPreviewStore.mapLng != null &&
+    Number.isFinite(mapPreviewStore.mapLat) &&
+    Number.isFinite(mapPreviewStore.mapLng)
+      ? { lng: mapPreviewStore.mapLng, lat: mapPreviewStore.mapLat }
+      : null;
+
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
     sheetDragRef.current = null;
@@ -1137,57 +1189,83 @@ function PickupStoreSelector({
         className={`overflow-hidden [backface-visibility:hidden] ${vvSheet ? "fixed z-[1]" : "fixed inset-0 z-[1]"}`}
         style={mapFixedStyle}
       >
-        <div
-          className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
-          onClick={() => {
-            setSearchActive(false);
-            setMapPreviewStoreId(null);
-            setSheetMode("collapsed");
-          }}
-          aria-hidden
-        />
-        <div
-          className="absolute inset-0 z-[1] overflow-hidden"
-          onClick={() => {
-            setSearchActive(false);
-            setMapPreviewStoreId(null);
-            setSheetMode("collapsed");
-          }}
-        >
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-        {showPreview ? <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden /> : null}
-        {mapStores.map((store) => {
-          const pinLines = pickupStorePinLines(store.summary);
-          const pos = mapPinPosition(store.id);
-          const pinOpen = mapPreviewStoreId === store.id;
-          const recommended = recommendedStoreId === store.id;
-          const emphasis = pickupStorePinEmphasisClass(store.summary, { recommended, pinOpen });
-          return (
-            <button
-              key={store.id}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
+        {showYandexPickupMap ? (
+          <>
+            <YandexCheckoutMap
+              markers={yandexPickupMarkers}
+              focus={yandexPickupFocus}
+              onMarkerSelect={(id) => {
                 setSearchActive(false);
-                setMapPreviewStoreId(store.id);
+                setMapPreviewStoreId(id);
                 setSheetMode("preview");
               }}
-              className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis}`}
-              style={{ left: pos.left, top: pos.top }}
-              aria-pressed={pinOpen}
-              aria-expanded={pinOpen}
-              aria-label={`${store.name}. ${pickupStoreCompactScenarioLine(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
+              onBackgroundDismiss={() => {
+                setSearchActive(false);
+                setMapPreviewStoreId(null);
+                setSheetMode("collapsed");
+              }}
+            />
+            {showPreview ? (
+              <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div
+              className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+              onClick={() => {
+                setSearchActive(false);
+                setMapPreviewStoreId(null);
+                setSheetMode("collapsed");
+              }}
+              aria-hidden
+            />
+            <div
+              className="absolute inset-0 z-[1] overflow-hidden"
+              onClick={() => {
+                setSearchActive(false);
+                setMapPreviewStoreId(null);
+                setSheetMode("collapsed");
+              }}
             >
-              <MapStorePin
-                line1={pinLines.line1}
-                line2={pinLines.line2}
-                wasLastChoice={lastChosenStoreId === store.id}
-              />
-            </button>
-          );
-        })}
-        </div>
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
+              {showPreview ? (
+                <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
+              ) : null}
+              {mapStores.map((store) => {
+                const pinLines = pickupStorePinLines(store.summary);
+                const pos = mapPinPosition(store.id);
+                const pinOpen = mapPreviewStoreId === store.id;
+                const recommended = recommendedStoreId === store.id;
+                const emphasis = pickupStorePinEmphasisClass(store.summary, { recommended, pinOpen });
+                return (
+                  <button
+                    key={store.id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSearchActive(false);
+                      setMapPreviewStoreId(store.id);
+                      setSheetMode("preview");
+                    }}
+                    className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis}`}
+                    style={{ left: pos.left, top: pos.top }}
+                    aria-pressed={pinOpen}
+                    aria-expanded={pinOpen}
+                    aria-label={`${store.name}. ${pickupStoreCompactScenarioLine(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
+                  >
+                    <MapStorePin
+                      line1={pinLines.line1}
+                      line2={pinLines.line2}
+                      wasLastChoice={lastChosenStoreId === store.id}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       <div
@@ -1824,6 +1902,53 @@ function PvzPointSelector({
       }
     : undefined;
 
+  const hasYandexMapsKeyPvz = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY);
+  const yandexPvzMarkers = useMemo(() => {
+    return filteredPoints
+      .filter(
+        (p) =>
+          p.mapLat != null &&
+          p.mapLng != null &&
+          Number.isFinite(p.mapLat) &&
+          Number.isFinite(p.mapLng),
+      )
+      .map((p) => {
+        const pinOpen = mapPreviewPointId === p.id;
+        const recommended = recommendedPointId === p.id;
+        const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
+        const selectedRing =
+          !pinOpen && selectedPointId === p.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : "";
+        return {
+          id: p.id,
+          lng: p.mapLng!,
+          lat: p.mapLat!,
+          pinProps: {
+            brandMark: "ПВЗ",
+            line1: pvzPointPinLine(summary),
+            wasLastChoice: lastChosenPointId === p.id,
+            className: `${emphasis} ${selectedRing}`.trim(),
+          },
+        };
+      });
+  }, [
+    filteredPoints,
+    mapPreviewPointId,
+    recommendedPointId,
+    summary,
+    selectedPointId,
+    lastChosenPointId,
+  ]);
+
+  const showYandexPvzMap = hasYandexMapsKeyPvz && yandexPvzMarkers.length > 0;
+  const yandexPvzFocus =
+    mapPreviewPoint &&
+    mapPreviewPoint.mapLat != null &&
+    mapPreviewPoint.mapLng != null &&
+    Number.isFinite(mapPreviewPoint.mapLat) &&
+    Number.isFinite(mapPreviewPoint.mapLng)
+      ? { lng: mapPreviewPoint.mapLng, lat: mapPreviewPoint.mapLat }
+      : null;
+
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
     sheetDragRef.current = null;
@@ -1888,59 +2013,85 @@ function PvzPointSelector({
         className={`overflow-hidden [backface-visibility:hidden] ${vvSheet ? "fixed z-[1]" : "fixed inset-0 z-[1]"}`}
         style={mapFixedStyle}
       >
-        <div
-          className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
-          onClick={() => {
-            setSearchActive(false);
-            setMapPreviewPointId(null);
-            setSheetMode("collapsed");
-          }}
-          aria-hidden
-        />
-        <div
-          className="absolute inset-0 z-[1] overflow-hidden"
-          onClick={() => {
-            setSearchActive(false);
-            setMapPreviewPointId(null);
-            setSheetMode("collapsed");
-          }}
-        >
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-        {showPreview ? <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden /> : null}
-        {mapPoints.map((point) => {
-            const pos = mapPointPosition(point.id);
-            const pinOpen = mapPreviewPointId === point.id;
-            const recommended = recommendedPointId === point.id;
-            const wasLastChoice = lastChosenPointId === point.id;
-            const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
-            return (
-              <button
-                key={point.id}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSearchActive(false);
-                  setMapPreviewPointId(point.id);
-                  setSheetMode("preview");
-                }}
-                className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis} ${
-                  !pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : ""
-                }`}
-                style={{ left: pos.left, top: pos.top }}
-                aria-pressed={pinOpen}
-                aria-expanded={pinOpen}
-                aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
-              >
-                <MapStorePin
-                  brandMark="ПВЗ"
-                  line1={pvzPointPinLine(summary)}
-                  wasLastChoice={wasLastChoice}
-                />
-              </button>
-            );
-        })}
-        </div>
+        {showYandexPvzMap ? (
+          <>
+            <YandexCheckoutMap
+              markers={yandexPvzMarkers}
+              focus={yandexPvzFocus}
+              onMarkerSelect={(id) => {
+                setSearchActive(false);
+                setMapPreviewPointId(id);
+                setSheetMode("preview");
+              }}
+              onBackgroundDismiss={() => {
+                setSearchActive(false);
+                setMapPreviewPointId(null);
+                setSheetMode("collapsed");
+              }}
+            />
+            {showPreview ? (
+              <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div
+              className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)]"
+              onClick={() => {
+                setSearchActive(false);
+                setMapPreviewPointId(null);
+                setSheetMode("collapsed");
+              }}
+              aria-hidden
+            />
+            <div
+              className="absolute inset-0 z-[1] overflow-hidden"
+              onClick={() => {
+                setSearchActive(false);
+                setMapPreviewPointId(null);
+                setSheetMode("collapsed");
+              }}
+            >
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
+              {showPreview ? (
+                <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
+              ) : null}
+              {mapPoints.map((point) => {
+                const pos = mapPointPosition(point.id);
+                const pinOpen = mapPreviewPointId === point.id;
+                const recommended = recommendedPointId === point.id;
+                const wasLastChoice = lastChosenPointId === point.id;
+                const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
+                return (
+                  <button
+                    key={point.id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSearchActive(false);
+                      setMapPreviewPointId(point.id);
+                      setSheetMode("preview");
+                    }}
+                    className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis} ${
+                      !pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : ""
+                    }`}
+                    style={{ left: pos.left, top: pos.top }}
+                    aria-pressed={pinOpen}
+                    aria-expanded={pinOpen}
+                    aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
+                  >
+                    <MapStorePin
+                      brandMark="ПВЗ"
+                      line1={pvzPointPinLine(summary)}
+                      wasLastChoice={wasLastChoice}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       <div

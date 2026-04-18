@@ -71,9 +71,21 @@ export async function GET() {
   const checkoutCopy = fullCheckoutCopy(disclaimerMap);
   const checkoutSelectorCopy = selectorCopy(disclaimerMap);
 
-  const storesByCity: Record<string, { id: string; name: string }[]> = {};
-  const pvzByCity: Record<string, { id: string; name: string; address: string; requiresPrepayment: boolean }[]> =
-    {};
+  const storesByCity: Record<
+    string,
+    { id: string; name: string; mapLat: number | null; mapLng: number | null }[]
+  > = {};
+  const pvzByCity: Record<
+    string,
+    {
+      id: string;
+      name: string;
+      address: string;
+      requiresPrepayment: boolean;
+      mapLat: number | null;
+      mapLng: number | null;
+    }[]
+  > = {};
   const allowedMethodsByCity: Record<string, string[]> = {};
   const methodSummaryByCity: Record<string, Record<MethodCode, MethodSummary>> = {};
   const pickupSummaryByStore: Record<string, Record<string, PickupStoreSummary>> = {};
@@ -82,7 +94,7 @@ export async function GET() {
     const stores = await prisma.source.findMany({
       where: { cityId: c.id, type: "store", isActive: true },
       orderBy: { priority: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, mapLat: true, mapLng: true },
     });
     storesByCity[c.id] = stores;
 
@@ -109,6 +121,8 @@ export async function GET() {
       name: p.name,
       address: p.address,
       requiresPrepayment: p.requiresPrepayment,
+      mapLat: p.mapLat,
+      mapLng: p.mapLng,
     }));
 
     allowedMethodsByCity[c.id] = rules

@@ -124,6 +124,22 @@ const toInt = (v: FormDataEntryValue | null, fallback = 0) => {
   return Number.isFinite(n) ? Math.round(n) : fallback;
 };
 
+/** Пара опциональных координат WGS84; обе пустые → null,null; обе заданы — валидация. Иначе игнорируем (не обновляем). */
+function parseOptionalMapCoords(formData: FormData): {
+  mapLat: number | null;
+  mapLng: number | null;
+} | "invalid" {
+  const latRaw = String(formData.get("mapLat") ?? "").trim().replace(",", ".");
+  const lngRaw = String(formData.get("mapLng") ?? "").trim().replace(",", ".");
+  if (!latRaw && !lngRaw) return { mapLat: null, mapLng: null };
+  if (!latRaw || !lngRaw) return "invalid";
+  const mapLat = Number(latRaw);
+  const mapLng = Number(lngRaw);
+  if (!Number.isFinite(mapLat) || !Number.isFinite(mapLng)) return "invalid";
+  if (mapLat < -90 || mapLat > 90 || mapLng < -180 || mapLng > 180) return "invalid";
+  return { mapLat, mapLng };
+}
+
 /** Окно готовности в ПВЗ: дни от «сегодня» (Москва) или фиксированная дата в заголовке чекаута. */
 function parsePvzDeliveryWindow(formData: FormData) {
   const min = Math.max(1, toInt(formData.get("pvzDeliveryMinDays"), 3));
@@ -271,6 +287,8 @@ export async function createSource(formData: FormData) {
   const type = String(formData.get("type") ?? "").trim();
   const cityId = String(formData.get("cityId") ?? "");
   if (!name || !cityId || !type) return;
+  const coords = parseOptionalMapCoords(formData);
+  if (coords === "invalid") return;
   await prisma.source.create({
     data: {
       name,
@@ -278,6 +296,8 @@ export async function createSource(formData: FormData) {
       cityId,
       priority: toInt(formData.get("priority"), 0),
       isActive: toBool(formData.get("isActive")),
+      mapLat: type === "store" ? coords.mapLat : null,
+      mapLng: type === "store" ? coords.mapLng : null,
     },
   });
   revalidatePath("/admin/sources");
@@ -287,14 +307,19 @@ export async function updateSource(formData: FormData) {
   await gate();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const type = String(formData.get("type") ?? "").trim();
+  const coords = parseOptionalMapCoords(formData);
+  if (coords === "invalid") return;
   await prisma.source.update({
     where: { id },
     data: {
       name: String(formData.get("name") ?? "").trim(),
-      type: String(formData.get("type") ?? "").trim(),
+      type,
       cityId: String(formData.get("cityId") ?? ""),
       priority: toInt(formData.get("priority"), 0),
       isActive: toBool(formData.get("isActive")),
+      mapLat: type === "store" ? coords.mapLat : null,
+      mapLng: type === "store" ? coords.mapLng : null,
     },
   });
   revalidatePath("/admin/sources");
@@ -314,6 +339,8 @@ export async function createPvzPoint(formData: FormData) {
   const address = String(formData.get("address") ?? "").trim();
   const cityId = String(formData.get("cityId") ?? "");
   if (!name || !address || !cityId) return;
+  const coords = parseOptionalMapCoords(formData);
+  if (coords === "invalid") return;
   await prisma.pvzPoint.create({
     data: {
       name,
@@ -321,6 +348,8 @@ export async function createPvzPoint(formData: FormData) {
       cityId,
       requiresPrepayment: toBool(formData.get("requiresPrepayment")),
       isActive: toBool(formData.get("isActive")),
+      mapLat: coords.mapLat,
+      mapLng: coords.mapLng,
     },
   });
   revalidatePath("/admin/pvz-points");
@@ -330,6 +359,8 @@ export async function updatePvzPoint(formData: FormData) {
   await gate();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const coords = parseOptionalMapCoords(formData);
+  if (coords === "invalid") return;
   await prisma.pvzPoint.update({
     where: { id },
     data: {
@@ -338,6 +369,8 @@ export async function updatePvzPoint(formData: FormData) {
       cityId: String(formData.get("cityId") ?? ""),
       requiresPrepayment: toBool(formData.get("requiresPrepayment")),
       isActive: toBool(formData.get("isActive")),
+      mapLat: coords.mapLat,
+      mapLng: coords.mapLng,
     },
   });
   revalidatePath("/admin/pvz-points");

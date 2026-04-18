@@ -44,6 +44,25 @@ export default async function AdminPvzPointsPage() {
         <label className="flex items-center gap-2 text-xs">
           <input type="checkbox" name="isActive" defaultChecked /> active
         </label>
+        <p className="md:col-span-6 text-xs text-slate-600">
+          Координаты на карте (WGS84): широта и долгота, обе пустые — без метки на карте.
+        </p>
+        <input
+          name="mapLat"
+          type="text"
+          inputMode="decimal"
+          placeholder="Широта"
+          className="md:col-span-3"
+          aria-label="Широта для карты"
+        />
+        <input
+          name="mapLng"
+          type="text"
+          inputMode="decimal"
+          placeholder="Долгота"
+          className="md:col-span-3"
+          aria-label="Долгота для карты"
+        />
         <AdminSubmitButton variant="primary" className="md:col-span-6" pendingLabel="Добавляем…">
           Добавить ПВЗ
         </AdminSubmitButton>
@@ -63,7 +82,7 @@ export default async function AdminPvzPointsPage() {
             <form key={p.id} action={updatePvzPoint} className="admin-form-card admin-form-card--compact grid gap-2 text-sm md:grid-cols-12">
               <input type="hidden" name="id" value={p.id} />
               <input name="name" defaultValue={p.name} className="md:col-span-2" aria-label="Название" />
-              <input name="address" defaultValue={p.address} className="md:col-span-4" aria-label="Адрес" />
+              <input name="address" defaultValue={p.address} className="md:col-span-2" aria-label="Адрес" />
               <select name="cityId" defaultValue={p.cityId} className="md:col-span-2" aria-label="Город">
                 {cities.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -77,6 +96,24 @@ export default async function AdminPvzPointsPage() {
               <label className="flex items-center gap-2 text-xs md:col-span-1">
                 <input type="checkbox" name="isActive" defaultChecked={p.isActive} /> active
               </label>
+              <input
+                name="mapLat"
+                type="text"
+                inputMode="decimal"
+                defaultValue={p.mapLat != null ? String(p.mapLat) : ""}
+                placeholder="Широта"
+                className="md:col-span-1"
+                aria-label="Широта для карты"
+              />
+              <input
+                name="mapLng"
+                type="text"
+                inputMode="decimal"
+                defaultValue={p.mapLng != null ? String(p.mapLng) : ""}
+                placeholder="Долгота"
+                className="md:col-span-1"
+                aria-label="Долгота для карты"
+              />
               <AdminSubmitButton variant="secondary" size="sm" silentPending className="md:col-span-1">
                 Сохранить
               </AdminSubmitButton>

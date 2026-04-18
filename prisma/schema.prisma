@@ -40,6 +40,9 @@ model Source {
   city        City        @relation(fields: [cityId], references: [id], onDelete: Cascade)
   priority    Int         @default(0)
   isActive    Boolean     @default(true)
+  /** WGS84, для карты самовывоза (тип store) */
+  mapLat      Float?
+  mapLng      Float?
   inventories Inventory[]
 }
 
@@ -129,6 +132,9 @@ model PvzPoint {
   city               City    @relation(fields: [cityId], references: [id], onDelete: Cascade)
   requiresPrepayment Boolean @default(false)
   isActive           Boolean @default(true)
+  /** WGS84 для карты выбора ПВЗ */
+  mapLat             Float?
+  mapLng             Float?
 }
 
 model DisclaimerTemplate {

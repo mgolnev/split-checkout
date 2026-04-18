@@ -39,6 +39,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@yandex/ymaps3-types": "^1.0.19345674",
     "eslint": "^9",
     "eslint-config-next": "15.5.14",
     "prisma": "6.3.1",

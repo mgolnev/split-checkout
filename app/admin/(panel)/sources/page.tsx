@@ -41,6 +41,26 @@ export default async function AdminSourcesPage() {
         <label className="flex items-center gap-2 text-xs">
           <input type="checkbox" name="isActive" defaultChecked /> active
         </label>
+        <p className="md:col-span-6 text-xs text-slate-600">
+          Координаты на Яндекс.Карте (самовывоз, тип <code className="rounded bg-slate-100 px-1">store</code>): WGS84,
+          широта и долгота через точку. Обе пустые — без метки на карте.
+        </p>
+        <input
+          name="mapLat"
+          type="text"
+          inputMode="decimal"
+          placeholder="Широта (напр. 55.75)"
+          className="md:col-span-3"
+          aria-label="Широта для карты"
+        />
+        <input
+          name="mapLng"
+          type="text"
+          inputMode="decimal"
+          placeholder="Долгота (напр. 37.62)"
+          className="md:col-span-3"
+          aria-label="Долгота для карты"
+        />
         <AdminSubmitButton variant="primary" className="md:col-span-6" pendingLabel="Добавляем…">
           Добавить источник
         </AdminSubmitButton>
@@ -57,7 +77,7 @@ export default async function AdminSourcesPage() {
       ) : (
         <div className="mt-3 space-y-3">
           {list.map((s) => (
-            <form key={s.id} action={updateSource} className="admin-form-card admin-form-card--compact grid gap-2 text-sm md:grid-cols-8">
+            <form key={s.id} action={updateSource} className="admin-form-card admin-form-card--compact grid gap-2 text-sm md:grid-cols-10">
               <input type="hidden" name="id" value={s.id} />
               <input name="name" defaultValue={s.name} className="md:col-span-2" aria-label="Название" />
               <select name="type" defaultValue={s.type} aria-label="Тип">
@@ -75,6 +95,24 @@ export default async function AdminSourcesPage() {
               <label className="flex items-center gap-2 text-xs">
                 <input type="checkbox" name="isActive" defaultChecked={s.isActive} /> active
               </label>
+              <input
+                name="mapLat"
+                type="text"
+                inputMode="decimal"
+                defaultValue={s.mapLat != null ? String(s.mapLat) : ""}
+                placeholder="Широта"
+                className="md:col-span-1"
+                aria-label="Широта для карты"
+              />
+              <input
+                name="mapLng"
+                type="text"
+                inputMode="decimal"
+                defaultValue={s.mapLng != null ? String(s.mapLng) : ""}
+                placeholder="Долгота"
+                className="md:col-span-1"
+                aria-label="Долгота для карты"
+              />
               <AdminSubmitButton variant="secondary" size="sm" silentPending>
                 Сохранить
               </AdminSubmitButton>
