@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { CheckoutTypographyCatalog } from "./checkout-typography-catalog";
 import { PromoStripDemo } from "./promo-strip-demo";
 
 function CompareRow({
@@ -45,7 +46,8 @@ export default function UiKitPage() {
           <div>
             <p className="cu-page-title">UI kit — чекаут</p>
             <p className="cu-muted mt-1 max-w-xl">
-              Текущие токены и паттерны из кода. Правая колонка — для макета дизайнера и заметок при ревью.
+              Каталог ниже отсортирован по кеглю; у каждого стиля — шрифт, размер, цвет, разрядка и регистр. Дальше —
+              блоки сравнения с колонкой для дизайна.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
@@ -66,28 +68,7 @@ export default function UiKitPage() {
       </header>
 
       <div className="mx-auto max-w-3xl space-y-10 px-4 py-8">
-        <CompareRow title="Типографика" token="globals.css · cu-*">
-          <div className="space-y-4">
-            <p className="cu-page-title">cu-page-title — заголовок экрана</p>
-            <p className="cu-section-title">cu-section-title — секция</p>
-            <p className="cu-block-heading">cu-block-heading — отправление</p>
-            <p className="cu-sheet-title">cu-sheet-title — заголовок модалки</p>
-            <p className="cu-sheet-lead">cu-sheet-lead — подзаголовок модалки или пояснение к блоку.</p>
-            <p className="cu-label-primary text-neutral-900">cu-label-primary — акцентная строка в карточке</p>
-            <p className="cu-muted">cu-muted — вторичный текст, подсказки</p>
-            <div className="flex justify-center rounded-lg bg-neutral-50 py-2">
-              <span className="cu-stepper-label">cu-stepper-label — шаг / подпись таба</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="cu-total-row-label">cu-total-row-label</span>
-              <span className="cu-total-row-value">12 345 ₽</span>
-            </div>
-            <div className="cu-total-final-row border-t border-neutral-100 pt-2">
-              <span>Итого</span>
-              <span>12 345 ₽</span>
-            </div>
-          </div>
-        </CompareRow>
+        <CheckoutTypographyCatalog />
 
         <CompareRow title="Основная кнопка (CTA)" token="CheckoutApp · fixed bar">
           <button

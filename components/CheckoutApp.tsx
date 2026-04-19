@@ -176,22 +176,49 @@ function checkoutPaymentMethodLabel(method: CheckoutPaymentMethod): string {
   const labels: Record<CheckoutPaymentMethod, string> = {
     sbp: "СБП",
     card: "Банковской картой онлайн",
-    on_receipt: "При получении (картой или наличными)",
+    on_receipt: "При получении, картой или наличными",
   };
   return labels[method];
 }
 
-function scrollToCheckoutRecipientAuth() {
-  document.getElementById("checkout-recipient-heading")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  window.setTimeout(() => {
-    document.getElementById("checkout-recipient-phone")?.focus();
-  }, 350);
+/** Шеврон вниз (как у «Подробнее» в списке магазинов): селекты, раскрытия. */
+function CheckoutChevronDownIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M4 6.5 8 10l4-3.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
+/** Стрелка назад — тот же контур, что у круглой кнопки на карте (variant=&quot;back&quot;). */
+function CheckoutBackChevronIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+/** Плашка GJ: чуть шире высоты, скругление как у банковской карты. */
 function GjMark({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`flex shrink-0 items-center justify-center rounded-lg bg-neutral-900 font-bold text-white ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-md bg-neutral-900 font-bold leading-none text-white ${className}`}
     >
       GJ
     </span>
@@ -209,7 +236,7 @@ function BonusPointsToggle({ bonusOn, promoApplied, amountLabel, onToggle }: Bon
   const blocked = promoApplied;
   return (
     <div className="flex w-full items-center gap-3">
-      <GjMark className="h-8 w-8 text-[10px]" />
+      <GjMark className="h-8 min-w-[2.25rem] px-1 text-[10px]" />
       <div className="min-w-0 flex-1">
         <span className="cu-label-primary min-w-0 text-neutral-900">
           Списать с карты GJ {amountLabel}
@@ -239,16 +266,16 @@ function BonusPointsToggle({ bonusOn, promoApplied, amountLabel, onToggle }: Bon
   );
 }
 
-/** Пока нет входа по телефону — подсказка перейти к блоку «Мои данные». */
-function BonusAuthBar() {
+/** Пока нет входа по телефону — открывает тот же шит, что и при оформлении без номера. */
+function BonusAuthBar({ onOpenPhoneGate }: { onOpenPhoneGate: () => void }) {
   return (
     <button
       type="button"
-      onClick={() => scrollToCheckoutRecipientAuth()}
-      aria-label="Перейти к входу по телефону, чтобы копить и списывать бонусы"
+      onClick={onOpenPhoneGate}
+      aria-label="Ввести телефон, чтобы копить и списывать бонусы"
       className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-neutral-900 transition hover:opacity-90 active:opacity-90"
     >
-      <GjMark className="h-10 w-10 text-[11px]" />
+      <GjMark className="h-10 min-w-[2.75rem] px-1 text-[11px]" />
       <span className="min-w-0 flex-1 text-sm leading-snug text-neutral-900">
         Войдите в аккаунт, чтобы копить и списывать бонусы GJ
       </span>
@@ -1229,10 +1256,11 @@ function PickupStoreSelector({
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate">
       <CheckoutCloseCrossButton
-        ariaLabel="Закрыть карту выбора магазина"
+        variant="back"
+        ariaLabel="Назад к оформлению заказа"
         onClick={onClose}
         className={
-          vvSheet ? "fixed right-4 z-30" : "fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+          vvSheet ? "fixed left-4 z-30" : "fixed left-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
         }
         style={vvSheet ? { top: Math.max(16, vvSheet.top + 4) } : undefined}
       />
@@ -1537,14 +1565,9 @@ function PickupStoreSelector({
                               aria-expanded={detailsOpen}
                             >
                               <span>{detailsOpen ? "Свернуть" : "Подробнее"}</span>
-                              <svg
+                              <CheckoutChevronDownIcon
                                 className={`mt-px h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                aria-hidden
-                              >
-                                <path d="M4 6.5 8 10l4-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
+                              />
                             </button>
                           ) : null}
                           {detailsOpen ? (
@@ -1579,17 +1602,20 @@ function PickupStoreSelector({
   );
 }
 
-/** Круглая кнопка ×: белый фон, серая обводка, тень — единый стиль закрытия на чекауте. */
+/** Круглая кнопка: × (закрыть) или стрелка «назад» — белый фон, серая обводка, тень. */
 function CheckoutCloseCrossButton({
   ariaLabel,
   onClick,
   className = "",
   style,
+  variant = "close",
 }: {
   ariaLabel: string;
   onClick: () => void;
   className?: string;
   style?: CSSProperties;
+  /** На полноэкранной карте — «назад» слева; в шите — обычно ×. */
+  variant?: "close" | "back";
 }) {
   return (
     <button
@@ -1597,9 +1623,15 @@ function CheckoutCloseCrossButton({
       onClick={onClick}
       aria-label={ariaLabel}
       style={style}
-      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl leading-none text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md ${className}`}
+      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md ${
+        variant === "close" ? "text-xl leading-none" : ""
+      } ${className}`}
     >
-      <span aria-hidden>×</span>
+      {variant === "back" ? (
+        <CheckoutBackChevronIcon className="h-6 w-6 shrink-0" />
+      ) : (
+        <span aria-hidden>×</span>
+      )}
     </button>
   );
 }
@@ -1634,7 +1666,7 @@ function CheckoutSheetStickyHeader({
 /** Горизонтальные вкладки способа получения — общий блок для основного чекаута и модалки сплита. */
 function CheckoutDeliveryMethodTabs({
   items,
-  className = "flex items-stretch gap-3",
+  className = "",
   coveragePending = false,
 }: {
   className?: string;
@@ -1654,7 +1686,7 @@ function CheckoutDeliveryMethodTabs({
   }>;
 }) {
   return (
-    <div className={className}>
+    <div className={`flex w-full min-w-0 items-stretch gap-3 ${className}`}>
       {items.map((item) => (
         <button
           key={item.id}
@@ -1666,7 +1698,7 @@ function CheckoutDeliveryMethodTabs({
             if (item.disabled) return;
             item.onSelect();
           }}
-          className={`flex min-h-[75px] flex-1 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition ${
+          className={`flex min-h-[75px] min-w-0 flex-1 flex-col items-start justify-center gap-1 rounded-xl border px-2.5 py-3 text-left transition sm:px-3 ${
             item.selected
               ? "border-black bg-black text-white"
               : item.disabled
@@ -1676,7 +1708,9 @@ function CheckoutDeliveryMethodTabs({
                 : "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
           }`}
         >
-          <span className="cu-label-primary leading-tight text-inherit">{item.tabLabel}</span>
+          <span className="cu-label-primary max-w-full min-w-0 break-words leading-tight text-inherit">
+            {item.tabLabel}
+          </span>
           {coveragePending ? (
             <span
               className={`block h-3.5 w-[5.25rem] max-w-full animate-pulse rounded-sm ${
@@ -1685,7 +1719,9 @@ function CheckoutDeliveryMethodTabs({
               aria-hidden
             />
           ) : (
-            <p className={`text-xs leading-tight ${item.selected ? "text-white/95" : "text-neutral-600"}`}>
+            <p
+              className={`min-w-0 max-w-full break-words text-xs leading-tight ${item.selected ? "text-white/95" : "text-neutral-600"}`}
+            >
               {item.coverage}
             </p>
           )}
@@ -2082,10 +2118,11 @@ function PvzPointSelector({
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate">
       <CheckoutCloseCrossButton
-        ariaLabel="Закрыть карту выбора ПВЗ"
+        variant="back"
+        ariaLabel="Назад к оформлению заказа"
         onClick={onClose}
         className={
-          vvSheet ? "fixed right-4 z-30" : "fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
+          vvSheet ? "fixed left-4 z-30" : "fixed left-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
         }
         style={vvSheet ? { top: Math.max(16, vvSheet.top + 4) } : undefined}
       />
@@ -2364,14 +2401,9 @@ function PvzPointSelector({
                               aria-expanded={detailsOpen}
                             >
                               <span>{detailsOpen ? "Свернуть" : "Подробнее"}</span>
-                              <svg
+                              <CheckoutChevronDownIcon
                                 className={`mt-px h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                aria-hidden
-                              >
-                                <path d="M4 6.5 8 10l4-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
+                              />
                             </button>
                           ) : null}
                           {detailsOpen ? <div className="space-y-3 border-t border-neutral-100 pt-3">{renderPvzDetails()}</div> : null}
@@ -3054,7 +3086,7 @@ function SplitSelectionModal({
         </div>
 
         <CheckoutDeliveryMethodTabs
-          className="mt-4 flex items-stretch gap-3"
+          className="mt-4"
           items={[
             courierOption
               ? {
@@ -3095,7 +3127,7 @@ function SplitSelectionModal({
         ) : null}
 
         {selectedMethod ? (
-          <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
+          <div className="mt-3 space-y-3">
             {(() => {
               const optForSummary =
                 selectedMethod === "courier"
@@ -3154,7 +3186,7 @@ function SplitSelectionModal({
                         onChange={() => onEditCourierAddress(courierOption)}
                       />
                       {courierAddress.trim() && splitCourierParts.length > 0 ? (
-                        <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                        <section className="overflow-hidden rounded-xl border border-neutral-100 bg-white">
                           {splitCourierParts.map((part, partIx) => (
                             <div
                               key={part.key}
@@ -3662,6 +3694,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [recipient, setRecipient] = useState<CheckoutRecipientPayload | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneGateOpen, setPhoneGateOpen] = useState(false);
+  /** Откуда открыли шит телефона: оформление заказа — после ввода уходим на thank-you; бонусы — только сохраняем номер. */
+  const [phoneGateReason, setPhoneGateReason] = useState<"submit" | "bonus" | null>(null);
   const [courierAddress, setCourierAddress] = useState("");
   const [courierAddressModalTarget, setCourierAddressModalTarget] = useState<CourierAddressModalTarget | null>(null);
   const latestScenarioRequestRef = useRef(0);
@@ -3689,6 +3723,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     saveCourierAddress(courierAddress);
   }, [courierAddress]);
   const primaryCourierAddress = method === "courier" ? courierAddress : "";
+
+  const closePhoneGate = useCallback(() => {
+    setPhoneGateOpen(false);
+    setPhoneGateReason(null);
+  }, []);
 
   const checkoutSheetOpen =
     pickupSelectorOpen ||
@@ -4673,6 +4712,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const submit = () => {
     if (!boot || !scenario || !cartDetail || !method) return;
     if (!recipient) {
+      setPhoneGateReason("submit");
       setPhoneGateOpen(true);
       return;
     }
@@ -4700,9 +4740,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const confirmRecipientFromGate = () => {
     const p = buildRecipientPayload(phoneDraft);
     if (!p) return;
+    const shouldSubmit = phoneGateReason === "submit";
     applyRecipientPayload(p);
-    setPhoneGateOpen(false);
-    queueMicrotask(() => completeCheckoutSubmit(p));
+    closePhoneGate();
+    if (shouldSubmit) {
+      queueMicrotask(() => completeCheckoutSubmit(p));
+    }
   };
 
   const clearRecipient = () => {
@@ -4876,12 +4919,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   };
 
   return (
-    <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-neutral-50 pb-28">
+    <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-neutral-100 pb-28">
       <div className="sticky top-0 z-50 mb-3 border-b border-neutral-100 bg-white shadow-sm">
         <header className="px-4 py-3">
           <div className="flex items-center gap-3">
-            <Link href="/cart" className="text-xl text-neutral-700" aria-label="Назад в корзину">
-              ←
+            <Link
+              href="/cart"
+              className="flex h-9 w-9 shrink-0 items-center justify-center text-neutral-700"
+              aria-label="Назад в корзину"
+            >
+              <CheckoutBackChevronIcon className="h-6 w-6" />
             </Link>
             <h1 className="cu-page-title flex-1 text-center">Оформление заказа</h1>
             <span className="w-6" />
@@ -4892,7 +4939,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </div>
       </div>
 
-      <div className="relative z-0 flex flex-col gap-3 px-5 pt-4">
+      <div className="relative z-0 flex flex-col gap-3 px-4 pt-4">
         <section className="overflow-hidden rounded-2xl border border-neutral-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
           <div className="p-5">
             <div className="mb-3 flex items-center justify-between">
@@ -4910,8 +4957,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   </option>
                 ))}
               </select>
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-neutral-500">
-                ▾
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-neutral-500">
+                <CheckoutChevronDownIcon className="h-3.5 w-3.5" />
               </span>
             </div>
           </div>
@@ -5201,7 +5248,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : null}
 
         <section aria-labelledby="checkout-recipient-heading">
-          <div className="cu-checkout-block cu-checkout-block--soft">
+          <div className="cu-checkout-block">
             <h2 id="checkout-recipient-heading" className="cu-section-title mb-3">
               Мои данные
             </h2>
@@ -5227,9 +5274,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 </button>
               </>
             ) : (
-              <div className="rounded-xl border border-neutral-200/80 bg-white/60 px-3 py-3">
+              <div className="space-y-1">
                 <p className="cu-label-primary text-neutral-900">{recipient.fullName}</p>
-                <p className="mt-1 text-sm text-neutral-600">{recipient.phone}</p>
+                <p className="text-sm text-neutral-600">{recipient.phone}</p>
                 <button
                   type="button"
                   onClick={clearRecipient}
@@ -5257,19 +5304,33 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : null}
           <div role="radiogroup" aria-labelledby="checkout-payment-heading" className="space-y-2">
             {(
-              [
-                { id: "sbp" as const, Icon: SbpBrandIcon, iconClass: "h-7 w-7" },
-                {
-                  id: "card" as const,
-                  Icon: PaymentCardOutlineIcon,
-                  iconClass: "h-7 w-7 text-neutral-900",
-                },
-                {
-                  id: "on_receipt" as const,
-                  Icon: PaymentBagOutlineIcon,
-                  iconClass: "h-7 w-7 text-neutral-900",
-                },
-              ] as const
+              payOnDeliveryOnlyEffective
+                ? [
+                    {
+                      id: "on_receipt" as const,
+                      Icon: PaymentBagOutlineIcon,
+                      iconClass: "h-7 w-7 text-neutral-900",
+                    },
+                    { id: "sbp" as const, Icon: SbpBrandIcon, iconClass: "h-7 w-7" },
+                    {
+                      id: "card" as const,
+                      Icon: PaymentCardOutlineIcon,
+                      iconClass: "h-7 w-7 text-neutral-900",
+                    },
+                  ]
+                : [
+                    { id: "sbp" as const, Icon: SbpBrandIcon, iconClass: "h-7 w-7" },
+                    {
+                      id: "card" as const,
+                      Icon: PaymentCardOutlineIcon,
+                      iconClass: "h-7 w-7 text-neutral-900",
+                    },
+                    {
+                      id: "on_receipt" as const,
+                      Icon: PaymentBagOutlineIcon,
+                      iconClass: "h-7 w-7 text-neutral-900",
+                    },
+                  ]
             ).map(({ id, Icon, iconClass }) => {
               const label = checkoutPaymentMethodLabel(id);
               const selected = paymentMethod === id;
@@ -5302,7 +5363,18 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     {selected ? <span className="h-2.5 w-2.5 rounded-full bg-neutral-900" /> : null}
                   </span>
                   <Icon className={`shrink-0 ${iconClass}`} />
-                  <span className="cu-label-primary min-w-0 flex-1 text-neutral-900">{label}</span>
+                  <span className="cu-label-primary min-w-0 flex-1 text-neutral-900">
+                    {id === "on_receipt" ? (
+                      <span className="block min-w-0">
+                        <span className="block leading-snug">При получении</span>
+                        <span className="mt-0.5 block text-xs font-medium leading-snug text-neutral-600">
+                          картой или наличными
+                        </span>
+                      </span>
+                    ) : (
+                      label
+                    )}
+                  </span>
                 </button>
               );
             })}
@@ -5364,7 +5436,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               }}
             />
           ) : (
-            <BonusAuthBar />
+            <BonusAuthBar
+              onOpenPhoneGate={() => {
+                setPhoneGateReason("bonus");
+                setPhoneGateOpen(true);
+              }}
+            />
           )}
           </div>
         </section>
@@ -5504,7 +5581,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             type="button"
             aria-label="Закрыть окно телефона"
             className="absolute inset-0"
-            onClick={() => setPhoneGateOpen(false)}
+            onClick={closePhoneGate}
           />
           <div
             role="dialog"
@@ -5516,13 +5593,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 <div className="min-w-0 flex-1 pr-1">
                   <h3 className="cu-sheet-title">Подтвердите телефон</h3>
                   <p className="cu-sheet-lead mt-1">
-                    Чтобы оформить заказ, укажите номер и нажмите «Получить смс с кодом» — в демо переходим без ввода
-                    кода.
+                    {phoneGateReason === "bonus" ? (
+                      <>Введите номер телефона, пришлём смс-код для бонусов GJ</>
+                    ) : (
+                      <>Введите номер телефона, пришлём смс-код</>
+                    )}
                   </p>
                 </div>
                 <CheckoutCloseCrossButton
                   ariaLabel="Закрыть окно телефона"
-                  onClick={() => setPhoneGateOpen(false)}
+                  onClick={closePhoneGate}
                 />
               </div>
             </div>
@@ -5542,13 +5622,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 className="mt-3 w-full rounded-lg bg-black py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-40"
               >
                 Получить смс с кодом
-              </button>
-              <button
-                type="button"
-                onClick={() => setPhoneGateOpen(false)}
-                className="mt-2 w-full rounded-lg border border-neutral-900 bg-white py-2.5 text-sm font-medium text-neutral-900"
-              >
-                Отмена
               </button>
             </div>
           </div>

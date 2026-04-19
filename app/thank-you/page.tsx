@@ -47,7 +47,7 @@ function paymentMethodLabel(m: CheckoutPaymentMethod): string {
   const labels: Record<CheckoutPaymentMethod, string> = {
     sbp: "СБП",
     card: "Банковской картой онлайн",
-    on_receipt: "При получении (картой или наличными)",
+    on_receipt: "При получении, картой или наличными",
   };
   return labels[m];
 }
@@ -110,7 +110,15 @@ export default function ThankYouPage() {
         </p>
         {data.paymentMethod ? (
           <p className="mt-3 text-sm text-neutral-700">
-            Способ оплаты: <span className="font-medium">{paymentMethodLabel(data.paymentMethod)}</span>
+            Способ оплаты:{" "}
+            {data.paymentMethod === "on_receipt" ? (
+              <span className="inline-block text-left align-top font-medium">
+                <span className="block">При получении</span>
+                <span className="block text-neutral-600">картой или наличными</span>
+              </span>
+            ) : (
+              <span className="font-medium">{paymentMethodLabel(data.paymentMethod)}</span>
+            )}
           </p>
         ) : null}
         {data.recipientName && data.recipientPhone ? (
