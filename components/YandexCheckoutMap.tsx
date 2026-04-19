@@ -123,20 +123,22 @@ export function YandexCheckoutMap({
     return () => {
       cancelled = true;
       setMapReady(false);
-      // Снимок Map на unmount (содержимое ref в этот момент актуально)
       // eslint-disable-next-line react-hooks/exhaustive-deps
       const rootsSnapshot = markerRootsRef.current;
       // eslint-disable-next-line react-hooks/exhaustive-deps
       const entitiesSnapshot = markerEntitiesRef.current;
-      for (const root of rootsSnapshot.values()) {
-        root.unmount();
-      }
-      rootsSnapshot.clear();
-      entitiesSnapshot.clear();
+      const mapInstance = map;
       mapRef.current = null;
-      if (map) {
-        map.destroy();
-      }
+      queueMicrotask(() => {
+        for (const root of rootsSnapshot.values()) {
+          root.unmount();
+        }
+        rootsSnapshot.clear();
+        entitiesSnapshot.clear();
+        if (mapInstance) {
+          mapInstance.destroy();
+        }
+      });
     };
   }, []);
 
@@ -166,7 +168,14 @@ export function YandexCheckoutMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- панорам по lng/lat, не по ссылке на focus
   }, [focus?.lng, focus?.lat, mapReady]);
 
-  return <div ref={containerRef} className={`absolute inset-0 z-0 ${className}`} aria-hidden />;
+  return (
+    <div
+      ref={containerRef}
+      className={`absolute inset-0 z-0 ${className}`}
+      role="region"
+      aria-label="Карта с точками выбора"
+    />
+  );
 }
 
 function syncMarkers(
@@ -181,13 +190,13 @@ function syncMarkers(
 
   for (const [id, entity] of entityById) {
     if (!nextIds.has(id)) {
-      map.removeChild(entity);
-      entityById.delete(id);
       const root = roots.get(id);
       if (root) {
         root.unmount();
         roots.delete(id);
       }
+      map.removeChild(entity);
+      entityById.delete(id);
     }
   }
 

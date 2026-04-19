@@ -1410,7 +1410,7 @@ function PickupStoreSelector({
                   <button
                     type="button"
                     onClick={() => onSelect(sheetStore.id)}
-                    className="w-full rounded-xl border border-neutral-900 bg-white py-3 text-sm font-semibold text-neutral-900 transition hover:bg-neutral-50"
+                    className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
                   >
                     Выбрать
                   </button>
@@ -1455,7 +1455,7 @@ function PickupStoreSelector({
                             <button
                               type="button"
                               onClick={() => onSelect(store.id)}
-                              className="shrink-0 rounded-xl border border-neutral-900 bg-white px-4 py-2 text-xs font-semibold text-neutral-900 transition hover:bg-neutral-50"
+                              className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
                               aria-pressed={selected}
                             >
                               Выбрать
@@ -2221,7 +2221,7 @@ function PvzPointSelector({
                 <button
                   type="button"
                   onClick={() => onSelect(sheetPoint.id)}
-                  className="w-full rounded-xl border border-neutral-900 bg-white py-3 text-sm font-semibold text-neutral-900 transition hover:bg-neutral-50"
+                  className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
                 >
                   Выбрать
                 </button>
@@ -2254,7 +2254,7 @@ function PvzPointSelector({
                           <button
                             type="button"
                             onClick={() => onSelect(point.id)}
-                            className="shrink-0 rounded-xl border border-neutral-900 bg-white px-4 py-2 text-xs font-semibold text-neutral-900 transition hover:bg-neutral-50"
+                            className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
                             aria-pressed={selected}
                           >
                             Выбрать
