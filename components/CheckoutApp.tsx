@@ -24,7 +24,7 @@ import {
 } from "@/lib/cart-method-summaries";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { formatHoldNoticeForPart } from "@/lib/hold-display";
-import { MapStorePin } from "@/components/MapStorePin";
+import { MapStorePin, type MapStorePinSurface } from "@/components/MapStorePin";
 import { YandexCheckoutMap } from "@/components/YandexCheckoutMap";
 import type {
   AlternativeMethodOption,
@@ -648,6 +648,23 @@ function pickupStoreCompactScenarioLine(summary?: PickupStoreSummary): string {
   return `Доступно 0 из ${summary.totalUnits} товаров`;
 }
 
+/** Непрозрачные оттенки круга пина: чёрный → тёмно-серые по сценарию и «рекомендованному» магазину. */
+function pickupStorePinSurface(
+  summary: PickupStoreSummary | undefined,
+  opts: { recommended: boolean; pinOpen: boolean },
+): MapStorePinSurface {
+  if (opts.pinOpen) return "ink";
+  const kind = pickupStoreScenarioKind(summary);
+  if (opts.recommended) {
+    if (kind === "today_all" || kind === "today_later") return "ink";
+    if (kind === "later_all") return "charcoal";
+    return "graphite";
+  }
+  if (kind === "today_all") return "charcoal";
+  if (kind === "today_later" || kind === "later_all") return "graphite";
+  return "slate";
+}
+
 function pickupStorePinEmphasisClass(
   summary: PickupStoreSummary | undefined,
   opts: { recommended: boolean; pinOpen: boolean },
@@ -655,8 +672,8 @@ function pickupStorePinEmphasisClass(
   const kind = pickupStoreScenarioKind(summary);
   if (opts.pinOpen) return "z-[35] scale-[1.06]";
   if ((kind === "today_all" || kind === "today_later") && opts.recommended) return "z-[14] scale-[1.03]";
-  if (kind === "incomplete" || kind === "later_partial") return "z-[8] scale-[0.95] opacity-70";
-  if (kind === "later_all") return "z-[9] opacity-80";
+  if (kind === "incomplete" || kind === "later_partial") return "z-[8]";
+  if (kind === "later_all") return "z-[9]";
   if (kind === "today_later") return "z-[10]";
   return "z-[11]";
 }
@@ -734,6 +751,18 @@ function pvzPointCompactScenarioLine(summary?: MethodSummary): string {
   return `${summary.availableUnits} из ${summary.totalUnits}`;
 }
 
+function pvzPointPinSurface(
+  summary: MethodSummary | undefined,
+  opts: { recommended: boolean; pinOpen: boolean },
+): MapStorePinSurface {
+  if (opts.pinOpen) return "ink";
+  if (!summary || summary.totalUnits <= 0) return "slate";
+  if (summary.availableUnits <= 0) return "slate";
+  if (opts.recommended) return "ink";
+  if (summary.availableUnits >= summary.totalUnits) return "charcoal";
+  return "graphite";
+}
+
 function pvzPointEmphasisClass(
   summary: MethodSummary | undefined,
   opts: { recommended: boolean; pinOpen: boolean },
@@ -741,7 +770,7 @@ function pvzPointEmphasisClass(
   if (opts.pinOpen) return "z-[35] scale-[1.05] ring-4 ring-black/15";
   if (opts.recommended && summary && summary.availableUnits > 0) return "z-[14] scale-[1.03] ring-2 ring-black/10";
   if (!summary || summary.availableUnits <= 0 || summary.availableUnits < summary.totalUnits) {
-    return "z-[8] scale-[0.95] opacity-75";
+    return "z-[8]";
   }
   return "z-[11]";
 }
@@ -957,6 +986,8 @@ function PickupStoreSelector({
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
+  const pickupSheetPanelRef = useRef<HTMLDivElement | null>(null);
+  const [pickupSheetHeightPx, setPickupSheetHeightPx] = useState(0);
   const vvSheet = useVisualViewportFrame(searchActive);
 
   const searchMatchedStores = useMemo(() => {
@@ -1022,7 +1053,7 @@ function PickupStoreSelector({
     const rec = recommendedStoreId;
     const others = filteredStores.filter((s) => s.id !== rec);
     return (storeId: string): { left: string; top: string } => {
-      if (mapPreviewStoreId === storeId) return { left: "50%", top: "25%" };
+      if (mapPreviewStoreId === storeId) return { left: "50%", top: "18%" };
       if (rec && storeId === rec) return { left: "50%", top: "42%" };
       const ix = others.findIndex((s) => s.id === storeId);
       const p = PICKUP_MAP_POSITIONS[(ix >= 0 ? ix : 0) % PICKUP_MAP_POSITIONS.length]!;
@@ -1087,6 +1118,7 @@ function PickupStoreSelector({
         const pinOpen = mapPreviewStoreId === s.id;
         const recommended = recommendedStoreId === s.id;
         const emphasis = pickupStorePinEmphasisClass(s.summary, { recommended, pinOpen });
+        const surface = pickupStorePinSurface(s.summary, { recommended, pinOpen });
         return {
           id: s.id,
           lng: s.mapLng!,
@@ -1096,20 +1128,39 @@ function PickupStoreSelector({
             line2: pinLines.line2,
             wasLastChoice: lastChosenStoreId === s.id,
             className: emphasis,
+            surface,
           },
         };
       });
   }, [filteredStores, mapPreviewStoreId, recommendedStoreId, lastChosenStoreId]);
 
   const showYandexPickupMap = hasYandexMapsKey && yandexPickupMarkers.length > 0;
-  const yandexPickupFocus =
-    mapPreviewStore &&
-    mapPreviewStore.mapLat != null &&
-    mapPreviewStore.mapLng != null &&
-    Number.isFinite(mapPreviewStore.mapLat) &&
-    Number.isFinite(mapPreviewStore.mapLng)
-      ? { lng: mapPreviewStore.mapLng, lat: mapPreviewStore.mapLat }
-      : null;
+  const yandexPickupFocus = useMemo((): { lng: number; lat: number } | null => {
+    if (
+      !mapPreviewStore ||
+      mapPreviewStore.mapLat == null ||
+      mapPreviewStore.mapLng == null ||
+      !Number.isFinite(mapPreviewStore.mapLat) ||
+      !Number.isFinite(mapPreviewStore.mapLng)
+    ) {
+      return null;
+    }
+    return { lng: mapPreviewStore.mapLng, lat: mapPreviewStore.mapLat };
+  }, [mapPreviewStore]);
+
+  useLayoutEffect(() => {
+    const el = pickupSheetPanelRef.current;
+    if (!el) return;
+    const sync = () => setPickupSheetHeightPx(Math.round(el.getBoundingClientRect().height));
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    window.addEventListener("resize", sync);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", sync);
+    };
+  }, []);
 
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
@@ -1194,6 +1245,7 @@ function PickupStoreSelector({
             <YandexCheckoutMap
               markers={yandexPickupMarkers}
               focus={yandexPickupFocus}
+              focusInsetBottomPx={yandexPickupFocus ? pickupSheetHeightPx : 0}
               onMarkerSelect={(id) => {
                 setSearchActive(false);
                 setMapPreviewStoreId(id);
@@ -1239,6 +1291,7 @@ function PickupStoreSelector({
                 const pinOpen = mapPreviewStoreId === store.id;
                 const recommended = recommendedStoreId === store.id;
                 const emphasis = pickupStorePinEmphasisClass(store.summary, { recommended, pinOpen });
+                const surface = pickupStorePinSurface(store.summary, { recommended, pinOpen });
                 return (
                   <button
                     key={store.id}
@@ -1249,17 +1302,21 @@ function PickupStoreSelector({
                       setMapPreviewStoreId(store.id);
                       setSheetMode("preview");
                     }}
-                    className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis}`}
+                    className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis}`}
                     style={{ left: pos.left, top: pos.top }}
                     aria-pressed={pinOpen}
                     aria-expanded={pinOpen}
                     aria-label={`${store.name}. ${pickupStoreCompactScenarioLine(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
                   >
-                    <MapStorePin
-                      line1={pinLines.line1}
-                      line2={pinLines.line2}
-                      wasLastChoice={lastChosenStoreId === store.id}
-                    />
+                    <span className="absolute -inset-[14px] z-0" aria-hidden />
+                    <span className="relative z-[1] inline-flex">
+                      <MapStorePin
+                        line1={pinLines.line1}
+                        line2={pinLines.line2}
+                        wasLastChoice={lastChosenStoreId === store.id}
+                        surface={surface}
+                      />
+                    </span>
                   </button>
                 );
               })}
@@ -1269,6 +1326,7 @@ function PickupStoreSelector({
       </div>
 
       <div
+        ref={pickupSheetPanelRef}
         role="region"
         aria-label="Результаты поиска магазинов"
         className={`z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass} ${vvSheet ? "fixed" : sheetPositionClass}`}
@@ -1299,7 +1357,7 @@ function PickupStoreSelector({
         </div>
         {showPreview ? (
           <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-2">
-            <p className="min-w-0 flex-1 truncate text-left text-[22px] font-semibold leading-tight text-neutral-900">
+            <p className="min-w-0 flex-1 break-words text-left text-[22px] font-semibold leading-tight text-neutral-900 line-clamp-2">
               {sheetStore?.name}
             </p>
             <CheckoutCloseCrossButton
@@ -1820,6 +1878,8 @@ function PvzPointSelector({
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
   const sheetDragRef = useRef<{ startY: number } | null>(null);
   const ignoreSheetClickRef = useRef(false);
+  const pvzSheetPanelRef = useRef<HTMLDivElement | null>(null);
+  const [pvzSheetHeightPx, setPvzSheetHeightPx] = useState(0);
   const vvSheet = useVisualViewportFrame(searchActive);
 
   const filteredPoints = useMemo(() => {
@@ -1859,7 +1919,7 @@ function PvzPointSelector({
   const pvzStatusDetail = pvzPointStatusDetail(summary, pvzSelectorCopy);
   const hasDetails = !!linePreview && (linePreview.available.length > 0 || linePreview.unavailable.length > 0);
   const mapPointPosition = (pointId: string): { left: string; top: string } => {
-    if (mapPreviewPointId === pointId) return { left: "50%", top: "25%" };
+    if (mapPreviewPointId === pointId) return { left: "50%", top: "18%" };
     if (recommendedPointId && pointId === recommendedPointId) return { left: "50%", top: "42%" };
     const others = filteredPoints.filter((p) => p.id !== recommendedPointId);
     const ix = others.findIndex((p) => p.id === pointId);
@@ -1916,6 +1976,7 @@ function PvzPointSelector({
         const pinOpen = mapPreviewPointId === p.id;
         const recommended = recommendedPointId === p.id;
         const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
+        const surface = pvzPointPinSurface(summary, { recommended, pinOpen });
         const selectedRing =
           !pinOpen && selectedPointId === p.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : "";
         return {
@@ -1927,6 +1988,7 @@ function PvzPointSelector({
             line1: pvzPointPinLine(summary),
             wasLastChoice: lastChosenPointId === p.id,
             className: `${emphasis} ${selectedRing}`.trim(),
+            surface,
           },
         };
       });
@@ -1940,14 +2002,32 @@ function PvzPointSelector({
   ]);
 
   const showYandexPvzMap = hasYandexMapsKeyPvz && yandexPvzMarkers.length > 0;
-  const yandexPvzFocus =
-    mapPreviewPoint &&
-    mapPreviewPoint.mapLat != null &&
-    mapPreviewPoint.mapLng != null &&
-    Number.isFinite(mapPreviewPoint.mapLat) &&
-    Number.isFinite(mapPreviewPoint.mapLng)
-      ? { lng: mapPreviewPoint.mapLng, lat: mapPreviewPoint.mapLat }
-      : null;
+  const yandexPvzFocus = useMemo((): { lng: number; lat: number } | null => {
+    if (
+      !mapPreviewPoint ||
+      mapPreviewPoint.mapLat == null ||
+      mapPreviewPoint.mapLng == null ||
+      !Number.isFinite(mapPreviewPoint.mapLat) ||
+      !Number.isFinite(mapPreviewPoint.mapLng)
+    ) {
+      return null;
+    }
+    return { lng: mapPreviewPoint.mapLng, lat: mapPreviewPoint.mapLat };
+  }, [mapPreviewPoint]);
+
+  useLayoutEffect(() => {
+    const el = pvzSheetPanelRef.current;
+    if (!el) return;
+    const sync = () => setPvzSheetHeightPx(Math.round(el.getBoundingClientRect().height));
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    window.addEventListener("resize", sync);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", sync);
+    };
+  }, []);
 
   const handleSheetPointerUp = (clientY: number) => {
     const start = sheetDragRef.current?.startY;
@@ -2018,6 +2098,7 @@ function PvzPointSelector({
             <YandexCheckoutMap
               markers={yandexPvzMarkers}
               focus={yandexPvzFocus}
+              focusInsetBottomPx={yandexPvzFocus ? pvzSheetHeightPx : 0}
               onMarkerSelect={(id) => {
                 setSearchActive(false);
                 setMapPreviewPointId(id);
@@ -2063,6 +2144,7 @@ function PvzPointSelector({
                 const recommended = recommendedPointId === point.id;
                 const wasLastChoice = lastChosenPointId === point.id;
                 const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
+                const surface = pvzPointPinSurface(summary, { recommended, pinOpen });
                 return (
                   <button
                     key={point.id}
@@ -2073,7 +2155,7 @@ function PvzPointSelector({
                       setMapPreviewPointId(point.id);
                       setSheetMode("preview");
                     }}
-                    className={`pointer-events-auto absolute -translate-x-[38px] -translate-y-full border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 ${emphasis} ${
+                    className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis} ${
                       !pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : ""
                     }`}
                     style={{ left: pos.left, top: pos.top }}
@@ -2081,11 +2163,15 @@ function PvzPointSelector({
                     aria-expanded={pinOpen}
                     aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
                   >
-                    <MapStorePin
-                      brandMark="ПВЗ"
-                      line1={pvzPointPinLine(summary)}
-                      wasLastChoice={wasLastChoice}
-                    />
+                    <span className="absolute -inset-[14px] z-0" aria-hidden />
+                    <span className="relative z-[1] inline-flex">
+                      <MapStorePin
+                        brandMark="ПВЗ"
+                        line1={pvzPointPinLine(summary)}
+                        wasLastChoice={wasLastChoice}
+                        surface={surface}
+                      />
+                    </span>
                   </button>
                 );
               })}
@@ -2095,6 +2181,7 @@ function PvzPointSelector({
       </div>
 
       <div
+        ref={pvzSheetPanelRef}
         role="region"
         aria-label="Результаты поиска ПВЗ"
         className={`z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass} ${vvSheet ? "fixed" : sheetPositionClass}`}
@@ -2127,7 +2214,7 @@ function PvzPointSelector({
         {showPreview ? (
           <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-2">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-left text-[22px] font-semibold leading-tight text-neutral-900">
+              <p className="break-words text-left text-[22px] font-semibold leading-tight text-neutral-900 line-clamp-2">
                 {sheetPoint?.name}
               </p>
               {sheetPoint?.address ? (

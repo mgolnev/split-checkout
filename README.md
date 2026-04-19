@@ -2,7 +2,7 @@
 
 Интерактивный прототип оформления заказа с расчётом **split** по правилам, админкой для тестовых данных и режимом **override** для коридорных тестов.
 
-Стек: **Next.js 15**, **React 19**, **TypeScript**, **Tailwind CSS 4**, **Prisma 6**, **SQLite**.
+Стек: **Next.js 15**, **React 19**, **TypeScript**, **Tailwind CSS 4**, **Prisma 6**, **PostgreSQL** (локально и на деплое).
 
 ## Запуск
 
@@ -18,14 +18,31 @@ npm run dev
 
 В `.env` достаточно **`DATABASE_URL`** (см. `.env.example`). Пароль в URL лучше не собирать вручную — `npm run supabase:urls` выдаёт строки с уже закодированными символами.
 
-### Деплой (Vercel) и миграции
+### Деплой и миграции Prisma
 
-Сборка **`npm run build`** = только **Next.js** (без `prisma migrate deploy`). На этапе билда к базе не подключаемся — деплой не «висит» на Supabase, как при отдельном `DIRECT_URL` / migrate в CI.
+Сборка **`npm run build`** = только **Next.js** (без `prisma migrate deploy`). На этапе билда к базе не подключаемся — деплой не «висит» на БД.
 
-После изменений в `prisma/migrations` примените миграции к продовой БД **один раз**:
+**После каждого релиза, в котором появились новые файлы в `prisma/migrations/`**, нужно **вручную** применить миграции к **той же** базе, которую использует прод (`DATABASE_URL`):
 
-- локально: `DATABASE_URL="…из Vercel…" npm run db:migrate:deploy`, или
-- **GitHub Actions** → workflow **«Migrate database»** (секрет `PRODUCTION_DATABASE_URL` = тот же `DATABASE_URL`, что в Vercel).
+```bash
+export DATABASE_URL='postgresql://…'   # строка из Vercel / ONREZA / другого хостинга
+npm run db:migrate:deploy
+```
+
+Иначе приложение на проде окажется «новее» схемы в БД: запросы Prisma падают (часто **P2022** — нет колонки/таблицы), страницы отдают 500, в логах — «column does not exist».
+
+Где выполнять:
+
+- **Vercel:** локально с `DATABASE_URL` из панели, или **GitHub Actions** → workflow **«Migrate database»** (секрет `PRODUCTION_DATABASE_URL` = тот же `DATABASE_URL`, что в Vercel).
+- **ONREZA и аналоги:** см. **`deploy/onreza.md`** (раздел про миграции).
+
+#### Сохранность данных при `migrate deploy`
+
+Команда **`prisma migrate deploy`** только **накатывает** неприменённые миграции из репозитория (ALTER TABLE, новые колонки, индексы и т.д.). Она **не очищает** таблицы и **не заменяет** данные существующих строк, если в SQL миграции явно нет `DELETE` / `DROP TABLE` / `TRUNCATE`.
+
+Отдельно: **`npm run db:seed`** — это сценарий наполнения/перезаписи демо-данных (см. ниже), к продовой БД его запускать только осознанно.
+
+Подробнее про деплой на ONREZA — **`deploy/onreza.md`**.
 
 ### Демо для клиентов (дешевле облака Yandex)
 

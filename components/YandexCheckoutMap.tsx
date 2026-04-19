@@ -16,6 +16,13 @@ type YandexCheckoutMapProps = {
   markers: YandexCheckoutMapMarker[];
   /** Центрировать карту на точке (превью выбранного пина). */
   focus: { lng: number; lat: number } | null;
+  /**
+   * Нижний отступ «безопасной области» карты в px (высота шторки снизу).
+   * Точка фокуса попадает в центр области над шторкой, а не в центр всего экрана.
+   */
+  focusInsetBottomPx?: number;
+  /** Дополнительный нижний отступ при фокусе — смещает точку чуть выше (над шторкой). */
+  focusExtraBottomPx?: number;
   onMarkerSelect: (id: string) => void;
   onBackgroundDismiss: () => void;
   className?: string;
@@ -58,9 +65,13 @@ function initialLocationForMarkers(
 /**
  * Подложка Яндекс.Карт + кастомные пины {@link MapStorePin} через `YMapMarker`.
  */
+const DEFAULT_FOCUS_EXTRA_BOTTOM_PX = 40;
+
 export function YandexCheckoutMap({
   markers,
   focus,
+  focusInsetBottomPx = 0,
+  focusExtraBottomPx = DEFAULT_FOCUS_EXTRA_BOTTOM_PX,
   onMarkerSelect,
   onBackgroundDismiss,
   className = "",
@@ -159,14 +170,24 @@ export function YandexCheckoutMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!mapReady || !map || !focus) return;
+    if (!mapReady || !map) return;
+    const hasFocus =
+      focus != null &&
+      Number.isFinite(focus.lng) &&
+      Number.isFinite(focus.lat);
+    const bottomMargin = hasFocus
+      ? Math.max(0, focusInsetBottomPx) + Math.max(0, focusExtraBottomPx)
+      : 0;
+    map.setMargin([0, 0, bottomMargin, 0]);
+    if (!hasFocus || !focus) return;
     map.setLocation({
       center: [focus.lng, focus.lat],
       zoom: Math.max(map.zoom, 15),
       duration: 220,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- панорам по lng/lat, не по ссылке на focus
-  }, [focus?.lng, focus?.lat, mapReady]);
+    // Объект focus из родителя может пересоздаваться; достаточно lng/lat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- см. выше
+  }, [focus?.lng, focus?.lat, focusInsetBottomPx, focusExtraBottomPx, mapReady]);
 
   return (
     <div
@@ -214,14 +235,22 @@ function syncMarkers(
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className =
-      "border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2";
+      "relative overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation";
     btn.setAttribute("aria-label", "Выбрать точку на карте");
-    btn.addEventListener("click", (e) => {
+    const forwardMarkerClick = (e: Event) => {
       e.stopPropagation();
       onMarkerSelect(m.id);
-    });
+    };
+    btn.addEventListener("click", forwardMarkerClick);
+
+    /** Расширение зоны нажатия (~44px+), не смещая визуал пина */
+    const hitSlop = document.createElement("div");
+    hitSlop.setAttribute("aria-hidden", "true");
+    hitSlop.className = "pointer-events-auto absolute -inset-[14px] z-0";
+    btn.appendChild(hitSlop);
 
     const inner = document.createElement("div");
+    inner.className = "relative z-[1]";
     inner.style.transform = `translate(${-MAP_STORE_PIN_ANCHOR_OFFSET_X_PX}px, -100%)`;
     btn.appendChild(inner);
 

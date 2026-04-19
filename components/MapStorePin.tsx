@@ -1,7 +1,46 @@
 "use client";
 
-/** Горизонтальное смещение: центр чёрного круга и нижней точки от левого края пина (круг 76px). */
-export const MAP_STORE_PIN_ANCHOR_OFFSET_X_PX = 38;
+/**
+ * Диаметр круга бренда; половина = горизонтальное смещение якоря геоточки от левого края пина.
+ * На градиентной карте в `CheckoutApp` класс `-translate-x-[…px]` должен совпадать с этой половиной.
+ */
+const PIN_DISK_PX = 36;
+
+/** Центр круга и нижней точки от левого края пина (половина {@link PIN_DISK_PX}). */
+export const MAP_STORE_PIN_ANCHOR_OFFSET_X_PX = PIN_DISK_PX / 2;
+
+/** Непрозрачная градация: чёрный → тёмно-серые (без opacity на всём пине). */
+export type MapStorePinSurface = "ink" | "charcoal" | "graphite" | "slate";
+
+const SURFACE: Record<
+  MapStorePinSurface,
+  { disk: string; tail: string; dot: string; labelShadow: string }
+> = {
+  ink: {
+    disk: "bg-[#050505]",
+    tail: "border-t-[#050505]",
+    dot: "bg-[#050505]",
+    labelShadow: "shadow-[0_3px_12px_rgba(0,0,0,0.14)]",
+  },
+  charcoal: {
+    disk: "bg-[#171717]",
+    tail: "border-t-[#171717]",
+    dot: "bg-[#171717]",
+    labelShadow: "shadow-[0_3px_12px_rgba(0,0,0,0.12)]",
+  },
+  graphite: {
+    disk: "bg-[#2a2a2a]",
+    tail: "border-t-[#2a2a2a]",
+    dot: "bg-[#2a2a2a]",
+    labelShadow: "shadow-[0_3px_11px_rgba(0,0,0,0.1)]",
+  },
+  slate: {
+    disk: "bg-[#404040]",
+    tail: "border-t-[#404040]",
+    dot: "bg-[#404040]",
+    labelShadow: "shadow-[0_2px_10px_rgba(0,0,0,0.09)]",
+  },
+};
 
 export type MapStorePinProps = {
   /** Текст в чёрном круге: по умолчанию GJ; для ПВЗ на карте — «ПВЗ». */
@@ -15,6 +54,8 @@ export type MapStorePinProps = {
   /** Ранее выбирали этот магазин — бейдж ↻ на круге */
   wasLastChoice?: boolean;
   className?: string;
+  /** Заливка круга/хвоста: иерархия без прозрачности */
+  surface?: MapStorePinSurface;
 };
 
 /**
@@ -29,7 +70,9 @@ export function MapStorePin({
   laterCount,
   wasLastChoice = false,
   className = "",
+  surface = "ink",
 }: MapStorePinProps) {
+  const pal = SURFACE[surface];
   const line1 =
     todayCount !== undefined
       ? `${todayCount} сегодня`
@@ -44,44 +87,40 @@ export function MapStorePin({
 
   return (
     <div
-      className={`relative inline-flex w-max max-w-[min(100%,calc(100vw-2rem))] shrink-0 flex-row items-start pt-[3px] max-sm:pt-px ${className}`}
+      className={`relative inline-flex w-max max-w-[min(100%,calc(100vw-2rem))] shrink-0 flex-row items-start pt-px max-sm:pt-px ${className}`}
     >
-      {/* Колонка: круг + хвост — треугольник без зазора под кругом */}
-      <div className="flex w-[76px] shrink-0 flex-col items-center">
+      <div className="flex w-[36px] shrink-0 flex-col items-center">
         <div
-          className={`relative z-10 flex h-[76px] w-[76px] shrink-0 items-center justify-center rounded-full bg-[#050505] font-bold tracking-[0.5px] text-white ${
-            brandMark.length > 2 ? "text-[12px] leading-tight sm:text-[13px]" : "text-[18px]"
+          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold tracking-[0.35px] text-white ${pal.disk} ${
+            brandMark.length > 2 ? "text-[8px] leading-tight sm:text-[9px]" : "text-[11px]"
           }`}
         >
           <span className="whitespace-nowrap px-0.5 text-center">{brandMark}</span>
           {wasLastChoice ? (
             <span
-              className="absolute -right-0.5 -top-0.5 z-[1] flex h-3.5 w-3.5 items-center justify-center rounded-full bg-neutral-800 text-[7px] leading-none text-white"
+              className="absolute -right-px -top-px z-[1] flex h-2 w-2 items-center justify-center rounded-full bg-neutral-800 text-[4px] leading-none text-white"
               title="Выбирали в прошлый раз"
             >
               ↻
             </span>
           ) : null}
         </div>
-        {/* Сильнее подтягиваем к кругу, верх «ножки» уходит под диск (z ниже круга) */}
-        <div className="-mt-2 z-[5] flex flex-col items-center leading-none" aria-hidden>
-          <div className="h-0 w-0 shrink-0 border-x-[11px] border-x-transparent border-t-[14px] border-t-[#050505]" />
-          {/* Точка вплотную к ножке треугольника (без вертикального стержня) */}
-          <div className="-mt-px h-[18px] w-[18px] shrink-0 rounded-full border-4 border-white bg-[#050505] shadow-[0_2px_6px_rgba(0,0,0,0.25)]" />
+        <div className="-mt-0.5 z-[5] flex flex-col items-center leading-none" aria-hidden>
+          <div className={`h-0 w-0 shrink-0 border-x-[5px] border-x-transparent border-t-[7px] ${pal.tail}`} />
+          <div
+            className={`-mt-px h-[10px] w-[10px] shrink-0 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(0,0,0,0.22)] ${pal.dot}`}
+          />
         </div>
       </div>
 
-      {/* Плашка: ширина по контенту, визуально под кругом (перекрытие слева) */}
       <div
-        className={
-          "z-0 -ml-[38px] flex min-h-[76px] min-w-0 max-w-[min(16rem,calc(100vw-5rem))] flex-col justify-center gap-0.5 rounded-[18px] border border-black/[0.06] bg-white px-3 py-2 pl-14 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-sm:rounded-2xl max-sm:px-2.5 max-sm:py-1.5 max-sm:pl-11"
-        }
+        className={`z-0 -ml-[18px] flex min-h-[36px] min-w-0 max-w-[min(14rem,calc(100vw-4rem))] flex-col justify-center gap-0.5 rounded-[10px] border border-black/[0.06] bg-white px-1.5 py-1 pl-8 ${pal.labelShadow} max-sm:rounded-lg max-sm:px-1 max-sm:py-0.5 max-sm:pl-7`}
       >
-        <div className="break-words text-[15px] font-normal leading-snug text-[#1F1F1F] max-sm:text-[14px]">
+        <div className="break-words text-[11px] font-normal leading-snug text-[#1F1F1F] max-sm:text-[10px]">
           {line1}
         </div>
         {showLine2 ? (
-          <div className="break-words text-[15px] font-normal leading-snug text-[#1F1F1F] max-sm:text-[14px]">{line2}</div>
+          <div className="break-words text-[11px] font-normal leading-snug text-[#1F1F1F] max-sm:text-[10px]">{line2}</div>
         ) : null}
       </div>
     </div>
