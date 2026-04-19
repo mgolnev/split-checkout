@@ -2438,20 +2438,23 @@ function PvzSelectedPointCard({
 function CourierAddressCard({
   address,
   onChange,
+  className = "",
 }: {
   address?: string;
   onChange: () => void;
+  /** Например `!mt-0`, если блок уже в контейнере с `space-y-*` */
+  className?: string;
 }) {
   if (!address) {
     return (
-      <div className="mt-3 text-sm text-neutral-500">
+      <div className={`mt-3 text-sm text-neutral-500 ${className}`}>
         Укажите адрес, чтобы увидеть доступные курьерские отправления.
       </div>
     );
   }
 
   return (
-    <div className="mt-3">
+    <div className={`mt-3 ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">Адрес доставки</p>
@@ -2962,6 +2965,9 @@ function SplitSelectionModal({
   const [selectedPickupStoreId, setSelectedPickupStoreId] = useState<string>("");
   const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
   const [pvzSelectorOpen, setPvzSelectorOpen] = useState(false);
+  const splitCourierDateLabels = useMemo(() => buildCourierDateLabels(), []);
+  const [splitCourierDateIx, setSplitCourierDateIx] = useState(0);
+  const [splitCourierSlotIx, setSplitCourierSlotIx] = useState(0);
   const splitPvzSummary = useMemo(() => methodSummaryFromPvzOption(pvzOption), [pvzOption]);
   const splitPvzLinePreview = useMemo(
     () => (pvzOption ? splitPvzLinePreviewFromScenario(pvzOption.scenario) : undefined),
@@ -2986,6 +2992,17 @@ function SplitSelectionModal({
         };
       });
   }, [pickupOptions, courierOption, pickupStoresBootstrap]);
+
+  const splitCourierParts = useMemo(
+    () => courierOption?.scenario.parts.filter((p) => p.mode === "courier") ?? [],
+    [courierOption],
+  );
+
+  useEffect(() => {
+    setSplitCourierDateIx(0);
+    setSplitCourierSlotIx(0);
+  }, [courierOption?.scenario]);
+
   const selectedPickupOption =
     pickupOptions.find((option) => option.storeId === selectedPickupStoreId) ?? null;
   const selectedPvzPoint = selectedPvzId.trim()
@@ -3131,10 +3148,38 @@ function SplitSelectionModal({
                     )
                   ) : null}
                   {selectedMethod === "courier" && courierOption ? (
-                    <CourierAddressCard
-                      address={courierAddress}
-                      onChange={() => onEditCourierAddress(courierOption)}
-                    />
+                    <div className="space-y-3">
+                      <CourierAddressCard
+                        className="!mt-0"
+                        address={courierAddress}
+                        onChange={() => onEditCourierAddress(courierOption)}
+                      />
+                      {courierAddress.trim() && splitCourierParts.length > 0 ? (
+                        <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                          {splitCourierParts.map((part, partIx) => (
+                            <div
+                              key={part.key}
+                              className={partIx > 0 ? "border-t border-neutral-100" : ""}
+                            >
+                              <PartCard
+                                inGroup
+                                part={part}
+                                included
+                                onToggle={() => {}}
+                                showSelectionControl={false}
+                                showRemainderHint={false}
+                                remainderKeepHint={undefined}
+                                selectedDateIx={splitCourierDateIx}
+                                selectedSlotIx={splitCourierSlotIx}
+                                onDateChange={setSplitCourierDateIx}
+                                onSlotChange={setSplitCourierSlotIx}
+                                courierDateLabels={splitCourierDateLabels}
+                              />
+                            </div>
+                          ))}
+                        </section>
+                      ) : null}
+                    </div>
                   ) : null}
                   {selectedMethod === "pvz" ? (
                     selectedPvzPoint ? (
