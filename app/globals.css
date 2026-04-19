@@ -145,6 +145,46 @@ body {
 
 /* Чекаут (сторона покупателя): единая типографика */
 @layer components {
+  .checkout-ui .cu-text-display {
+    @apply text-[20px] font-semibold leading-tight text-neutral-900;
+  }
+  .checkout-ui .cu-text-title {
+    @apply text-lg font-semibold leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-text-headline {
+    @apply text-base font-semibold leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-text-body {
+    @apply text-sm leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-text-body-medium {
+    @apply text-sm font-medium leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-text-body-semibold {
+    @apply text-sm font-semibold leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-text-caption {
+    @apply text-xs leading-snug text-neutral-500;
+  }
+  .checkout-ui .cu-text-caption-medium {
+    @apply text-xs font-medium leading-snug text-neutral-600;
+  }
+  .checkout-ui .cu-text-caption-semibold {
+    @apply text-xs font-semibold leading-snug text-neutral-900;
+  }
+  .checkout-ui .cu-text-section {
+    @apply text-xs font-semibold uppercase tracking-[0.08em] text-neutral-900;
+  }
+  .checkout-ui .cu-text-micro {
+    @apply text-[10px] font-medium leading-none text-neutral-600;
+  }
+  .checkout-ui .cu-text-badge {
+    @apply text-[10px] font-semibold uppercase tracking-wide leading-none;
+  }
+  .checkout-ui .cu-text-counter {
+    @apply text-[8px] font-semibold tabular-nums leading-none;
+  }
+
   .checkout-ui .cu-page-title {
     @apply text-base font-semibold leading-snug text-neutral-900;
   }
@@ -152,7 +192,7 @@ body {
     @apply text-xs font-semibold uppercase tracking-[0.08em] text-neutral-900;
   }
   .checkout-ui .cu-block-heading {
-    @apply text-xs font-semibold uppercase tracking-[0.06em] text-neutral-900;
+    @apply text-xs font-semibold uppercase tracking-[0.08em] text-neutral-900;
   }
   .checkout-ui .cu-sheet-title {
     @apply text-lg font-semibold leading-snug text-neutral-900;
@@ -161,7 +201,7 @@ body {
     @apply text-sm leading-snug text-neutral-600;
   }
   .checkout-ui .cu-stepper-label {
-    @apply max-w-[5.5rem] text-center text-[11px] font-medium leading-tight text-neutral-600 sm:max-w-none;
+    @apply max-w-[5.5rem] text-center text-xs font-medium leading-tight text-neutral-600 sm:max-w-none;
   }
   .checkout-ui .cu-muted {
     @apply text-xs leading-snug text-neutral-500;
@@ -179,9 +219,9 @@ body {
   .checkout-ui .cu-total-final-row {
     @apply flex justify-between text-sm font-semibold tabular-nums text-neutral-900;
   }
-  /** Строка условий/выгоды в PartCard: как раньше — капс, трекинг, цвет --gj-muted */
+  /** Строка условий/выгоды в PartCard: микролейбл, цвет --gj-muted; разрядка чуть шире, чем у бейджей */
   .checkout-ui .cu-benefit {
-    @apply text-[10px] font-medium uppercase leading-snug tracking-[0.12em] text-[var(--gj-muted)];
+    @apply text-[10px] font-semibold uppercase leading-snug tracking-[0.12em] text-[var(--gj-muted)];
   }
 
   /** Логический блок чекаута: отдель от «газетного» полотна, как карточка на подложке */

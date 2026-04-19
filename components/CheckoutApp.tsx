@@ -275,7 +275,7 @@ function BonusAuthBar({ onOpenPhoneGate }: { onOpenPhoneGate: () => void }) {
       aria-label="Ввести телефон, чтобы копить и списывать бонусы"
       className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-neutral-900 transition hover:opacity-90 active:opacity-90"
     >
-      <GjMark className="h-10 min-w-[2.75rem] px-1 text-[11px]" />
+      <GjMark className="h-10 min-w-[2.75rem] px-1 text-xs" />
       <span className="min-w-0 flex-1 text-sm leading-snug text-neutral-900">
         Войдите в аккаунт, чтобы копить и списывать бонусы GJ
       </span>
@@ -858,7 +858,7 @@ function Stepper({
   const items: { label: string; done: boolean }[] = [
     { label: "Доставка", done: deliveryDone },
     { label: "Получатель", done: recipientDone },
-    { label: "Способ оплаты", done: paymentDone },
+    { label: "Оплата", done: paymentDone },
     { label: "Оформление", done: false },
   ];
   return (
@@ -909,7 +909,7 @@ function PickupStoreFulfillmentBlock({
         : title;
   return (
     <div className="border-t border-neutral-100 pt-3 first:border-t-0 first:pt-0">
-      <p className="text-[13px] font-semibold leading-snug text-neutral-700">{compactTitle}</p>
+      <p className="text-sm font-semibold leading-snug text-neutral-700">{compactTitle}</p>
       {benefitText ? <p className="cu-benefit mt-1 inline-flex">{benefitText}</p> : null}
       <div className="mt-2 flex flex-wrap gap-2.5">
         {items.map((it, ix) => (
@@ -925,7 +925,7 @@ function PickupStoreFulfillmentBlock({
               sizes="48px"
             />
             {it.quantity >= 2 ? (
-              <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-[8px] font-semibold leading-none text-white ring-1 ring-white/30">
+              <span className="cu-text-counter absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-white ring-1 ring-white/30">
                 {it.quantity}
               </span>
             ) : null}
@@ -1231,7 +1231,7 @@ function PickupStoreSelector({
             setSheetMode("collapsed");
           }
         }}
-        className={`shrink-0 rounded-full border px-3 py-1.5 text-[12px] font-semibold shadow-sm backdrop-blur-md transition ${
+        className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold shadow-sm backdrop-blur-md transition ${
           active
             ? "border-neutral-900 bg-neutral-900 text-white"
             : disabled
@@ -1385,7 +1385,7 @@ function PickupStoreSelector({
         </div>
         {showPreview ? (
           <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-2">
-            <p className="min-w-0 flex-1 break-words text-left text-[22px] font-semibold leading-tight text-neutral-900 line-clamp-2">
+            <p className="cu-text-display min-w-0 flex-1 break-words text-left line-clamp-2">
               {sheetStore?.name}
             </p>
             <CheckoutCloseCrossButton
@@ -1455,7 +1455,7 @@ function PickupStoreSelector({
               {filterChip("today_later", "Сегодня + позже")}
             </div>
             {pickupFilterDisclaimer ? (
-              <p className="mt-1.5 px-1 text-[11px] leading-snug text-neutral-950">
+              <p className="mt-1.5 px-1 text-xs leading-snug text-neutral-950">
                 {pickupFilterDisclaimer}
               </p>
             ) : null}
@@ -1472,7 +1472,7 @@ function PickupStoreSelector({
                   {sheetScenarioLine}
                 </p>
                 {lastChosenStoreId === sheetStore.id ? (
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                  <p className="cu-text-caption-medium text-neutral-500">
                     Выбирали в прошлый раз
                   </p>
                 ) : null}
@@ -1534,7 +1534,7 @@ function PickupStoreSelector({
                         className={`rounded-2xl border bg-white p-3 transition sm:p-4 ${selected ? "border-black" : "border-neutral-200"}`}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <p className="min-w-0 flex-1 text-[17px] font-semibold leading-tight text-neutral-900">
+                          <p className="cu-text-headline min-w-0 flex-1 leading-tight">
                             {store.name}
                           </p>
                           {canSelectStore ? (
@@ -1553,7 +1553,7 @@ function PickupStoreSelector({
                             {scenarioLine}
                           </p>
                           {wasLastChoice ? (
-                            <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                            <p className="cu-text-caption-medium text-neutral-500">
                               Выбирали в прошлый раз
                             </p>
                           ) : null}
@@ -1727,7 +1727,7 @@ function CheckoutDeliveryMethodTabs({
           )}
           {item.recommended && !coveragePending ? (
             <span
-              className={`inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+              className={`cu-text-badge inline-flex rounded-full px-1.5 py-0.5 ${
                 item.selected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
               }`}
             >
@@ -2251,7 +2251,7 @@ function PvzPointSelector({
         {showPreview ? (
           <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-2">
             <div className="min-w-0 flex-1">
-              <p className="break-words text-left text-[22px] font-semibold leading-tight text-neutral-900 line-clamp-2">
+              <p className="cu-text-display break-words text-left line-clamp-2">
                 {sheetPoint?.name}
               </p>
               {sheetPoint?.address ? (
@@ -2335,7 +2335,7 @@ function PvzPointSelector({
                   <p className="text-sm leading-snug text-neutral-600">{pvzStatusDetail}</p>
                 ) : null}
                 {lastChosenPointId === sheetPoint.id ? (
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                  <p className="cu-text-caption-medium text-neutral-500">
                     Выбирали в прошлый раз
                   </p>
                 ) : null}
@@ -2372,7 +2372,7 @@ function PvzPointSelector({
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className="text-[17px] font-semibold leading-tight text-neutral-900">{point.name}</p>
+                            <p className="cu-text-headline leading-tight">{point.name}</p>
                             <p className="mt-1 truncate text-sm leading-snug text-neutral-500">{point.address}</p>
                           </div>
                           <button
@@ -2389,7 +2389,7 @@ function PvzPointSelector({
                             {scenarioLine}
                           </p>
                           {wasLastChoice ? (
-                            <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                            <p className="cu-text-caption-medium text-neutral-500">
                               Выбирали в прошлый раз
                             </p>
                           ) : null}
@@ -2782,7 +2782,7 @@ function RemainderLinesThumbStrip({
               />
               {line.quantity >= 2 ? (
                 <span
-                  className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-[7px] font-semibold leading-none tabular-nums text-white ring-1 ring-white/35"
+                  className="cu-text-counter absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-white ring-1 ring-white/35"
                   aria-label={`${line.quantity} шт.`}
                 >
                   {line.quantity}
@@ -2790,7 +2790,7 @@ function RemainderLinesThumbStrip({
               ) : null}
             </div>
             {sizeLabel ? (
-              <span className="w-full text-center text-[10px] font-medium leading-none text-neutral-600">
+              <span className="cu-text-caption-medium w-full text-center leading-none">
                 {sizeLabel}
               </span>
             ) : null}
@@ -2821,7 +2821,7 @@ function UnresolvedItemsBlock({
   return (
     <div className="rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] sm:p-6">
       <div className="min-w-0">
-        <p className="text-[15px] font-semibold leading-tight text-neutral-900">{copy.title}</p>
+        <p className="cu-text-headline leading-tight">{copy.title}</p>
         <p className="mt-2 text-sm leading-snug text-neutral-600">{copy.subtitle}</p>
       </div>
 
@@ -3120,7 +3120,7 @@ function SplitSelectionModal({
 
         {courierOption || pickupOptions[0] || pvzOption ? (
           !selectedMethod ? (
-            <p className="mx-auto mt-3 max-w-[17rem] text-center text-[11px] font-normal leading-snug text-neutral-500">
+            <p className="cu-muted mx-auto mt-3 max-w-[17rem] text-center">
               Выберите способ получения.
             </p>
           ) : null
@@ -3171,7 +3171,7 @@ function SplitSelectionModal({
                         <button
                           type="button"
                           onClick={() => setPickupSelectorOpen(true)}
-                          className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                          className="mt-3 w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white"
                         >
                           Открыть выбор магазина
                         </button>
@@ -3236,7 +3236,7 @@ function SplitSelectionModal({
                         <button
                           type="button"
                           onClick={() => setPvzSelectorOpen(true)}
-                          className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                          className="mt-3 w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white"
                         >
                           Открыть выбор ПВЗ
                         </button>
@@ -3405,7 +3405,7 @@ function PartCard({
             onClick={onToggle}
             role="checkbox"
             aria-checked={included}
-            className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-bold leading-none ${
+            className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold leading-none ${
               included ? "border-black bg-black text-white" : "border-neutral-400 bg-white text-transparent"
             } ${part.canToggle ? "" : "opacity-40"}`}
           >
@@ -3415,7 +3415,7 @@ function PartCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-4">
             <div className="min-w-0 flex-1">
-              <p className="text-base font-semibold leading-tight text-neutral-900">{primaryHeading}</p>
+              <p className="cu-text-headline leading-tight">{primaryHeading}</p>
               {secondaryHeading ? (
                 <p className="mt-1.5 text-sm leading-snug text-neutral-600">{secondaryHeading}</p>
               ) : null}
@@ -3426,7 +3426,7 @@ function PartCard({
                 <p className="cu-benefit mt-4">{benefitLine}</p>
               ) : null}
             </div>
-            <span className="shrink-0 text-[17px] font-semibold leading-tight tabular-nums text-neutral-900">
+            <span className="cu-text-headline shrink-0 tabular-nums leading-tight">
               {fmt(sub + ship)}
             </span>
           </div>
@@ -3441,7 +3441,7 @@ function PartCard({
                   <SafeProductImage src={it.image} alt="" fill className="object-cover" sizes="48px" />
                   {it.quantity >= 2 ? (
                     <span
-                      className="absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-[7px] font-semibold leading-none tabular-nums text-white ring-1 ring-white/35"
+                      className="cu-text-counter absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-white ring-1 ring-white/35"
                       aria-label={`${it.quantity} шт.`}
                     >
                       {it.quantity}
@@ -3449,7 +3449,7 @@ function PartCard({
                   ) : null}
                 </div>
                 {it.sizeLabel ? (
-                  <span className="w-full text-center text-[10px] font-medium leading-none text-neutral-600">
+                  <span className="cu-text-caption-medium w-full text-center leading-none">
                     {it.sizeLabel}
                   </span>
                 ) : null}
@@ -3478,8 +3478,8 @@ function PartCard({
                           : "border-neutral-200 bg-white text-neutral-900"
                       }`}
                     >
-                      <span className="block text-[13px] font-semibold leading-tight">{chunks.primary}</span>
-                      <span className={`block text-[10px] leading-tight ${i === dateIx ? "text-white/85" : "text-neutral-600"}`}>
+                      <span className="block text-sm font-semibold leading-tight">{chunks.primary}</span>
+                      <span className={`block text-xs leading-tight ${i === dateIx ? "text-white/85" : "text-neutral-600"}`}>
                         {chunks.secondary}
                       </span>
                     </button>
@@ -3492,7 +3492,7 @@ function PartCard({
                     key={s}
                     type="button"
                     onClick={() => onSlotChange?.(i)}
-                    className={`shrink-0 rounded-full border px-3 py-1.5 text-[13px] font-medium transition ${
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
                       i === (selectedSlotIx ?? 0)
                         ? "border-neutral-900 bg-neutral-900 text-white"
                         : "border-neutral-200 bg-white text-neutral-900"
@@ -4839,14 +4839,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <div className="min-w-0">
           {primary.title ? <p className="cu-page-title text-neutral-900">{primary.title}</p> : null}
           {bodyLines.length > 0 ? (
-            <div className="mt-3 space-y-1.5 border-l-2 border-neutral-900 pl-2.5 text-[13px] leading-snug text-neutral-700">
+            <div className="mt-3 space-y-1.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-700">
               {bodyLines.map((line, i) => (
                 <p key={i}>{line}</p>
               ))}
             </div>
           ) : null}
           {!primary.title && bodyLines.length === 0 ? (
-            <p className="text-[13px] leading-snug text-neutral-700">{scenarioInformersForBanner[0]}</p>
+            <p className="text-sm leading-snug text-neutral-700">{scenarioInformersForBanner[0]}</p>
           ) : null}
           </div>
       </div>
@@ -4947,7 +4947,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <div className="relative">
               <select
                 aria-label="Выбор города"
-                className="appearance-none rounded-full border-0 bg-transparent pl-3 pr-8 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900/15 focus-visible:ring-offset-0"
+                className="appearance-none rounded-full border-0 bg-transparent pl-3 pr-8 py-1.5 text-sm font-semibold text-neutral-800 shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900/15 focus-visible:ring-offset-0"
                 value={cityId}
                 onChange={(e) => setCityId(e.target.value)}
               >
@@ -4993,7 +4993,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             })}
           />
           {deliveryOptions.length > 0 && !method ? (
-            <p className="mx-auto mt-3 max-w-[17rem] text-center text-[11px] font-normal leading-snug text-neutral-500">
+            <p className="cu-muted mx-auto mt-3 max-w-[17rem] text-center">
               Выберите способ получения.
             </p>
           ) : null}
@@ -5043,7 +5043,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                           <button
                             type="button"
                             onClick={() => setPickupSelectorOpen(true)}
-                            className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                            className="mt-3 w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white"
                           >
                             Открыть выбор магазина
                           </button>
@@ -5078,7 +5078,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                           <button
                             type="button"
                             onClick={() => setPvzSelectorOpen(true)}
-                            className="mt-3 w-full rounded-lg bg-black py-2.5 text-xs font-semibold uppercase tracking-wide text-white"
+                            className="mt-3 w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white"
                           >
                             Открыть выбор ПВЗ
                           </button>
@@ -5268,7 +5268,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   type="button"
                   disabled={!phoneHasMinDigits(phoneDraft)}
                   onClick={confirmRecipientInline}
-                  className="mt-2 w-full rounded-lg bg-neutral-900 py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  className="mt-2 w-full rounded-lg bg-neutral-900 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Получить смс с кодом
                 </button>
@@ -5280,7 +5280,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 <button
                   type="button"
                   onClick={clearRecipient}
-                  className="mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 underline underline-offset-2"
+                  className="mt-3 text-sm font-semibold text-neutral-600 underline underline-offset-2"
                 >
                   Сменить номер
                 </button>
@@ -5297,7 +5297,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           {payOnDeliveryOnlyEffective ? (
             <div className="mb-3">
               <p className="cu-page-title text-neutral-900">Несколько отправлений</p>
-              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-[13px] leading-snug text-neutral-800">
+              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
                 <p>{payOnDeliveryDisclaimerText}</p>
               </div>
             </div>
@@ -5387,7 +5387,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           {(recipient || promoApplied || bonusOn) ? (
             <div>
               <p className="cu-page-title text-neutral-900">{checkoutCopyResolved.promoBonusTitle}</p>
-              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-[13px] leading-snug text-neutral-800">
+              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
                 <p>{checkoutCopyResolved.promoBonusBody}</p>
               </div>
             </div>
@@ -5416,7 +5416,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             {promo.trim().length > 0 && !promoApplied ? (
               <button
                 type="button"
-                className="shrink-0 rounded-lg bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-800 shadow-sm"
+                className="shrink-0 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-800 shadow-sm"
                 onClick={handlePromo}
                 disabled={bonusOn}
               >
@@ -5487,7 +5487,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             type="button"
             onClick={submit}
             disabled={!scenario || includedParts.length === 0}
-            className="inline-flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 rounded-lg bg-black py-4 text-sm font-semibold uppercase tracking-wide text-white disabled:opacity-40"
+            className="inline-flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 rounded-lg bg-black py-4 text-sm font-semibold text-white disabled:opacity-40"
           >
             {(() => {
               const orderedUnits = includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0);
@@ -5619,7 +5619,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 type="button"
                 disabled={!phoneHasMinDigits(phoneDraft)}
                 onClick={confirmRecipientFromGate}
-                className="mt-3 w-full rounded-lg bg-black py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:opacity-40"
+                className="mt-3 w-full rounded-lg bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
               >
                 Получить смс с кодом
               </button>

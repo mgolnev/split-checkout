@@ -21,7 +21,7 @@ function SpecDl({ spec }: { spec: TypoSpecLines }) {
     </div>
   );
   return (
-    <dl className="mt-3 space-y-2 border-t border-neutral-100 pt-3 text-[11px] leading-snug">
+    <dl className="mt-3 space-y-2 border-t border-neutral-100 pt-3 text-xs leading-snug">
       <Row k="Шрифт" v={FONT_LINE} />
       <Row k="Размер" v={spec.size} />
       <Row k="Цвет" v={spec.color} />
@@ -80,7 +80,7 @@ function BackChevronDemo() {
 
 function ChevronDownDemo() {
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-neutral-800">
+    <span className="inline-flex items-center gap-1 text-sm font-semibold text-neutral-800">
       Москва
       <svg className="h-3.5 w-3.5 text-neutral-500" viewBox="0 0 16 16" fill="none" aria-hidden>
         <path d="M4 6.5 8 10l4-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -91,21 +91,21 @@ function ChevronDownDemo() {
 
 const RAW_ENTRIES: Entry[] = [
   {
-    sortPx: 22,
+    sortPx: 20,
     title: "Карта: крупное название в превью шита",
-    classHint: "text-[22px] font-semibold leading-tight text-neutral-900 line-clamp-2",
+    classHint: ".cu-text-display — text-[20px] font-semibold leading-tight text-neutral-900",
     spec: {
-      size: "22px (произвольный размер, не из шкалы Tailwind theme)",
+      size: "20px (text-[20px], токен display)",
       color: "neutral-900",
       weight: "font-semibold (600)",
       tracking: "По умолчанию",
       caseTransform: "Как в данных (часто ВЕРХНИЙ РЕГИСТР в названии ТЦ)",
       notes: "line-clamp-2 при длине; в чекауте — break-words",
     },
-    demo: <p className="break-words text-[22px] font-semibold leading-tight text-neutral-900">ТРЦ Афимолл</p>,
+    demo: <p className="cu-text-display break-words">ТРЦ Афимолл</p>,
   },
   {
-    sortPx: 20,
+    sortPx: 19,
     title: "Назад в корзину (иконка-шеврон, не текст)",
     classHint: "SVG h-6 w-6 stroke currentColor (как CheckoutBackChevronIcon в CheckoutApp)",
     spec: {
@@ -133,25 +133,25 @@ const RAW_ENTRIES: Entry[] = [
   },
   {
     sortPx: 17,
-    title: "PartCard: итоговая сумма в шапке / карта: название в списке",
-    classHint: "text-[17px] font-semibold tabular-nums text-neutral-900",
+    title: "PartCard: итоговая сумма / название в списке (как headline)",
+    classHint: ".cu-text-headline tabular-nums для суммы",
     spec: {
-      size: "17px (кастомный)",
+      size: "16px (text-base)",
       color: "neutral-900",
       weight: "font-semibold; tabular-nums для суммы",
-      notes: "Одинаковый размер для цены в PartCard и названия ПВЗ в списке",
+      notes: "Цена и названия магазина/ПВЗ в списке — единый кегль headline",
     },
     demo: (
       <div className="space-y-2">
-        <span className="text-[17px] font-semibold tabular-nums text-neutral-900">13 797 ₽</span>
-        <p className="text-[17px] font-semibold leading-tight text-neutral-900">Пункт на Ленинском</p>
+        <span className="cu-text-headline tabular-nums">13 797 ₽</span>
+        <p className="cu-text-headline leading-tight">Пункт на Ленинском</p>
       </div>
     ),
   },
   {
     sortPx: 16,
-    title: "Заголовок экрана (шапка) / PartCard главный заголовок / заголовок в информере",
-    classHint: ".cu-page-title — text-base font-semibold leading-snug text-neutral-900",
+    title: "Заголовок экрана (шапка) / заголовок в информере",
+    classHint: ".cu-page-title (= .cu-text-headline) — text-base font-semibold leading-snug text-neutral-900",
     spec: {
       size: "16px (text-base)",
       color: "neutral-900",
@@ -161,20 +161,20 @@ const RAW_ENTRIES: Entry[] = [
     demo: (
       <div className="space-y-2">
         <h1 className="cu-page-title text-center">Оформление заказа</h1>
-        <p className="text-base font-semibold leading-tight text-neutral-900">Завтра, 20 апреля</p>
+        <p className="cu-text-headline leading-tight">Завтра, 20 апреля</p>
       </div>
     ),
   },
   {
     sortPx: 15,
     title: "Блок неразрешённых позиций (заголовок карточки)",
-    classHint: "text-[15px] font-semibold leading-tight text-neutral-900",
+    classHint: ".cu-text-headline — важный заголовок карточки",
     spec: {
-      size: "15px (кастомный)",
+      size: "16px (text-base)",
       color: "neutral-900",
       weight: "font-semibold",
     },
-    demo: <p className="text-[15px] font-semibold leading-tight text-neutral-900">Не все товары в корзине</p>,
+    demo: <p className="cu-text-headline leading-tight">Не все товары в корзине</p>,
   },
   {
     sortPx: 14,
@@ -199,20 +199,20 @@ const RAW_ENTRIES: Entry[] = [
   {
     sortPx: 13,
     title: "Календарь курьера (число), слоты времени, тело информера у границы",
-    classHint: "text-[13px] font-semibold | font-medium; text-[13px] leading-snug в цитате",
+    classHint: ".cu-text-body-semibold (число); .cu-text-body-medium (слот); .cu-text-body в цитате",
     spec: {
-      size: "13px (кастомный)",
+      size: "14px (text-sm)",
       color: "neutral-600 / 800 / 700",
       weight: "semibold в ячейке даты; medium у чипа слота",
       notes: "В баннере — border-l-2 + отступ",
     },
     demo: (
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-semibold leading-tight text-neutral-900">20</span>
-        <span className="rounded-full border border-neutral-200 px-3 py-1.5 text-[13px] font-medium text-neutral-800">
+        <span className="cu-text-body-semibold leading-tight">20</span>
+        <span className="cu-text-body-medium rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-800">
           12:00–15:00
         </span>
-        <div className="border-l-2 border-neutral-900 pl-2.5 text-[13px] leading-snug text-neutral-700">
+        <div className="cu-text-body border-l-2 border-neutral-900 pl-2.5 text-neutral-700">
           <p>Объединить в один заказ не сможем</p>
         </div>
       </div>
@@ -222,12 +222,12 @@ const RAW_ENTRIES: Entry[] = [
     sortPx: 12,
     title: "Название блока секции, вторичные подсказки, селектор города, покрытие вкладок",
     classHint:
-      ".cu-section-title (uppercase); .cu-muted; text-xs; чипы фильтра text-[12px] при необходимости",
+      ".cu-section-title / .cu-text-section (uppercase); .cu-muted; text-xs; чипы фильтра text-sm",
     spec: {
-      size: "12px (text-xs и отдельно 12px у чипов)",
+      size: "12px (text-xs и text-sm у чипов)",
       color: "neutral-900 / 500 / 600 / 800",
       weight: "semibold у заголовка секции; medium у muted",
-      tracking: "У .cu-section-title: tracking-[0.08em]; у города: tracking-wide",
+      tracking: "У .cu-section-title: tracking-[0.08em]; у селектора города — без tracking",
       caseTransform: "Заголовки секций — ВСЕ ЗАГЛАВНЫЕ (uppercase)",
       notes: "cu-muted — отдельный токен для подсказок",
     },
@@ -236,7 +236,7 @@ const RAW_ENTRIES: Entry[] = [
         <h2 className="cu-section-title">Способ получения</h2>
         <p className="cu-muted">Введите номер телефона, чтобы оформить заказ</p>
         <ChevronDownDemo />
-        <span className="rounded-full border border-neutral-200 bg-white/95 px-3 py-1.5 text-[12px] font-semibold text-neutral-800">
+        <span className="rounded-full border border-neutral-200 bg-white/95 px-3 py-1.5 text-sm font-semibold text-neutral-800">
           Сегодня
         </span>
       </div>
@@ -245,19 +245,19 @@ const RAW_ENTRIES: Entry[] = [
   {
     sortPx: 11,
     title: "Степпер, подписи к превью товара, пин на карте (основная строка), подсказка в модалке сплита",
-    classHint: ".cu-stepper-label — text-[11px]; MapStorePin label text-[11px]",
+    classHint: ".cu-stepper-label — text-xs; MapStorePin — text-xs",
     spec: {
-      size: "11px (text-[11px])",
+      size: "12px (text-xs)",
       color: "neutral-600 / #1F1F1F на пине",
       weight: "font-medium в степпере; font-normal на пине",
-      notes: "На узком экране пин может снижаться до 10px",
+      notes: "Минимум 12px для подписей карты (кроме микробейджей)",
     },
     demo: (
       <div className="space-y-2">
         <span className="cu-stepper-label">Доставка</span>
-        <p className="text-[11px] leading-snug text-neutral-950">46 / 39 · 52</p>
-        <p className="text-center text-[11px] font-normal leading-snug text-neutral-500">Выберите способ получения.</p>
-        <div className="text-[11px] font-normal leading-snug text-[#1F1F1F]">2 сегодня</div>
+        <p className="text-xs leading-snug text-neutral-950">46 / 39 · 52</p>
+        <p className="cu-muted text-center">Выберите способ получения.</p>
+        <div className="text-xs font-normal leading-snug text-[#1F1F1F]">2 сегодня</div>
       </div>
     ),
   },
@@ -268,32 +268,32 @@ const RAW_ENTRIES: Entry[] = [
     spec: {
       size: "10px (text-[10px])",
       color: "gj-muted CSS-переменная / neutral-600",
-      weight: "font-medium",
-      tracking: "tracking-[0.12em] у benefit",
+      weight: "font-semibold",
+      tracking: "tracking-[0.12em] (разреженнее, чем у .cu-text-badge)",
       caseTransform: "У benefit — ВСЕ ЗАГЛАВНЫЕ",
-      notes: "Дни недели под числом — без uppercase",
+      notes: "Дни недели под числом — text-xs, без uppercase",
     },
     demo: (
       <div className="space-y-2">
         <p className="cu-benefit">Бесплатная доставка</p>
-        <span className="text-[10px] leading-tight text-neutral-600">пн</span>
-        <span className="text-[10px] opacity-90">1 позже</span>
+        <span className="text-xs leading-tight text-neutral-600">пн</span>
+        <span className="cu-text-micro opacity-90">1 позже</span>
       </div>
     ),
   },
   {
     sortPx: 9,
     title: "Бейдж «Рекомендуем» на вкладке доставки",
-    classHint: "text-[9px] font-semibold uppercase tracking-wide",
+    classHint: ".cu-text-badge text-emerald-800",
     spec: {
-      size: "9px (кастомный)",
+      size: "10px (text-[10px])",
       color: "emerald-800 на светлом фоне / белый на тёмной вкладке",
       weight: "font-semibold",
       tracking: "tracking-wide",
       caseTransform: "ВЕРХНИЙ РЕГИСТР",
     },
     demo: (
-      <span className="inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-800">
+      <span className="cu-text-badge inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-800">
         Рекомендуем
       </span>
     ),
@@ -301,30 +301,30 @@ const RAW_ENTRIES: Entry[] = [
   {
     sortPx: 8,
     title: "Микробейджи количества (превью товара)",
-    classHint: "text-[8px] / text-[7px] font-semibold tabular-nums text-white",
+    classHint: ".cu-text-counter text-white на тёмном круге",
     spec: {
-      size: "7–8px",
+      size: "8px (text-[8px])",
       color: "белый на тёмном круге",
       weight: "font-semibold",
       tracking: "tabular-nums для цифр",
-      notes: "Экстремально малый кегль только для счётчиков на миниатюре",
+      notes: "Только для счётчиков на миниатюре товара",
     },
     demo: (
       <div className="flex items-center gap-2">
-        <span className="rounded bg-neutral-900/90 px-1 text-[8px] font-semibold text-white">3</span>
-        <span className="rounded-full bg-neutral-900/90 px-[3px] text-[7px] font-semibold tabular-nums text-white">12</span>
+        <span className="cu-text-counter rounded bg-neutral-900/90 px-1 text-white">3</span>
+        <span className="cu-text-counter rounded-full bg-neutral-900/90 px-[3px] text-white">12</span>
       </div>
     ),
   },
   {
     sortPx: 12,
     title: "Заголовок подблока (токен в CSS, редко в разметке)",
-    classHint: ".cu-block-heading — text-xs uppercase tracking-[0.06em]",
+    classHint: ".cu-block-heading — text-xs uppercase tracking-[0.08em] (как секция)",
     spec: {
       size: "12px (text-xs)",
       color: "neutral-900",
       weight: "font-semibold",
-      tracking: "tracking-[0.06em] (чуть плотнее, чем у cu-section-title)",
+      tracking: "tracking-[0.08em], как у cu-section-title",
       caseTransform: "ВЕРХНИЙ РЕГИСТР",
     },
     demo: <p className="cu-block-heading">Отправление 1</p>,
@@ -390,18 +390,18 @@ const RAW_ENTRIES: Entry[] = [
   {
     sortPx: 14,
     title: "Кнопки CTA (основной и альтернативный кегль)",
-    classHint: "text-sm font-semibold | text-xs font-semibold uppercase tracking-wide",
+    classHint: "text-sm font-semibold — без uppercase и без tracking-wide",
     spec: {
-      size: "14px или 12px на вторичной CTA",
+      size: "14px (text-sm) для основных CTA",
       color: "белый на чёрном фоне",
       weight: "font-semibold",
-      tracking: "У варианта xs часто uppercase + tracking-wide",
-      caseTransform: "У нижней кнопки в примере — капс",
+      tracking: "По умолчанию (без tracking-wide у CTA)",
+      caseTransform: "Как в предложении (без принудительного uppercase)",
     },
     demo: (
       <div className="space-y-2">
         <div className="rounded-lg bg-black py-3 text-center text-sm font-semibold text-white">Оформить заказ</div>
-        <div className="rounded-lg bg-black py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-white">
+        <div className="rounded-lg bg-black py-2.5 text-center text-sm font-semibold text-white">
           Получить смс с кодом
         </div>
       </div>

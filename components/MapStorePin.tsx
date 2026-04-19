@@ -91,14 +91,14 @@ export function MapStorePin({
     >
       <div className="flex w-[36px] shrink-0 flex-col items-center">
         <div
-          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold tracking-[0.35px] text-white ${pal.disk} ${
-            brandMark.length > 2 ? "text-[8px] leading-tight sm:text-[9px]" : "text-[11px]"
+          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold text-white ${pal.disk} ${
+            brandMark.length > 2 ? "text-[10px] leading-tight" : "text-xs"
           }`}
         >
           <span className="whitespace-nowrap px-0.5 text-center">{brandMark}</span>
           {wasLastChoice ? (
             <span
-              className="absolute -right-px -top-px z-[1] flex h-2 w-2 items-center justify-center rounded-full bg-neutral-800 text-[4px] leading-none text-white"
+              className="absolute -right-px -top-px z-[1] flex h-3 w-3 items-center justify-center rounded-full bg-neutral-800 text-[10px] leading-none text-white"
               title="Выбирали в прошлый раз"
             >
               ↻
@@ -116,11 +116,11 @@ export function MapStorePin({
       <div
         className={`z-0 -ml-[18px] flex min-h-[36px] min-w-0 max-w-[min(14rem,calc(100vw-4rem))] flex-col justify-center gap-0.5 rounded-[10px] border border-black/[0.06] bg-white px-1.5 py-1 pl-8 ${pal.labelShadow} max-sm:rounded-lg max-sm:px-1 max-sm:py-0.5 max-sm:pl-7`}
       >
-        <div className="break-words text-[11px] font-normal leading-snug text-[#1F1F1F] max-sm:text-[10px]">
+        <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">
           {line1}
         </div>
         {showLine2 ? (
-          <div className="break-words text-[11px] font-normal leading-snug text-[#1F1F1F] max-sm:text-[10px]">{line2}</div>
+          <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">{line2}</div>
         ) : null}
       </div>
     </div>
