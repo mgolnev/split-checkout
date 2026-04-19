@@ -100,6 +100,26 @@ type PartDeliverySchedule = {
   slotIx: number;
 };
 
+/** Дата/слот для шита сплита: сначала из partSchedules по ключам курьерских частей сценария в resolution, иначе — как на основном чекауте. */
+function getScheduleForSplitModal(
+  resolution: RemainderResolution,
+  partSchedules: Record<string, PartDeliverySchedule>,
+  primaryCourierPartKeys: string[],
+): PartDeliverySchedule {
+  const courierOption = resolution.options.find((o) => o.methodCode === "courier");
+  const splitKeys =
+    courierOption?.scenario.parts.filter((p) => p.mode === "courier").map((p) => p.key) ?? [];
+  for (const k of splitKeys) {
+    const s = partSchedules[k];
+    if (s) return s;
+  }
+  for (const k of primaryCourierPartKeys) {
+    const s = partSchedules[k];
+    if (s) return s;
+  }
+  return { dateIx: 0, slotIx: 0 };
+}
+
 type DeliveryMethodCode = "courier" | "pickup" | "pvz";
 
 /** Выбранный способ оплаты на чекауте (макет). */
@@ -125,7 +145,7 @@ type SplitModalState = {
 
 type CourierAddressModalTarget =
   | { kind: "primary" }
-  | { kind: "split"; option: AlternativeMethodOption };
+  | { kind: "split"; option: AlternativeMethodOption; courierSchedule?: PartDeliverySchedule };
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(
@@ -1698,7 +1718,7 @@ function CheckoutDeliveryMethodTabs({
             if (item.disabled) return;
             item.onSelect();
           }}
-          className={`flex min-h-[75px] min-w-0 flex-1 flex-col items-start justify-center gap-1 rounded-xl border px-2.5 py-3 text-left transition sm:px-3 ${
+          className={`flex min-h-[75px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl border px-2.5 py-3 text-center transition sm:px-3 ${
             item.selected
               ? "border-black bg-black text-white"
               : item.disabled
@@ -1708,7 +1728,7 @@ function CheckoutDeliveryMethodTabs({
                 : "border-neutral-200 bg-white text-neutral-800 hover:border-neutral-300"
           }`}
         >
-          <span className="cu-label-primary max-w-full min-w-0 break-words leading-tight text-inherit">
+          <span className="cu-label-primary flex w-full max-w-full min-w-0 flex-col items-center justify-start break-words leading-tight text-inherit">
             {item.tabLabel}
           </span>
           {coveragePending ? (
@@ -1720,7 +1740,7 @@ function CheckoutDeliveryMethodTabs({
             />
           ) : (
             <p
-              className={`min-w-0 max-w-full break-words text-xs leading-tight ${item.selected ? "text-white/95" : "text-neutral-600"}`}
+              className={`w-full min-w-0 max-w-full break-words text-center text-xs leading-tight ${item.selected ? "text-white/95" : "text-neutral-600"}`}
             >
               {item.coverage}
             </p>
@@ -2964,6 +2984,7 @@ function SplitSelectionModal({
   onClose,
   onConfirm,
   saving,
+  initialCourierSchedule,
   lastChosenPickupStoreId,
   lastChosenPvzPointId,
   methodTabNames,
@@ -2976,10 +2997,12 @@ function SplitSelectionModal({
   selectedPvzId: string;
   onSelectPvz: (pointId: string) => void;
   courierAddress: string;
-  onEditCourierAddress: (option: AlternativeMethodOption) => void;
+  onEditCourierAddress: (option: AlternativeMethodOption, courierSchedule?: PartDeliverySchedule) => void;
   onClose: () => void;
-  onConfirm: (option: AlternativeMethodOption) => void;
+  onConfirm: (option: AlternativeMethodOption, courierSchedule?: PartDeliverySchedule) => void;
   saving: boolean;
+  /** Синхронизация с выбором даты/слота на основном чекауте и во вторичных PartCard */
+  initialCourierSchedule: PartDeliverySchedule;
   /** Та же подсказка «выбирали в прошлый раз», что на основном чекауте */
   lastChosenPickupStoreId?: string | null;
   lastChosenPvzPointId?: string | null;
@@ -2997,8 +3020,8 @@ function SplitSelectionModal({
   const [pickupSelectorOpen, setPickupSelectorOpen] = useState(false);
   const [pvzSelectorOpen, setPvzSelectorOpen] = useState(false);
   const splitCourierDateLabels = useMemo(() => buildCourierDateLabels(), []);
-  const [splitCourierDateIx, setSplitCourierDateIx] = useState(0);
-  const [splitCourierSlotIx, setSplitCourierSlotIx] = useState(0);
+  const [splitCourierDateIx, setSplitCourierDateIx] = useState(initialCourierSchedule.dateIx);
+  const [splitCourierSlotIx, setSplitCourierSlotIx] = useState(initialCourierSchedule.slotIx);
   const splitPvzSummary = useMemo(() => methodSummaryFromPvzOption(pvzOption), [pvzOption]);
   const splitPvzLinePreview = useMemo(
     () => (pvzOption ? splitPvzLinePreviewFromScenario(pvzOption.scenario) : undefined),
@@ -3030,9 +3053,9 @@ function SplitSelectionModal({
   );
 
   useEffect(() => {
-    setSplitCourierDateIx(0);
-    setSplitCourierSlotIx(0);
-  }, [courierOption?.scenario]);
+    setSplitCourierDateIx(initialCourierSchedule.dateIx);
+    setSplitCourierSlotIx(initialCourierSchedule.slotIx);
+  }, [initialCourierSchedule.dateIx, initialCourierSchedule.slotIx]);
 
   const selectedPickupOption =
     pickupOptions.find((option) => option.storeId === selectedPickupStoreId) ?? null;
@@ -3183,7 +3206,12 @@ function SplitSelectionModal({
                       <CourierAddressCard
                         className="!mt-0"
                         address={courierAddress}
-                        onChange={() => onEditCourierAddress(courierOption)}
+                        onChange={() =>
+                          onEditCourierAddress(courierOption, {
+                            dateIx: splitCourierDateIx,
+                            slotIx: splitCourierSlotIx,
+                          })
+                        }
                       />
                       {courierAddress.trim() && splitCourierParts.length > 0 ? (
                         <section className="overflow-hidden rounded-xl border border-neutral-100 bg-white">
@@ -3253,7 +3281,15 @@ function SplitSelectionModal({
         <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
-            onClick={() => selectedOption && onConfirm(selectedOption)}
+            onClick={() =>
+              selectedOption &&
+              onConfirm(
+                selectedOption,
+                selectedMethod === "courier"
+                  ? { dateIx: splitCourierDateIx, slotIx: splitCourierSlotIx }
+                  : undefined,
+              )
+            }
             disabled={confirmDisabled}
             className="w-full rounded-2xl bg-black px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
           >
@@ -4491,6 +4527,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     };
   }, [mergedCheckoutRemainderLines, cityId, method, storeId]);
 
+  const primaryCourierPartKeys = useMemo(
+    () => (scenario?.parts ?? []).filter((p) => p.mode === "courier").map((p) => p.key),
+    [scenario],
+  );
+
+  const splitModalInitialCourierSchedule = useMemo(() => {
+    if (!splitModalState) return { dateIx: 0, slotIx: 0 };
+    return getScheduleForSplitModal(splitModalState.resolution, partSchedules, primaryCourierPartKeys);
+  }, [splitModalState, partSchedules, primaryCourierPartKeys]);
+
   const handlePromo = () => {
     if (promo.trim().toUpperCase() === "APP20") {
       setPromoApplied(true);
@@ -4588,7 +4634,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     })();
   };
 
-  const applySplitSelection = async (option: AlternativeMethodOption) => {
+  const applySplitSelection = async (
+    option: AlternativeMethodOption,
+    courierSchedule?: PartDeliverySchedule,
+  ) => {
     if (!splitModalState) return;
     setSplitSubmitting(true);
     try {
@@ -4610,19 +4659,34 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         const base = splitModalState.editIndex == null ? prev : prev.slice(0, splitModalState.editIndex);
         return [...base, nextSelection];
       });
+      if (option.methodCode === "courier" && courierSchedule) {
+        const courierKeys = data.scenario.parts.filter((p) => p.mode === "courier").map((p) => p.key);
+        if (courierKeys.length) {
+          setPartSchedules((prev) => {
+            const next = { ...prev };
+            for (const k of courierKeys) {
+              next[k] = { ...courierSchedule };
+            }
+            return next;
+          });
+        }
+      }
       setSplitModalState(null);
     } finally {
       setSplitSubmitting(false);
     }
   };
 
-  const confirmSplitSelection = async (option: AlternativeMethodOption) => {
+  const confirmSplitSelection = async (
+    option: AlternativeMethodOption,
+    courierSchedule?: PartDeliverySchedule,
+  ) => {
     if (!splitModalState) return;
     if (option.methodCode === "courier" && !courierAddress.trim()) {
-      setCourierAddressModalTarget({ kind: "split", option });
+      setCourierAddressModalTarget({ kind: "split", option, courierSchedule });
       return;
     }
-    await applySplitSelection(option);
+    await applySplitSelection(option, courierSchedule);
   };
 
   const handleCourierAddressSave = async (address: string, target: CourierAddressModalTarget) => {
@@ -4633,7 +4697,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       return;
     }
     setSplitModalState(null);
-    await applySplitSelection(target.option);
+    await applySplitSelection(target.option, target.courierSchedule);
   };
 
   const productsById = useMemo(
@@ -4855,24 +4919,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const renderScenarioMethodSummary = () => {
     if (!method || !scenario) return null;
-    const dm = deliveryOptions.find((d) => d.code === method);
-    if (!dm) return null;
-    let summaryText = methodSummaryLabel(dm.code as "courier" | "pickup" | "pvz", dm.summary, dm.enabled);
-    const s = dm.summary;
-    if (
-      summaryText &&
-      s &&
-      s.hasSplit &&
-      (method === "courier" || method === "pvz") &&
-      summaryText === `${s.availableUnits} из ${s.totalUnits} товаров` &&
-      includedOrderUnits === s.availableUnits &&
-      units === s.totalUnits
-    ) {
-      summaryText = "";
-    }
+    if (!deliveryOptions.some((d) => d.code === method)) return null;
     return (
       <>
-        {summaryText ? <p className="cu-muted mb-2">{summaryText}</p> : null}
         {method === "pickup" && selectedPickupStore ? (
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium text-neutral-800">{selectedPickupStore.name}</p>
@@ -5555,12 +5604,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           selectedPvzId={pvzId}
           onSelectPvz={setPvzId}
           courierAddress={courierAddress}
-          onEditCourierAddress={(option) => setCourierAddressModalTarget({ kind: "split", option })}
+          onEditCourierAddress={(option, courierSchedule) =>
+            setCourierAddressModalTarget({ kind: "split", option, courierSchedule })
+          }
           onClose={() => {
             if (!splitSubmitting) setSplitModalState(null);
           }}
           onConfirm={confirmSplitSelection}
           saving={splitSubmitting}
+          initialCourierSchedule={splitModalInitialCourierSchedule}
           lastChosenPickupStoreId={lastPickupMemoryId}
           lastChosenPvzPointId={lastPvzMemoryId}
           selectorCopy={selectorUiCopy}
