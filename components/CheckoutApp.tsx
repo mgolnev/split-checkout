@@ -1134,7 +1134,8 @@ function PickupStoreSelector({
       });
   }, [filteredStores, mapPreviewStoreId, recommendedStoreId, lastChosenStoreId]);
 
-  const showYandexPickupMap = hasYandexMapsKey && yandexPickupMarkers.length > 0;
+  /** При ключе API всегда реальная карта; пины только у точек с mapLat/mapLng в данных. */
+  const showYandexPickupMap = hasYandexMapsKey;
   const yandexPickupFocus = useMemo((): { lng: number; lat: number } | null => {
     if (
       !mapPreviewStore ||
@@ -2001,7 +2002,7 @@ function PvzPointSelector({
     lastChosenPointId,
   ]);
 
-  const showYandexPvzMap = hasYandexMapsKeyPvz && yandexPvzMarkers.length > 0;
+  const showYandexPvzMap = hasYandexMapsKeyPvz;
   const yandexPvzFocus = useMemo((): { lng: number; lat: number } | null => {
     if (
       !mapPreviewPoint ||
@@ -2919,6 +2920,8 @@ function SplitSelectionModal({
   resolution,
   productsById,
   pvzPoints,
+  /** Магазины города из bootstrap (с mapLat/mapLng) — для пинов на карте в шите выбора */
+  pickupStoresBootstrap,
   selectorCopy: selectorUiCopy,
   selectedPvzId,
   onSelectPvz,
@@ -2934,6 +2937,7 @@ function SplitSelectionModal({
   resolution: RemainderResolution;
   productsById: Record<string, Bootstrap["products"][number]>;
   pvzPoints: PvzPointOption[];
+  pickupStoresBootstrap: PickupStoreOption[];
   selectorCopy?: SelectorCopy;
   selectedPvzId: string;
   onSelectPvz: (pointId: string) => void;
@@ -2967,17 +2971,21 @@ function SplitSelectionModal({
     () => (pvzOption ? buildPvzSheetThumbMeta(pvzOption.scenario, courierOption?.scenario) : undefined),
     [pvzOption, courierOption],
   );
-  const splitPickupStores = useMemo(
-    () =>
-      pickupOptions
-        .filter((o): o is AlternativeMethodOption & { storeId: string } => Boolean(o.storeId))
-        .map((opt) => ({
+  const splitPickupStores = useMemo(() => {
+    const byId = new Map(pickupStoresBootstrap.map((s) => [s.id, s]));
+    return pickupOptions
+      .filter((o): o is AlternativeMethodOption & { storeId: string } => Boolean(o.storeId))
+      .map((opt) => {
+        const fromBoot = byId.get(opt.storeId);
+        return {
           id: opt.storeId,
           name: opt.storeName?.trim() || "Магазин",
           summary: pickupSummaryFromScenario(opt.totalUnits, opt.scenario, courierOption?.scenario),
-        })),
-    [pickupOptions, courierOption],
-  );
+          mapLat: fromBoot?.mapLat ?? null,
+          mapLng: fromBoot?.mapLng ?? null,
+        };
+      });
+  }, [pickupOptions, courierOption, pickupStoresBootstrap]);
   const selectedPickupOption =
     pickupOptions.find((option) => option.storeId === selectedPickupStoreId) ?? null;
   const selectedPvzPoint = selectedPvzId.trim()
@@ -5391,6 +5399,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           resolution={splitModalState.resolution}
           productsById={productsById}
           pvzPoints={pvzOptionsOrdered}
+          pickupStoresBootstrap={pickupStores}
           selectedPvzId={pvzId}
           onSelectPvz={setPvzId}
           courierAddress={courierAddress}
