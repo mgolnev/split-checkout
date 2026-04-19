@@ -1,7 +1,7 @@
 "use client";
 
 import { createRoot, type Root } from "react-dom/client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadYandexMapsScript } from "@/lib/yandex-maps-script";
 import { MapStorePin, MAP_STORE_PIN_ANCHOR_OFFSET_X_PX, type MapStorePinProps } from "@/components/MapStorePin";
 
@@ -30,6 +30,28 @@ type YandexCheckoutMapProps = {
 
 type YMapModule = typeof import("@yandex/ymaps3-types");
 
+type LngLatBoundsTuple = [[number, number], [number, number]];
+
+/**
+ * Расширяем bbox вокруг точек, иначе при `setLocation({ bounds })` маркеры оказываются у самого края тайла.
+ * Доля от размера bbox + минимум в градусах (~сотни метров), чтобы две близкие точки не «липли» к рамке.
+ */
+function expandLngLatBounds(
+  bounds: LngLatBoundsTuple,
+  paddingFraction = 0.3,
+  minPadDeg = 0.004,
+): LngLatBoundsTuple {
+  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
+  const w = Math.max(maxLng - minLng, 0);
+  const h = Math.max(maxLat - minLat, 0);
+  const padLng = Math.max(w * paddingFraction, minPadDeg);
+  const padLat = Math.max(h * paddingFraction, minPadDeg);
+  return [
+    [minLng - padLng, minLat - padLat],
+    [maxLng + padLng, maxLat + padLat],
+  ];
+}
+
 function initialLocationForMarkers(
   markers: YandexCheckoutMapMarker[],
 ): import("@yandex/ymaps3-types").YMapLocationRequest {
@@ -54,11 +76,12 @@ function initialLocationForMarkers(
   if (minLng === maxLng && minLat === maxLat) {
     return { center: [minLng, minLat], zoom: 14 };
   }
+  const tight: LngLatBoundsTuple = [
+    [minLng, minLat],
+    [maxLng, maxLat],
+  ];
   return {
-    bounds: [
-      [minLng, minLat],
-      [maxLng, maxLat],
-    ],
+    bounds: expandLngLatBounds(tight),
   };
 }
 
@@ -85,6 +108,12 @@ export function YandexCheckoutMap({
   const markersRef = useRef(markers);
   markersRef.current = markers;
   const [mapReady, setMapReady] = useState(false);
+
+  /** Только координаты пинов — чтобы перефитить кадр при смене фильтра, а не при каждом ререндере pinProps. */
+  const markersBoundsKey = useMemo(
+    () => markers.map((m) => `${m.id}:${m.lng},${m.lat}`).join("|"),
+    [markers],
+  );
 
   useEffect(() => {
     const el = containerRef.current;
@@ -188,6 +217,29 @@ export function YandexCheckoutMap({
     // Объект focus из родителя может пересоздаваться; достаточно lng/lat.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- см. выше
   }, [focus?.lng, focus?.lat, focusInsetBottomPx, focusExtraBottomPx, mapReady]);
+
+  /**
+   * При смене набора точек (фильтр, поиск) без выбранного превью карта остаётся на старом кадре — пины «вне экрана».
+   * Подгоняем область видимости под текущие маркеры (как при первом открытии).
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const hasFocus =
+      focus != null &&
+      Number.isFinite(focus.lng) &&
+      Number.isFinite(focus.lat);
+    if (hasFocus) return;
+
+    const loc = initialLocationForMarkers(markers);
+    if ("bounds" in loc && loc.bounds) {
+      map.setLocation({ bounds: loc.bounds, duration: 220 });
+      return;
+    }
+    if ("center" in loc && loc.center && "zoom" in loc) {
+      map.setLocation({ center: loc.center, zoom: loc.zoom, duration: 220 });
+    }
+  }, [markersBoundsKey, mapReady, focus?.lng, focus?.lat, markers]);
 
   return (
     <div
