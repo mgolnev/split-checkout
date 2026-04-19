@@ -100,12 +100,21 @@ type PartDeliverySchedule = {
   slotIx: number;
 };
 
-/** Дата/слот для шита сплита: сначала из partSchedules по ключам курьерских частей сценария в resolution, иначе — как на основном чекауте. */
+/** Дата/слот для шита сплита: сначала из partSchedules по ключам как на чекауте (в т.ч. префикс `selectionId_` для вторичных частей), затем сырые ключи из resolution, затем основной сценарий. */
 function getScheduleForSplitModal(
   resolution: RemainderResolution,
   partSchedules: Record<string, PartDeliverySchedule>,
   primaryCourierPartKeys: string[],
+  editSecondarySelection: SecondarySelection | null,
 ): PartDeliverySchedule {
+  if (editSecondarySelection?.scenario.parts.length) {
+    const keyedParts = withSecondaryPartKeys(editSecondarySelection.scenario.parts, editSecondarySelection.id);
+    for (const p of keyedParts) {
+      if (p.mode !== "courier") continue;
+      const s = partSchedules[p.key];
+      if (s) return s;
+    }
+  }
   const courierOption = resolution.options.find((o) => o.methodCode === "courier");
   const splitKeys =
     courierOption?.scenario.parts.filter((p) => p.mode === "courier").map((p) => p.key) ?? [];
@@ -3417,7 +3426,9 @@ function PartCard({
       : formatRuDayMonthLong(courierHeadingDate!)
     : null;
   const primaryHeading = isCourier ? (courierHeading ?? headingName) : (subtitle ?? headingName);
-  const secondaryHeading = isCourier || isGjStorePickup || primaryHeading === headingName ? null : headingName;
+  /** Для ПВЗ не дублируем подзаголовок с названием склада/источника — достаточно основной строки. */
+  const secondaryHeading =
+    isCourier || isGjStorePickup || isPvz || primaryHeading === headingName ? null : headingName;
   /** Для курьера всегда показываем отдельный блок выбора даты/интервала. */
   const showCourierDeliveryRow = isCourier && Boolean(leadLabel);
 
@@ -4532,10 +4543,20 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     [scenario],
   );
 
+  const splitModalEditSecondarySelection = useMemo(() => {
+    if (!splitModalState || splitModalState.mode !== "edit" || splitModalState.editIndex == null) return null;
+    return secondarySelections[splitModalState.editIndex] ?? null;
+  }, [splitModalState, secondarySelections]);
+
   const splitModalInitialCourierSchedule = useMemo(() => {
     if (!splitModalState) return { dateIx: 0, slotIx: 0 };
-    return getScheduleForSplitModal(splitModalState.resolution, partSchedules, primaryCourierPartKeys);
-  }, [splitModalState, partSchedules, primaryCourierPartKeys]);
+    return getScheduleForSplitModal(
+      splitModalState.resolution,
+      partSchedules,
+      primaryCourierPartKeys,
+      splitModalEditSecondarySelection,
+    );
+  }, [splitModalState, partSchedules, primaryCourierPartKeys, splitModalEditSecondarySelection]);
 
   const handlePromo = () => {
     if (promo.trim().toUpperCase() === "APP20") {
@@ -4660,7 +4681,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         return [...base, nextSelection];
       });
       if (option.methodCode === "courier" && courierSchedule) {
-        const courierKeys = data.scenario.parts.filter((p) => p.mode === "courier").map((p) => p.key);
+        /** Ключи на чекауте совпадают с `secondaryDisplaySelections[].parts`, не с сырыми `scenario.parts` из API. */
+        const keyedParts = withSecondaryPartKeys(data.scenario.parts, nextSelectionId);
+        const courierKeys = keyedParts.filter((p) => p.mode === "courier").map((p) => p.key);
         if (courierKeys.length) {
           setPartSchedules((prev) => {
             const next = { ...prev };
