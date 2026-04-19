@@ -250,8 +250,7 @@ function BonusAuthBar() {
     >
       <GjMark className="h-10 w-10 text-[11px]" />
       <span className="min-w-0 flex-1 text-sm leading-snug text-neutral-900">
-        <span className="block">Войдите в аккаунт, чтобы копить</span>
-        <span className="block">и списывать бонусы GJ</span>
+        Войдите в аккаунт, чтобы копить и списывать бонусы GJ
       </span>
       <svg
         className="h-5 w-5 shrink-0 text-neutral-700"
@@ -2788,7 +2787,7 @@ function UnresolvedItemsBlock({
   suppressEmptyOptionsHint?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
+    <div className="rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] sm:p-6">
       <div className="min-w-0">
         <p className="text-[15px] font-semibold leading-tight text-neutral-900">{copy.title}</p>
         <p className="mt-2 text-sm leading-snug text-neutral-600">{copy.subtitle}</p>
@@ -3522,14 +3521,21 @@ function ScenarioPartCardSkeleton({
   return <div className="rounded-2xl bg-white p-5">{inner}</div>;
 }
 
-function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) {
+function ScenarioOrderSkeleton({
+  variant,
+  embedded,
+}: {
+  variant: "unified" | "stacked";
+  /** Внутри общей карточки чекаута — без второй обводки и тени */
+  embedded?: boolean;
+}) {
   if (variant === "stacked") {
     return (
       <div
         role="status"
         aria-busy="true"
         aria-live="polite"
-        className="pointer-events-none mb-8 space-y-4 select-none"
+        className="pointer-events-none space-y-4 select-none"
       >
         <span className="sr-only">Считаем доступные отправления и сроки.</span>
         <div className="animate-pulse">
@@ -3541,13 +3547,8 @@ function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) 
       </div>
     );
   }
-  return (
-    <section
-      role="status"
-      aria-busy="true"
-      aria-live="polite"
-      className="pointer-events-none mb-8 select-none overflow-hidden rounded-2xl border border-neutral-200 bg-white divide-y divide-neutral-100"
-    >
+  const inner = (
+    <>
       <span className="sr-only">Считаем доступные отправления и сроки.</span>
       <div className="animate-pulse space-y-2 px-4 py-4">
         <div className="h-3 w-36 rounded bg-neutral-200/90" />
@@ -3560,6 +3561,28 @@ function ScenarioOrderSkeleton({ variant }: { variant: "unified" | "stacked" }) 
       <div className="animate-pulse">
         <ScenarioPartCardSkeleton inGroup showShipmentHeading />
       </div>
+    </>
+  );
+  if (embedded) {
+    return (
+      <div
+        role="status"
+        aria-busy="true"
+        aria-live="polite"
+        className="pointer-events-none select-none divide-y divide-neutral-100 border-t border-neutral-100"
+      >
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <section
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+      className="pointer-events-none select-none overflow-hidden rounded-2xl border border-neutral-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)] divide-y divide-neutral-100"
+    >
+      {inner}
     </section>
   );
 }
@@ -4750,7 +4773,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const primarySplitContextBarVisible =
     !showScenarioSkeleton && !!scenario && scenarioInformersForBanner.length > 0;
 
-  const renderPrimarySplitContextBar = (variant: "unified" | "stacked") => {
+  const renderPrimarySplitContextBar = (variant: "unified" | "stacked" | "stacked-inline") => {
     if (!primarySplitContextBarVisible) return null;
     const parsed = scenarioInformersForBanner.map(parseCheckoutInformer).filter((x) => x.title || x.body);
     if (!parsed.length) return null;
@@ -4765,7 +4788,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     const wrapClass =
       variant === "unified"
         ? "w-full bg-white px-5 py-5"
-        : "mb-5 w-full rounded-2xl border border-neutral-200 bg-white px-5 py-5";
+        : variant === "stacked-inline"
+          ? "w-full border-b border-neutral-100 px-5 py-5"
+          : "mb-5 w-full rounded-2xl border border-neutral-200 bg-white px-5 py-5";
     return (
       <div className={wrapClass}>
         <div className="min-w-0">
@@ -4851,8 +4876,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   };
 
   return (
-    <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-white pb-28">
-      <div className="sticky top-0 z-50 mb-6 border-b border-neutral-100 bg-white shadow-sm">
+    <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-neutral-50 pb-28">
+      <div className="sticky top-0 z-50 mb-3 border-b border-neutral-100 bg-white shadow-sm">
         <header className="px-4 py-3">
           <div className="flex items-center gap-3">
             <Link href="/cart" className="text-xl text-neutral-700" aria-label="Назад в корзину">
@@ -4867,10 +4892,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </div>
       </div>
 
-      <div className="relative z-0 px-5 pt-6">
-
-        <section className="mb-8">
-          <div className="mb-3 flex items-center justify-between">
+      <div className="relative z-0 flex flex-col gap-3 px-5 pt-4">
+        <section className="overflow-hidden rounded-2xl border border-neutral-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+          <div className="p-5">
+            <div className="mb-3 flex items-center justify-between">
             <h2 className="cu-section-title">Способ получения</h2>
             <div className="relative">
               <select
@@ -5020,102 +5045,102 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               )}
             </div>
           ) : null}
-        </section>
-
-        {method === "courier" && !courierAddress.trim() ? (
-          <div className="mb-6 rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-            Для курьерской доставки нужен адрес. После ввода покажем доступные отправления.
           </div>
-        ) : null}
 
-        {showScenarioSkeleton ? (
-          <ScenarioOrderSkeleton variant="unified" />
-        ) : unifiedOrderBlock ? (
-          <section className="mb-8 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-            <div className="border-b border-neutral-100 px-4 py-4">{renderScenarioMethodSummary()}</div>
-            {renderPrimarySplitContextBar("unified")}
-            {(scenario?.parts ?? [])
-              .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
-              .map((p, partIndex) => (
-              <div key={p.key} className={partIndex > 0 ? "border-t border-neutral-100" : ""}>
-                <PartCard
-                  inGroup
-                  part={p}
-                  included={included[p.key] !== false}
-                  onToggle={() =>
-                    setIncluded((prev) => {
-                      const cur = prev[p.key] !== false;
-                      return { ...prev, [p.key]: !cur };
-                    })
-                  }
-                  showSelectionControl={!keepSinglePartExpanded}
-                  showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
-                  remainderKeepHint={scenario?.remainderKeepHint}
-                  selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
-                  selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
-                  onDateChange={(dateIx) =>
-                    setPartSchedules((prev) => ({
-                      ...prev,
-                      [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
-                    }))
-                  }
-                  onSlotChange={(slotIx) =>
-                    setPartSchedules((prev) => ({
-                      ...prev,
-                      [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
-                    }))
-                  }
-                  courierDateLabels={courierDateLabels}
-                />
-              </div>
-            ))}
-          </section>
-        ) : (
-          <>
-            {renderPrimarySplitContextBar("stacked")}
+          {method === "courier" && !courierAddress.trim() ? (
+            <div className="border-t border-neutral-100 px-5 py-4 text-sm text-neutral-500">
+              Для курьерской доставки нужен адрес. После ввода покажем доступные отправления.
+            </div>
+          ) : null}
 
-            <section className="mb-6 space-y-3">
+          {showScenarioSkeleton ? (
+            <ScenarioOrderSkeleton variant="unified" embedded />
+          ) : unifiedOrderBlock ? (
+            <div className="border-t border-neutral-100">
+              <div className="border-b border-neutral-100 px-4 py-4">{renderScenarioMethodSummary()}</div>
+              {renderPrimarySplitContextBar("unified")}
               {(scenario?.parts ?? [])
                 .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
                 .map((p, partIndex) => (
-                <PartCard
-                  key={p.key}
-                  courierDateLabels={courierDateLabels}
-                  part={p}
-                  included={included[p.key] !== false}
-                  onToggle={() =>
-                    setIncluded((prev) => {
-                      const cur = prev[p.key] !== false;
-                      return { ...prev, [p.key]: !cur };
-                    })
-                  }
-                  showSelectionControl={!keepSinglePartExpanded}
-                  showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
-                  remainderKeepHint={scenario?.remainderKeepHint}
-                  selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
-                  selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
-                  onDateChange={(dateIx) =>
-                    setPartSchedules((prev) => ({
-                      ...prev,
-                      [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
-                    }))
-                  }
-                  onSlotChange={(slotIx) =>
-                    setPartSchedules((prev) => ({
-                      ...prev,
-                      [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
-                    }))
-                  }
-                />
-              ))}
-            </section>
-          </>
-        )}
+                  <div key={p.key} className={partIndex > 0 ? "border-t border-neutral-100" : ""}>
+                    <PartCard
+                      inGroup
+                      part={p}
+                      included={included[p.key] !== false}
+                      onToggle={() =>
+                        setIncluded((prev) => {
+                          const cur = prev[p.key] !== false;
+                          return { ...prev, [p.key]: !cur };
+                        })
+                      }
+                      showSelectionControl={!keepSinglePartExpanded}
+                      showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
+                      remainderKeepHint={scenario?.remainderKeepHint}
+                      selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
+                      selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
+                      onDateChange={(dateIx) =>
+                        setPartSchedules((prev) => ({
+                          ...prev,
+                          [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
+                        }))
+                      }
+                      onSlotChange={(slotIx) =>
+                        setPartSchedules((prev) => ({
+                          ...prev,
+                          [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
+                        }))
+                      }
+                      courierDateLabels={courierDateLabels}
+                    />
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="border-t border-neutral-100">
+              {renderPrimarySplitContextBar("stacked-inline")}
+              <div className="space-y-3 px-5 pb-5 pt-2">
+                {(scenario?.parts ?? [])
+                  .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
+                  .map((p, partIndex) => (
+                    <PartCard
+                      key={p.key}
+                      courierDateLabels={courierDateLabels}
+                      part={p}
+                      included={included[p.key] !== false}
+                      onToggle={() =>
+                        setIncluded((prev) => {
+                          const cur = prev[p.key] !== false;
+                          return { ...prev, [p.key]: !cur };
+                        })
+                      }
+                      showSelectionControl={!keepSinglePartExpanded}
+                      showRemainderHint={manualExcludedLines.length > 0 && partIndex === 0}
+                      remainderKeepHint={scenario?.remainderKeepHint}
+                      selectedDateIx={partSchedules[p.key]?.dateIx ?? 0}
+                      selectedSlotIx={partSchedules[p.key]?.slotIx ?? 0}
+                      onDateChange={(dateIx) =>
+                        setPartSchedules((prev) => ({
+                          ...prev,
+                          [p.key]: { dateIx, slotIx: prev[p.key]?.slotIx ?? 0 },
+                        }))
+                      }
+                      onSlotChange={(slotIx) =>
+                        setPartSchedules((prev) => ({
+                          ...prev,
+                          [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
+                        }))
+                      }
+                    />
+                  ))}
+              </div>
+            </div>
+          )}
+        </section>
 
         {secondaryDisplaySelections.map((selection, selectionIndex) => (
           <section
             key={selection.id}
-            className="mb-8 overflow-hidden rounded-2xl border border-neutral-200 bg-white divide-y divide-neutral-100"
+            className="overflow-hidden rounded-2xl border border-neutral-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)] divide-y divide-neutral-100"
           >
             <div className="px-4 py-4">
               <SecondarySelectionCard
@@ -5163,7 +5188,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ))}
 
         {unifiedRemainderResolution && unifiedRemainderResolution.lines.length > 0 ? (
-          <section className="mb-8">
+          <section>
             <UnresolvedItemsBlock
               resolution={unifiedRemainderResolution}
               productsById={productsById}
@@ -5175,53 +5200,53 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </section>
         ) : null}
 
-        <section
-          className="mb-8 mt-8"
-          aria-labelledby="checkout-recipient-heading"
-        >
-          <h2 id="checkout-recipient-heading" className="cu-section-title mb-3">
-            Мои данные
-          </h2>
-          {!recipient ? (
-            <>
-              <p className="cu-muted">Введите номер телефона, чтобы оформить заказ</p>
-              <input
-                id="checkout-recipient-phone"
-                className="mt-2 w-full rounded-lg bg-neutral-100 px-3 py-3 text-base placeholder:text-neutral-400"
-                placeholder="+7 (___) ___-__-__"
-                inputMode="tel"
-                autoComplete="tel"
-                value={phoneDraft}
-                onChange={(e) => setPhoneDraft(e.target.value)}
-              />
-              <button
-                type="button"
-                disabled={!phoneHasMinDigits(phoneDraft)}
-                onClick={confirmRecipientInline}
-                className="mt-2 w-full rounded-lg bg-neutral-900 py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Получить смс с кодом
-              </button>
-            </>
-          ) : (
-            <div className="rounded-xl border border-neutral-200 px-3 py-3">
-              <p className="cu-label-primary text-neutral-900">{recipient.fullName}</p>
-              <p className="mt-1 text-sm text-neutral-600">{recipient.phone}</p>
-              <button
-                type="button"
-                onClick={clearRecipient}
-                className="mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 underline underline-offset-2"
-              >
-                Сменить номер
-              </button>
-            </div>
-          )}
+        <section aria-labelledby="checkout-recipient-heading">
+          <div className="cu-checkout-block cu-checkout-block--soft">
+            <h2 id="checkout-recipient-heading" className="cu-section-title mb-3">
+              Мои данные
+            </h2>
+            {!recipient ? (
+              <>
+                <p className="cu-muted">Введите номер телефона, чтобы оформить заказ</p>
+                <input
+                  id="checkout-recipient-phone"
+                  className="mt-2 w-full rounded-lg bg-white/80 px-3 py-3 text-base placeholder:text-neutral-400 shadow-inner"
+                  placeholder="+7 (___) ___-__-__"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={!phoneHasMinDigits(phoneDraft)}
+                  onClick={confirmRecipientInline}
+                  className="mt-2 w-full rounded-lg bg-neutral-900 py-3 text-xs font-semibold uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Получить смс с кодом
+                </button>
+              </>
+            ) : (
+              <div className="rounded-xl border border-neutral-200/80 bg-white/60 px-3 py-3">
+                <p className="cu-label-primary text-neutral-900">{recipient.fullName}</p>
+                <p className="mt-1 text-sm text-neutral-600">{recipient.phone}</p>
+                <button
+                  type="button"
+                  onClick={clearRecipient}
+                  className="mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 underline underline-offset-2"
+                >
+                  Сменить номер
+                </button>
+              </div>
+            )}
+          </div>
         </section>
 
-        <section className="mb-8 mt-8" aria-labelledby="checkout-payment-heading">
-          <h2 id="checkout-payment-heading" className="cu-section-title mb-3">
-            Способ оплаты
-          </h2>
+        <section aria-labelledby="checkout-payment-heading">
+          <div className="cu-checkout-block">
+            <h2 id="checkout-payment-heading" className="cu-section-title mb-3">
+              Способ оплаты
+            </h2>
           {payOnDeliveryOnlyEffective ? (
             <div className="mb-3">
               <p className="cu-page-title text-neutral-900">Несколько отправлений</p>
@@ -5282,9 +5307,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               );
             })}
           </div>
+          </div>
         </section>
 
-        <section className="mb-8 mt-8 space-y-3">
+        <section>
+          <div className="cu-checkout-block space-y-3">
           {(recipient || promoApplied || bonusOn) ? (
             <div>
               <p className="cu-page-title text-neutral-900">{checkoutCopyResolved.promoBonusTitle}</p>
@@ -5339,11 +5366,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : (
             <BonusAuthBar />
           )}
+          </div>
         </section>
 
-        <section className="mb-24 border-t border-neutral-100 pt-6">
-          <h2 className="cu-section-title">Итого</h2>
-          <div className="mt-3 space-y-1.5">
+        <section className="mb-24">
+          <div className="cu-checkout-block">
+            <h2 className="cu-section-title">Итого</h2>
+            <div className="mt-3 space-y-1.5">
             <div className="flex justify-between">
               <span className="cu-total-row-label">Товары</span>
               <span className="cu-total-row-value">{fmt(displayGoodsSubtotal)}</span>
@@ -5370,6 +5399,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <span>Итого</span>
               <span>{fmt(payFinal)}</span>
             </div>
+          </div>
           </div>
         </section>
       </div>

@@ -184,6 +184,15 @@ body {
     @apply text-[10px] font-medium uppercase leading-snug tracking-[0.12em] text-[var(--gj-muted)];
   }
 
+  /** Логический блок чекаута: отдель от «газетного» полотна, как карточка на подложке */
+  .checkout-ui .cu-checkout-block {
+    @apply rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)];
+  }
+  /** Мягкий акцент (получатель / персональные данные) — без смены типографики */
+  .checkout-ui .cu-checkout-block--soft {
+    @apply border-neutral-200/80 bg-[color-mix(in_srgb,var(--gj-beige)_42%,white)];
+  }
+
   /**
    * Промокод: type="search" — встроенная кнопка очистки (WebKit/Chromium; в Firefox — с поддержкой ::search-cancel-button).
    * Убираем оформление «поля поиска» у полосы, сам крестик остаётся нативным.
