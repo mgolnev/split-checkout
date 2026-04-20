@@ -234,6 +234,8 @@ body {
    */
   .checkout-ui input.cu-promo-input[type="search"] {
     appearance: none;
+    /** iOS Safari: размер шрифта меньше 16px даёт зум всей страницы при фокусе */
+    font-size: 1rem;
   }
   .checkout-ui input.cu-promo-input[type="search"]::-webkit-search-cancel-button {
     cursor: pointer;

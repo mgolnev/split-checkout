@@ -22,7 +22,7 @@ export function PromoStripDemo() {
           autoComplete="off"
           enterKeyHint="done"
           aria-label="Промокод (демо)"
-          className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-sm uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
+          className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-base uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
           placeholder="Промокод"
           value={promo}
           onChange={(e) => {

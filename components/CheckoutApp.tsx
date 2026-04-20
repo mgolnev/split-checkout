@@ -4145,8 +4145,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       const sc: ScenarioResult = data.scenario;
       setScenario(sc);
       setRemainderResolution((data.remainderResolution ?? null) as RemainderResolution | null);
-      setSecondarySelections([]);
-      setSplitModalState(null);
+      /** Не сбрасываем вторичные отправления здесь: смена `pvzId` при основном «курьер» (выбор ПВЗ в шите сплита) иначе стирает только что подтверждённый сплит. Сброс — в отдельных эффектах ниже. */
     } finally {
       if (latestScenarioRequestRef.current !== requestId) return;
       setLoading(false);
@@ -4335,6 +4334,33 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setIncluded({});
   }, [cityId]);
 
+  /** Вторичные сплиты относятся к текущему способу/магазину основного заказа — сбрасываем при их смене (не при смене только pvzId при курьере). */
+  useEffect(() => {
+    setSecondarySelections([]);
+    setSplitModalState(null);
+  }, [method, storeId]);
+
+  /** Основной способ — ПВЗ: смена пункта сбрасывает доборы «остатка», иначе рассинхрон. */
+  useEffect(() => {
+    if (method !== "pvz") return;
+    setSecondarySelections([]);
+    setSplitModalState(null);
+  }, [method, pvzId]);
+
+  const cartLinesFingerprint = useMemo(
+    () =>
+      (cartDetail?.lines ?? [])
+        .map((l) => `${l.productId}:${l.quantity}`)
+        .sort()
+        .join("|"),
+    [cartDetail?.lines],
+  );
+
+  useEffect(() => {
+    setSecondarySelections([]);
+    setSplitModalState(null);
+  }, [cartLinesFingerprint]);
+
   const units = cartDetail?.units ?? 0;
   const courierDateLabels = useMemo(() => buildCourierDateLabels(), []);
   const promoFactor = promoApplied ? 0.8 : 1;
@@ -4426,13 +4452,25 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   useEffect(() => {
     setIncluded((prev) => {
-      const next: Record<string, boolean> = {};
+      if (!allDisplayParts.length) {
+        /** Пока `refreshScenario` обнулил `scenario`, в списке могут быть только вторичные части или пусто — не затираем снятые галочки с основных отправлений. */
+        if (scenario == null && Object.keys(prev).length > 0) return prev;
+        return {};
+      }
+      const next: Record<string, boolean> = { ...prev };
       for (const part of allDisplayParts) {
         next[part.key] = prev[part.key] ?? part.defaultIncluded;
       }
+      const valid = new Set(allDisplayParts.map((p) => p.key));
+      /** Убираем устаревшие ключи только при стабильном основном сценарии; при `scenario === null` иначе потеряем `included` для частей, временно не попавших в список. */
+      if (scenario != null) {
+        for (const k of Object.keys(next)) {
+          if (!valid.has(k)) delete next[k];
+        }
+      }
       return next;
     });
-  }, [allDisplayParts]);
+  }, [allDisplayParts, scenario]);
 
   useEffect(() => {
     if (!allDisplayParts.length) {
@@ -5504,7 +5542,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               autoComplete="off"
               enterKeyHint="done"
               aria-label="Промокод"
-              className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-sm uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
+              className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-base uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
               placeholder="Промокод"
               value={promo}
               onChange={(e) => {
