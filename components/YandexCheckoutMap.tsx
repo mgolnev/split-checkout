@@ -286,20 +286,15 @@ function syncMarkers(
 
     const btn = document.createElement("button");
     btn.type = "button";
+    /** inline-flex + w-max/h-fit — bbox кнопки совпадает с пином; без отдельного «слоя» inset (раньше −14px со всех сторон давал огромную зону под/вокруг пина и миссклики по карте). */
     btn.className =
-      "relative overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation";
+      "relative inline-flex h-fit w-max max-w-none shrink-0 overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation";
     btn.setAttribute("aria-label", "Выбрать точку на карте");
     const forwardMarkerClick = (e: Event) => {
       e.stopPropagation();
       onMarkerSelect(m.id);
     };
     btn.addEventListener("click", forwardMarkerClick);
-
-    /** Расширение зоны нажатия (~44px+), не смещая визуал пина */
-    const hitSlop = document.createElement("div");
-    hitSlop.setAttribute("aria-hidden", "true");
-    hitSlop.className = "pointer-events-auto absolute -inset-[14px] z-0";
-    btn.appendChild(hitSlop);
 
     const inner = document.createElement("div");
     inner.className = "relative z-[1]";

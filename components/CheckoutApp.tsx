@@ -1364,13 +1364,12 @@ function PickupStoreSelector({
                       setMapPreviewStoreId(store.id);
                       setSheetMode("preview");
                     }}
-                    className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis}`}
+                    className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full inline-flex h-fit w-max shrink-0 overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis}`}
                     style={{ left: pos.left, top: pos.top }}
                     aria-pressed={pinOpen}
                     aria-expanded={pinOpen}
                     aria-label={`${store.name}. ${pickupStoreCompactScenarioLine(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
                   >
-                    <span className="absolute -inset-[14px] z-0" aria-hidden />
                     <span className="relative z-[1] inline-flex">
                       <MapStorePin
                         line1={pinLines.line1}
@@ -2226,7 +2225,7 @@ function PvzPointSelector({
                       setMapPreviewPointId(point.id);
                       setSheetMode("preview");
                     }}
-                    className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis} ${
+                    className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full inline-flex h-fit w-max shrink-0 overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis} ${
                       !pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : ""
                     }`}
                     style={{ left: pos.left, top: pos.top }}
@@ -2234,7 +2233,6 @@ function PvzPointSelector({
                     aria-expanded={pinOpen}
                     aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
                   >
-                    <span className="absolute -inset-[14px] z-0" aria-hidden />
                     <span className="relative z-[1] inline-flex">
                       <MapStorePin
                         brandMark="ПВЗ"
@@ -4473,19 +4471,28 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [allDisplayParts, scenario]);
 
   useEffect(() => {
-    if (!allDisplayParts.length) {
-      setPartSchedules({});
-      return;
-    }
     setPartSchedules((prev) => {
-      const next: Record<string, PartDeliverySchedule> = {};
+      if (!allDisplayParts.length) {
+        if (scenario == null && Object.keys(prev).length > 0) return prev;
+        return {};
+      }
+      const next: Record<string, PartDeliverySchedule> = { ...prev };
+      const courierKeysNow = new Set<string>();
       for (const part of allDisplayParts) {
         if (part.mode !== "courier") continue;
-        next[part.key] = prev[part.key] ?? { dateIx: 0, slotIx: 0 };
+        courierKeysNow.add(part.key);
+        if (next[part.key] === undefined) {
+          next[part.key] = { dateIx: 0, slotIx: 0 };
+        }
+      }
+      if (scenario != null && courierKeysNow.size > 0) {
+        for (const k of Object.keys(next)) {
+          if (!courierKeysNow.has(k)) delete next[k];
+        }
       }
       return next;
     });
-  }, [allDisplayParts]);
+  }, [allDisplayParts, scenario]);
 
   /**
    * Позиции с отправлений с снятой галочкой, для которых ещё нет добора через «другое отправление».
