@@ -224,9 +224,9 @@ body {
     @apply text-[10px] font-semibold uppercase leading-snug tracking-[0.12em] text-[var(--gj-muted)];
   }
 
-  /** Логический блок чекаута: отдель от «газетного» полотна, как карточка на подложке */
+  /** Логический блок чекаута: плоский блок на полотне (без обводки и тени) */
   .checkout-ui .cu-checkout-block {
-    @apply rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)];
+    @apply rounded-2xl bg-white p-5;
   }
   /**
    * Промокод: type="search" — встроенная кнопка очистки (WebKit/Chromium; в Firefox — с поддержкой ::search-cancel-button).

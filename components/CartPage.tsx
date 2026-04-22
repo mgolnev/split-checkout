@@ -15,9 +15,21 @@ type Bootstrap = {
   cities: { id: string; name: string }[];
 };
 
+type ResolvedCartLine = {
+  productId: string;
+  quantity: number;
+  maxQuantity: number;
+  name: string;
+  price: number;
+  image: string;
+  sizeLabel?: string | null;
+};
+
 type UiLine = {
   productId: string;
   quantity: number;
+  /** Суммарный остаток по городу (все активные точки) — верхняя граница для + */
+  maxQuantity: number;
   name: string;
   price: number;
   image: string;
@@ -39,18 +51,18 @@ function pluralizeProducts(n: number) {
   return "товаров";
 }
 
-function mapSnapshotToUi(
-  stored: StoredCartLine[],
-  resolved: { productId: string; quantity: number; name: string; price: number; image: string }[],
-): UiLine[] {
+function mapSnapshotToUi(stored: StoredCartLine[], resolved: ResolvedCartLine[]): UiLine[] {
   const resolvedById = new Map(resolved.map((r) => [r.productId, r]));
   const out: UiLine[] = [];
   for (const s of stored) {
     const r = resolvedById.get(s.productId);
     if (!r) continue;
+    const maxQ = r.maxQuantity > 0 ? r.maxQuantity : r.quantity;
+    /** `r.quantity` с сервера уже min(запрошено, остаток); не берём `s.quantity` из localStorage — иначе лимит обходится. */
     out.push({
       productId: s.productId,
-      quantity: s.quantity,
+      quantity: r.quantity,
+      maxQuantity: maxQ,
       name: r.name,
       price: r.price,
       image: r.image,
@@ -108,30 +120,21 @@ export default function CartPage() {
             }),
           });
           if (!r.ok) throw new Error(String(r.status));
-          const j = (await r.json()) as {
-            lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
-          };
+          const j = (await r.json()) as { lines: ResolvedCartLine[] };
           if (cancelled) return;
-          const resolved: UiLine[] = j.lines.map((l) => ({
-            ...l,
-            size: "S",
-            selected: true,
-            favorite: false,
-          }));
-          setLines(mapSnapshotToUi(snap.lines, resolved));
+          setLines(mapSnapshotToUi(snap.lines, j.lines));
           setHydrated(true);
           return;
         }
 
         const r = await fetchWithRetry(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`);
         if (!r.ok) throw new Error(String(r.status));
-        const j = (await r.json()) as {
-          lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
-        };
+        const j = (await r.json()) as { lines: ResolvedCartLine[] };
         if (cancelled) return;
         setLines(
           j.lines.map((l) => ({
             ...l,
+            maxQuantity: l.maxQuantity > 0 ? l.maxQuantity : l.quantity,
             size: "S",
             selected: true,
             favorite: false,
@@ -177,7 +180,8 @@ export default function CartPage() {
     setLines((prev) =>
       prev.map((l) => {
         if (l.productId !== productId) return l;
-        const q = Math.max(0, l.quantity + delta);
+        const cap = l.maxQuantity > 0 ? l.maxQuantity : l.quantity;
+        const q = Math.min(cap, Math.max(0, l.quantity + delta));
         return { ...l, quantity: q };
       }),
     );
@@ -320,7 +324,7 @@ export default function CartPage() {
                         ▾
                       </span>
                     </div>
-                    <p className="text-sm font-semibold text-neutral-900">{fmt(line.price)}</p>
+                    <p className="text-sm font-semibold text-neutral-900">{fmt(line.price * line.quantity)}</p>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-1 py-0.5">
@@ -344,8 +348,9 @@ export default function CartPage() {
                       </span>
                       <button
                         type="button"
-                        className="flex h-8 w-8 items-center justify-center text-lg text-neutral-800"
+                        className="flex h-8 w-8 items-center justify-center text-lg text-neutral-800 disabled:opacity-35"
                         aria-label="Добавить"
+                        disabled={line.quantity >= line.maxQuantity}
                         onClick={() => updateQty(line.productId, 1)}
                       >
                         +

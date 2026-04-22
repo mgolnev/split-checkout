@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadCourierAddress, saveCourierAddress } from "@/lib/courier-address-storage";
-import { loadCheckoutCart } from "@/lib/checkout-cart-storage";
+import { loadCheckoutCart, saveCheckoutCart, type StoredCartLine } from "@/lib/checkout-cart-storage";
 import { loadLastPickupStoreId, saveLastPickupStore } from "@/lib/pickup-store-storage";
 import { loadLastPvzPointId, saveLastPvzPoint } from "@/lib/pvz-point-storage";
 import {
@@ -2510,8 +2510,24 @@ function CourierAddressCard({
 }) {
   if (!address) {
     return (
-      <div className={`mt-3 text-sm text-neutral-500 ${className}`}>
-        Укажите адрес, чтобы увидеть доступные курьерские отправления.
+      <div className={`mt-3 ${className}`}>
+        <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 p-3 text-sm text-neutral-700">
+          <p className="font-medium text-neutral-900">Адрес доставки</p>
+          <p className="mt-1 text-xs text-neutral-600">
+            Укажите адрес, чтобы увидеть доступные курьерские отправления.
+          </p>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onChange();
+            }}
+            className="mt-3 w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white"
+          >
+            Указать адрес
+          </button>
+        </div>
       </div>
     );
   }
@@ -2851,7 +2867,7 @@ function UnresolvedItemsBlock({
   suppressEmptyOptionsHint?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] sm:p-6">
+    <div className="rounded-2xl bg-white p-5 sm:p-6">
       <div className="min-w-0">
         <p className="cu-text-headline leading-tight">{copy.title}</p>
         <p className="mt-2 text-sm leading-snug text-neutral-600">{copy.subtitle}</p>
@@ -2949,7 +2965,7 @@ function SecondarySelectionCard({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white px-3 py-3">
+    <div className="rounded-xl bg-white px-3 py-3">
       <div className="flex items-start gap-3">
         <div className="mt-0.5 h-4 w-4 rounded-full border border-neutral-400 bg-white">
           <div className="m-[3px] h-2 w-2 rounded-full bg-neutral-900" />
@@ -3108,6 +3124,9 @@ function SplitSelectionModal({
   const handleMethodSelect = (methodCode: DeliveryMethodCode) => {
     if (methodCode === "courier") {
       setSelectedMethod("courier");
+      if (!courierAddress.trim() && courierOption) {
+        onEditCourierAddress(courierOption, splitCourierSchedules);
+      }
       return;
     }
     if (methodCode === "pickup") {
@@ -3383,6 +3402,8 @@ function PartCard({
   onSlotChange,
   inGroup = false,
   courierDateLabels,
+  /** Совпадает с расчётом `partsTotal` / кнопки «Оформить» (напр. APP20 → 0.8 на товары, доставка без скидки). */
+  promoFactor = 1,
 }: {
   part: ScenarioPart;
   included: boolean;
@@ -3399,11 +3420,19 @@ function PartCard({
   inGroup?: boolean;
   /** Подписи дат курьера (от календаря), по индексу совпадают с `selectedDateIx` */
   courierDateLabels: string[];
+  promoFactor?: number;
 }) {
   const visible = part.items.slice(0, 5);
   const extra = part.items.reduce((s, i) => s + i.quantity, 0) - visible.reduce((s, i) => s + i.quantity, 0);
-  const sub = Math.round(part.subtotal);
+  const merchWithPromo = Math.round(part.subtotal * promoFactor);
   const ship = included ? part.deliveryPrice : 0;
+  const lineTotal = merchWithPromo + ship;
+  const priceBreakdownTitle =
+    included && (merchWithPromo > 0 || ship > 0)
+      ? ship > 0
+        ? `Товары: ${fmt(merchWithPromo)} · Доставка: ${fmt(ship)}`
+        : `Товары: ${fmt(merchWithPromo)} · Доставка бесплатно`
+      : undefined;
   const isCourier = part.mode === "courier";
   const dateIx = Math.min(Math.max(selectedDateIx ?? 0, 0), Math.max(0, courierDateLabels.length - 1));
   const deliveryDate = isCourier ? courierDateLabels[dateIx] : null;
@@ -3502,8 +3531,11 @@ function PartCard({
                 <p className="cu-benefit mt-4">{benefitLine}</p>
               ) : null}
             </div>
-            <span className="cu-text-headline shrink-0 tabular-nums leading-tight">
-              {fmt(sub + ship)}
+            <span
+              className="cu-text-headline shrink-0 tabular-nums leading-tight"
+              title={priceBreakdownTitle}
+            >
+              {fmt(lineTotal)}
             </span>
           </div>
 
@@ -3688,7 +3720,7 @@ function ScenarioOrderSkeleton({
       role="status"
       aria-busy="true"
       aria-live="polite"
-      className="pointer-events-none select-none overflow-hidden rounded-2xl border border-neutral-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)] divide-y divide-neutral-100"
+      className="pointer-events-none select-none overflow-hidden rounded-2xl bg-white divide-y divide-neutral-100"
     >
       {inner}
     </section>
@@ -3903,6 +3935,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     lines: {
       productId: string;
       quantity: number;
+      maxQuantity?: number;
       name: string;
       price: number;
       image: string;
@@ -3939,17 +3972,46 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           });
           if (!r.ok) throw new Error(String(r.status));
           const json = (await r.json()) as {
-            lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
+            lines: {
+              productId: string;
+              quantity: number;
+              maxQuantity?: number;
+              name: string;
+              price: number;
+              image: string;
+              sizeLabel?: string | null;
+            }[];
             units: number;
             subtotal: number;
           };
-          if (!cancelled) setCartDetail(json);
+          if (!cancelled) {
+            const snapNow = loadCheckoutCart();
+            if (snapNow?.cityId === cityId && snapNow.lines.length > 0) {
+              const caps = new Map(json.lines.map((l) => [l.productId, l.quantity]));
+              const cappedLines: StoredCartLine[] = [];
+              for (const row of snapNow.lines) {
+                const q = caps.get(row.productId);
+                if (q === undefined) continue;
+                cappedLines.push({ ...row, quantity: q });
+              }
+              saveCheckoutCart({ cityId, lines: cappedLines });
+            }
+            setCartDetail(json);
+          }
           return;
         }
         const r = await fetchWithRetry(`/api/cart-lines?cityId=${encodeURIComponent(cityId)}`);
         if (!r.ok) throw new Error(String(r.status));
         const json = (await r.json()) as {
-          lines: { productId: string; quantity: number; name: string; price: number; image: string }[];
+          lines: {
+            productId: string;
+            quantity: number;
+            maxQuantity?: number;
+            name: string;
+            price: number;
+            image: string;
+            sizeLabel?: string | null;
+          }[];
           units: number;
           subtotal: number;
         };
@@ -4959,13 +5021,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
-  const includedSubtotalTotal = includedParts.reduce((sum, part) => sum + Math.round(part.subtotal * promoFactor), 0);
-  const displayGoodsSubtotal =
+  /** Сумма товаров по каталогу/цене без промокода и бонусов (для строки «Товары» в блоке итога). */
+  const orderGoodsFullSubtotal =
     includedParts.length > 0
-      ? includedSubtotalTotal
+      ? Math.round(includedMerch)
       : allDisplayParts.length > 0
         ? 0
-        : Math.round(cartGoodsSubtotal * promoFactor);
+        : Math.round(cartGoodsSubtotal);
   const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
@@ -4998,7 +5060,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ? "w-full bg-white px-5 py-5"
         : variant === "stacked-inline"
           ? "w-full border-b border-neutral-100 px-5 py-5"
-          : "mb-5 w-full rounded-2xl border border-neutral-200 bg-white px-5 py-5";
+          : "mb-5 w-full rounded-2xl bg-white px-5 py-5";
     return (
       <div className={wrapClass}>
         <div className="min-w-0">
@@ -5070,7 +5132,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   return (
     <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-neutral-100 pb-28">
-      <div className="sticky top-0 z-50 mb-3 border-b border-neutral-100 bg-white shadow-sm">
+      <div className="sticky top-0 z-50 mb-3 border-b border-neutral-100 bg-white">
         <header className="px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
@@ -5090,7 +5152,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       </div>
 
       <div className="relative z-0 flex flex-col gap-3 px-4 pt-4">
-        <section className="overflow-hidden rounded-2xl border border-neutral-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+        <section className="overflow-hidden rounded-2xl bg-white">
           <div className="p-5">
             <div className="mb-3 flex items-center justify-between">
             <h2 className="cu-section-title">Способ получения</h2>
@@ -5155,7 +5217,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
           {/* Детали способа: «кирпич» только до сборки единого блока; во время запроса сценария не показываем — иначе мелькает упрощённый UI перед PartCard */}
           {method && !unifiedOrderBlock && !showScenarioSkeleton ? (
-            <div className="mt-3 rounded-xl border border-neutral-200 bg-white px-3 py-3">
+            <div className="mt-3 rounded-xl bg-neutral-50/60 px-3 py-3">
               {!scenario ? (
                 (() => {
                   const dm = deliveryOptions.find((d) => d.code === method);
@@ -5288,6 +5350,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                         }))
                       }
                       courierDateLabels={courierDateLabels}
+                      promoFactor={promoFactor}
                     />
                   </div>
                 ))}
@@ -5327,6 +5390,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                           [p.key]: { dateIx: prev[p.key]?.dateIx ?? 0, slotIx },
                         }))
                       }
+                      promoFactor={promoFactor}
                     />
                   ))}
               </div>
@@ -5337,7 +5401,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         {secondaryDisplaySelections.map((selection, selectionIndex) => (
           <section
             key={selection.id}
-            className="overflow-hidden rounded-2xl border border-neutral-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)] divide-y divide-neutral-100"
+            className="overflow-hidden rounded-2xl bg-white divide-y divide-neutral-100"
           >
             <div className="px-4 py-4">
               <SecondarySelectionCard
@@ -5379,6 +5443,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   }))
                 }
                 courierDateLabels={courierDateLabels}
+                promoFactor={promoFactor}
               />
             ))}
           </section>
@@ -5598,24 +5663,24 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
         <section className="mb-24">
           <div className="cu-checkout-block">
-            <h2 className="cu-section-title">Итого</h2>
+            <h2 className="cu-section-title">Сумма заказа</h2>
             <div className="mt-3 space-y-1.5">
             <div className="flex justify-between">
               <span className="cu-total-row-label">Товары</span>
-              <span className="cu-total-row-value">{fmt(displayGoodsSubtotal)}</span>
+              <span className="cu-total-row-value">{fmt(orderGoodsFullSubtotal)}</span>
             </div>
+            {promoDiscount > 0 ? (
+              <div className="flex justify-between text-sm text-red-600">
+                <span>Скидка по промокоду</span>
+                <span className="tabular-nums">− {fmt(promoDiscount)}</span>
+              </div>
+            ) : null}
             <div className="flex justify-between">
               <span className="cu-total-row-label">Доставка</span>
               <span className="cu-total-row-value">
                 {includedDeliveryTotal > 0 ? fmt(includedDeliveryTotal) : "Бесплатно"}
               </span>
             </div>
-            {promoDiscount > 0 ? (
-              <div className="flex justify-between text-sm text-red-600">
-                <span>Скидка (APP20)</span>
-                <span className="tabular-nums">− {fmt(promoDiscount)}</span>
-              </div>
-            ) : null}
             {bonusOn ? (
               <div className="flex justify-between text-sm text-red-600">
                 <span>Бонусы</span>
