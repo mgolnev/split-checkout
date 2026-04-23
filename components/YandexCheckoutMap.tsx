@@ -1,15 +1,24 @@
 "use client";
 
+import type { MapEventUpdateHandler } from "@yandex/ymaps3-types";
 import { createRoot, type Root } from "react-dom/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadYandexMapsScript } from "@/lib/yandex-maps-script";
 import { MapStorePin, MAP_STORE_PIN_ANCHOR_OFFSET_X_PX, type MapStorePinProps } from "@/components/MapStorePin";
+
+/** Выше — плашки; ниже — только компактный круг (гистерезис против дрожания на границе). */
+const PIN_LABEL_ZOOM_EXPAND = 12.5;
+const PIN_LABEL_ZOOM_COLLAPSE = 11.4;
 
 export type YandexCheckoutMapMarker = {
   id: string;
   lng: number;
   lat: number;
   pinProps: MapStorePinProps;
+  /** Раскрытая плашка независимо от зума (выбранная точка на карте). */
+  pinLabelAlwaysExpanded?: boolean;
+  /** Порядок наложения маркеров (API карты); выбранная точка — максимальный индекс с родителя. */
+  markerZIndex?: number;
 };
 
 type YandexCheckoutMapProps = {
@@ -107,7 +116,9 @@ export function YandexCheckoutMap({
   handlersRef.current = { onMarkerSelect, onBackgroundDismiss };
   const markersRef = useRef(markers);
   markersRef.current = markers;
+  const pinLabelsExpandedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
+  const [pinLabelsExpanded, setPinLabelsExpanded] = useState(false);
 
   /** Только координаты пинов — чтобы перефитить кадр при смене фильтра, а не при каждом ререндере pinProps. */
   const markersBoundsKey = useMemo(
@@ -137,7 +148,32 @@ export function YandexCheckoutMap({
         map.addChild(new YMapDefaultSchemeLayer({}));
         map.addChild(new YMapDefaultFeaturesLayer({}));
 
+        const applyPinLabelZoom = (zoom: number) => {
+          let next: boolean;
+          if (pinLabelsExpandedRef.current) {
+            next = zoom >= PIN_LABEL_ZOOM_COLLAPSE;
+          } else {
+            next = zoom >= PIN_LABEL_ZOOM_EXPAND;
+          }
+          if (next !== pinLabelsExpandedRef.current) {
+            pinLabelsExpandedRef.current = next;
+            setPinLabelsExpanded(next);
+          }
+        };
+
+        const z0 = map.zoom;
+        if (Number.isFinite(z0)) {
+          pinLabelsExpandedRef.current = z0 >= PIN_LABEL_ZOOM_EXPAND;
+          setPinLabelsExpanded(pinLabelsExpandedRef.current);
+        }
+
+        const onMapUpdate: MapEventUpdateHandler = (object) => {
+          if (object.type !== "update") return;
+          applyPinLabelZoom(object.location.zoom);
+        };
+
         const listener = new YMapListener({
+          onUpdate: onMapUpdate,
           onFastClick: (object) => {
             if (object && (object as { type?: string }).type === "marker") return;
             handlersRef.current.onBackgroundDismiss();
@@ -153,6 +189,7 @@ export function YandexCheckoutMap({
           markerEntitiesRef.current,
           markerRootsRef.current,
           (id) => handlersRef.current.onMarkerSelect(id),
+          pinLabelsExpandedRef.current,
         );
         setMapReady(true);
       } catch {
@@ -194,8 +231,9 @@ export function YandexCheckoutMap({
       markerEntitiesRef.current,
       markerRootsRef.current,
       (id) => handlersRef.current.onMarkerSelect(id),
+      pinLabelsExpanded,
     );
-  }, [markers, mapReady]);
+  }, [markers, mapReady, pinLabelsExpanded]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -258,6 +296,7 @@ function syncMarkers(
   entityById: Map<string, InstanceType<YMapModule["YMapMarker"]>>,
   roots: Map<string, Root>,
   onMarkerSelect: (id: string) => void,
+  pinLabelsExpanded: boolean,
 ) {
   const nextIds = new Set(markers.map((m) => m.id));
 
@@ -274,12 +313,17 @@ function syncMarkers(
   }
 
   for (const m of markers) {
+    const labelLayout: MapStorePinProps["labelLayout"] =
+      m.pinLabelAlwaysExpanded || pinLabelsExpanded ? "expanded" : "compact";
+    const zIndex = m.markerZIndex ?? 1;
+    const pinMerged: MapStorePinProps = { ...m.pinProps, labelLayout };
+
     const existing = entityById.get(m.id);
     if (existing) {
-      existing.update({ coordinates: [m.lng, m.lat] });
+      existing.update({ coordinates: [m.lng, m.lat], zIndex });
       const root = roots.get(m.id);
       if (root) {
-        root.render(<MapStorePin {...m.pinProps} />);
+        root.render(<MapStorePin {...pinMerged} />);
       }
       continue;
     }
@@ -302,13 +346,13 @@ function syncMarkers(
     btn.appendChild(inner);
 
     const root = createRoot(inner);
-    root.render(<MapStorePin {...m.pinProps} />);
+    root.render(<MapStorePin {...pinMerged} />);
     roots.set(m.id, root);
 
     const marker = new YMapMarker(
       {
         coordinates: [m.lng, m.lat],
-        zIndex: 1,
+        zIndex,
         onClick: (e) => {
           e.stopPropagation();
           onMarkerSelect(m.id);

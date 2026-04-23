@@ -59,6 +59,11 @@ export type MapStorePinProps = {
   surface?: MapStorePinSurface;
   /** Полное покрытие заказа в точке — зелёная метка на нижней точке пина (как на референсе). */
   fullCoverageMarker?: boolean;
+  /**
+   * `compact` — только круг и «ножка» (без белой плашки), для низкого зума карты.
+   * `expanded` — плашка с {@link line1} / {@link line2}.
+   */
+  labelLayout?: "compact" | "expanded";
 };
 
 /**
@@ -74,12 +79,24 @@ export function MapStorePin({
   className = "",
   surface = "ink",
   fullCoverageMarker = false,
+  labelLayout = "expanded",
 }: MapStorePinProps) {
   const pal = SURFACE[surface];
   const showLine2 = line2 != null && line2 !== "";
   const anchorDotClass = fullCoverageMarker
     ? "bg-emerald-500"
     : pal.dot;
+  const showPlaque = labelLayout === "expanded" && !outOfStock;
+  /**
+   * Компактный режим: та же «многослойная» ring-обводка, что и у частичного (янтарь),
+   * для полного покрытия — изумрудная, заметно зелёная.
+   */
+  const compactCoverageRing =
+    labelLayout === "compact" && !outOfStock
+      ? fullCoverageMarker
+        ? "ring-[2.5px] ring-emerald-400/95 ring-offset-0"
+        : "ring-[2.5px] ring-amber-400/95 ring-offset-0"
+      : "";
 
   return (
     <div
@@ -89,7 +106,7 @@ export function MapStorePin({
         className={`flex w-[36px] shrink-0 flex-col items-center ${outOfStock ? "opacity-[0.48]" : ""}`}
       >
         <div
-          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold text-white ${pal.disk} ${
+          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold text-white ${pal.disk} ${compactCoverageRing} ${
             brandMark.length > 2 ? "text-[10px] leading-tight" : "text-xs"
           }`}
         >
@@ -111,7 +128,7 @@ export function MapStorePin({
         </div>
       </div>
 
-      {!outOfStock ? (
+      {showPlaque ? (
         <div
           className={`z-0 -ml-[20px] flex min-h-[36px] min-w-0 max-w-[min(14rem,calc(100vw-4rem))] flex-col justify-center gap-px rounded-[10px] border border-black/[0.06] bg-white px-1.5 py-1 pl-[26px] ${pal.labelShadow} max-sm:rounded-lg max-sm:px-1 max-sm:py-0.5 max-sm:pl-[22px]`}
         >

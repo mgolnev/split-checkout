@@ -726,6 +726,18 @@ function pickupStorePinOutOfStock(summary?: PickupStoreSummary): boolean {
   return !!summary && summary.totalUnits > 0 && summary.availableUnits <= 0;
 }
 
+/**
+ * Сортировка для z-index: сначала худшие (низкий z), в конце лучшие (высокий z), чтобы полезные точки были «выше».
+ * Критерии: покрытие (availableUnits), затем «сегодня» (reserveUnits), затем id.
+ */
+function comparePickupStoresMapOverlayZAsc(a: PickupStoreOption, b: PickupStoreOption): number {
+  const au = (s: PickupStoreOption) => s.summary?.availableUnits ?? 0;
+  const ru = (s: PickupStoreOption) => s.summary?.reserveUnits ?? 0;
+  if (au(a) !== au(b)) return au(a) - au(b);
+  if (ru(a) !== ru(b)) return ru(a) - ru(b);
+  return a.id.localeCompare(b.id, undefined, { sensitivity: "base" });
+}
+
 function pvzMapPinOutOfStock(summary?: MethodSummary): boolean {
   return !!summary && summary.totalUnits > 0 && summary.availableUnits <= 0;
 }
@@ -847,12 +859,9 @@ function pickupStorePinEmphasisClass(
   opts: { recommended: boolean; pinOpen: boolean },
 ): string {
   const kind = pickupStoreScenarioKind(summary);
-  if (opts.pinOpen) return "z-[35] scale-[1.06]";
-  if ((kind === "today_all" || kind === "today_later") && opts.recommended) return "z-[14] scale-[1.03]";
-  if (kind === "incomplete" || kind === "later_partial") return "z-[8]";
-  if (kind === "later_all") return "z-[9]";
-  if (kind === "today_later") return "z-[10]";
-  return "z-[11]";
+  if (opts.pinOpen) return "scale-[1.06]";
+  if ((kind === "today_all" || kind === "today_later") && opts.recommended) return "scale-[1.03]";
+  return "";
 }
 
 type PickupStoreListFilter = "all" | "today_all" | "today_later";
@@ -945,12 +954,9 @@ function pvzPointEmphasisClass(
   summary: MethodSummary | undefined,
   opts: { recommended: boolean; pinOpen: boolean },
 ): string {
-  if (opts.pinOpen) return "z-[35] scale-[1.05] ring-4 ring-black/15";
-  if (opts.recommended && summary && summary.availableUnits > 0) return "z-[14] scale-[1.03] ring-2 ring-black/10";
-  if (!summary || summary.availableUnits <= 0 || summary.availableUnits < summary.totalUnits) {
-    return "z-[8]";
-  }
-  return "z-[11]";
+  if (opts.pinOpen) return "scale-[1.05] ring-4 ring-black/15";
+  if (opts.recommended && summary && summary.availableUnits > 0) return "scale-[1.03] ring-2 ring-black/10";
+  return "";
 }
 
 const PRODUCT_PLACEHOLDER = "/product-placeholder.svg";
@@ -1289,6 +1295,17 @@ function PickupStoreSelector({
     : undefined;
 
   const hasYandexMapsKey = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY);
+  const pickupMapOverlayZById = useMemo(() => {
+    const orderedOthers = [...filteredStores]
+      .filter((s) => s.id !== mapPreviewStoreId)
+      .sort(comparePickupStoresMapOverlayZAsc);
+    const m = new Map<string, number>();
+    orderedOthers.forEach((s, i) => {
+      m.set(s.id, 100 + i * 10);
+    });
+    return m;
+  }, [filteredStores, mapPreviewStoreId]);
+
   const yandexPickupMarkers = useMemo(() => {
     return filteredStores
       .filter(
@@ -1304,10 +1321,13 @@ function PickupStoreSelector({
         const recommended = recommendedStoreId === s.id;
         const emphasis = pickupStorePinEmphasisClass(s.summary, { recommended, pinOpen });
         const surface = pickupStorePinSurface(s.summary, { recommended, pinOpen });
+        const markerZIndex = pinOpen ? 1_000_000 : (pickupMapOverlayZById.get(s.id) ?? 100);
         return {
           id: s.id,
           lng: s.mapLng!,
           lat: s.mapLat!,
+          pinLabelAlwaysExpanded: pinOpen,
+          markerZIndex,
           pinProps: {
             line1: pinLines.line1,
             line2: pinLines.line2,
@@ -1319,7 +1339,7 @@ function PickupStoreSelector({
           },
         };
       });
-  }, [filteredStores, mapPreviewStoreId, recommendedStoreId, lastChosenStoreId]);
+  }, [filteredStores, mapPreviewStoreId, recommendedStoreId, lastChosenStoreId, pickupMapOverlayZById]);
 
   /** При ключе API всегда реальная карта; пины только у точек с mapLat/mapLng в данных. */
   const showYandexPickupMap = hasYandexMapsKey;
@@ -1475,6 +1495,7 @@ function PickupStoreSelector({
                 const recommended = recommendedStoreId === store.id;
                 const emphasis = pickupStorePinEmphasisClass(store.summary, { recommended, pinOpen });
                 const surface = pickupStorePinSurface(store.summary, { recommended, pinOpen });
+                const markerZIndex = pinOpen ? 1_000_000 : (pickupMapOverlayZById.get(store.id) ?? 100);
                 return (
                   <button
                     key={store.id}
@@ -1486,7 +1507,7 @@ function PickupStoreSelector({
                       setSheetMode("preview");
                     }}
                     className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full inline-flex h-fit w-max shrink-0 overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis}`}
-                    style={{ left: pos.left, top: pos.top }}
+                    style={{ left: pos.left, top: pos.top, zIndex: markerZIndex }}
                     aria-pressed={pinOpen}
                     aria-expanded={pinOpen}
                     aria-label={`${store.name}. ${pickupStoreCompactScenarioLine(store.summary)}. ${pickupStoreStatusTitle(store.summary)}.`}
@@ -1499,6 +1520,7 @@ function PickupStoreSelector({
                         outOfStock={pickupStorePinOutOfStock(store.summary)}
                         surface={surface}
                         fullCoverageMarker={!!store.summary?.hasFullCoverage}
+                        labelLayout={pinOpen ? "expanded" : "compact"}
                       />
                     </span>
                   </button>
@@ -2158,6 +2180,24 @@ function PvzPointSelector({
     : undefined;
 
   const hasYandexMapsKeyPvz = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY);
+  const pvzMapOverlayZById = useMemo(() => {
+    const onMap = filteredPoints.filter(
+      (p) =>
+        p.mapLat != null &&
+        p.mapLng != null &&
+        Number.isFinite(p.mapLat) &&
+        Number.isFinite(p.mapLng),
+    );
+    const orderedOthers = [...onMap]
+      .filter((p) => p.id !== mapPreviewPointId)
+      .sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }));
+    const m = new Map<string, number>();
+    orderedOthers.forEach((p, i) => {
+      m.set(p.id, 100 + i * 10);
+    });
+    return m;
+  }, [filteredPoints, mapPreviewPointId]);
+
   const yandexPvzMarkers = useMemo(() => {
     return filteredPoints
       .filter(
@@ -2174,10 +2214,13 @@ function PvzPointSelector({
         const surface = pvzPointPinSurface(summary, { recommended, pinOpen });
         const selectedRing =
           !pinOpen && selectedPointId === p.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : "";
+        const markerZIndex = pinOpen ? 1_000_000 : (pvzMapOverlayZById.get(p.id) ?? 100);
         return {
           id: p.id,
           lng: p.mapLng!,
           lat: p.mapLat!,
+          pinLabelAlwaysExpanded: pinOpen,
+          markerZIndex,
           pinProps: {
             brandMark: "ПВЗ",
             line1: pvzPointPinLine(summary),
@@ -2185,6 +2228,12 @@ function PvzPointSelector({
             outOfStock: pvzMapPinOutOfStock(summary),
             className: `${emphasis} ${selectedRing}`.trim(),
             surface,
+            fullCoverageMarker: !!(
+              summary &&
+              summary.totalUnits > 0 &&
+              summary.availableUnits > 0 &&
+              summary.availableUnits >= summary.totalUnits
+            ),
           },
         };
       });
@@ -2195,6 +2244,7 @@ function PvzPointSelector({
     summary,
     selectedPointId,
     lastChosenPointId,
+    pvzMapOverlayZById,
   ]);
 
   const showYandexPvzMap = hasYandexMapsKeyPvz;
@@ -2336,6 +2386,12 @@ function PvzPointSelector({
                 const wasLastChoice = lastChosenPointId === point.id;
                 const emphasis = pvzPointEmphasisClass(summary, { recommended, pinOpen });
                 const surface = pvzPointPinSurface(summary, { recommended, pinOpen });
+                const markerZIndex = pinOpen ? 1_000_000 : (pvzMapOverlayZById.get(point.id) ?? 100);
+                const fullPvz =
+                  !!summary &&
+                  summary.totalUnits > 0 &&
+                  summary.availableUnits > 0 &&
+                  summary.availableUnits >= summary.totalUnits;
                 return (
                   <button
                     key={point.id}
@@ -2349,7 +2405,7 @@ function PvzPointSelector({
                     className={`pointer-events-auto absolute -translate-x-[18px] -translate-y-full inline-flex h-fit w-max shrink-0 overflow-visible border-0 bg-transparent p-0 text-left shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 touch-manipulation ${emphasis} ${
                       !pinOpen && selectedPointId === point.id ? "ring-2 ring-black/25 ring-offset-2 rounded-full" : ""
                     }`}
-                    style={{ left: pos.left, top: pos.top }}
+                    style={{ left: pos.left, top: pos.top, zIndex: markerZIndex }}
                     aria-pressed={pinOpen}
                     aria-expanded={pinOpen}
                     aria-label={`${point.name}. ${pvzPointCountLabel(summary)}. ${pvzPointStatusTitle(summary)}.`}
@@ -2361,6 +2417,8 @@ function PvzPointSelector({
                         wasLastChoice={wasLastChoice}
                         outOfStock={pvzMapPinOutOfStock(summary)}
                         surface={surface}
+                        fullCoverageMarker={fullPvz}
+                        labelLayout={pinOpen ? "expanded" : "compact"}
                       />
                     </span>
                   </button>
