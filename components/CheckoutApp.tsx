@@ -27,6 +27,11 @@ import { formatHoldNoticeForPart } from "@/lib/hold-display";
 import { MapStorePin, type MapStorePinSurface } from "@/components/MapStorePin";
 import { CheckoutBootstrapSkeleton } from "@/components/CartLoadingSkeleton";
 import { YandexCheckoutMap } from "@/components/YandexCheckoutMap";
+import {
+  trackCheckoutBonus,
+  type BonusAvailabilityState,
+  type BonusUnavailableReason,
+} from "@/lib/checkout-bonus-analytics";
 import type {
   AlternativeMethodOption,
   CartLine,
@@ -316,43 +321,63 @@ function GjMark({ className = "" }: { className?: string }) {
   );
 }
 
-type BonusPointsToggleProps = {
+type BonusPointsControlProps = {
   bonusOn: boolean;
-  promoApplied: boolean;
-  amountLabel: string;
+  switchDisabled: boolean;
+  labelsMuted: boolean;
+  mainText: string;
+  subText: string | null;
   onToggle: (next: boolean) => void;
+  onDisabledSwitchInteract: () => void;
+  onEnabledToggle: (next: boolean) => void;
 };
 
-function BonusPointsToggle({ bonusOn, promoApplied, amountLabel, onToggle }: BonusPointsToggleProps) {
-  const blocked = promoApplied;
+function BonusPointsControl({
+  bonusOn,
+  switchDisabled,
+  labelsMuted,
+  mainText,
+  subText,
+  onToggle,
+  onDisabledSwitchInteract,
+  onEnabledToggle,
+}: BonusPointsControlProps) {
   return (
-    <div className="flex w-full items-center gap-3">
-      <GjMark className="h-8 min-w-[2.25rem] px-1 text-[10px]" />
-      <div className="min-w-0 flex-1">
-        <span className="cu-label-primary min-w-0 text-neutral-900">
-          Списать с карты GJ {amountLabel}
-        </span>
+    <div className="flex w-full flex-col gap-0.5">
+      <div className="flex w-full items-start gap-3">
+        <GjMark className="mt-0.5 h-8 min-w-[2.25rem] shrink-0 px-1 text-[10px]" />
+        <div className={`min-w-0 flex-1 ${labelsMuted ? "text-neutral-500" : "text-neutral-900"}`}>
+          <span className="block min-w-0 text-sm font-medium leading-snug">{mainText}</span>
+          {subText ? (
+            <span className="mt-0.5 block text-xs font-normal leading-snug text-neutral-500">{subText}</span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-disabled={switchDisabled}
+          aria-checked={bonusOn}
+          onClick={() => {
+            if (switchDisabled) {
+              onDisabledSwitchInteract();
+              return;
+            }
+            const next = !bonusOn;
+            onToggle(next);
+            onEnabledToggle(next);
+          }}
+          className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
+            switchDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+          } ${bonusOn && !switchDisabled ? "bg-neutral-900" : "bg-neutral-300"}`}
+        >
+          <span className="sr-only">Списать бонусы с карты GJ</span>
+          <span
+            className={`pointer-events-none block h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+              bonusOn && !switchDisabled ? "translate-x-5" : "translate-x-0"
+            }`}
+          />
+        </button>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={bonusOn}
-        disabled={blocked}
-        onClick={() => {
-          if (blocked) return;
-          onToggle(!bonusOn);
-        }}
-        className={`relative h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
-          blocked ? "cursor-not-allowed opacity-45" : "cursor-pointer"
-        } ${bonusOn ? "bg-neutral-900" : "bg-neutral-300"}`}
-      >
-        <span className="sr-only">Списать бонусы с карты GJ</span>
-        <span
-          className={`pointer-events-none block h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
-            bonusOn ? "translate-x-5" : "translate-x-0"
-          }`}
-        />
-      </button>
     </div>
   );
 }
@@ -449,8 +474,65 @@ function buildCourierDateLabels(reference: Date = new Date()): string[] {
     return `${dayNum} ${formatRuWeekdayShort(day)}`;
   });
 }
-/** Демо: лимит списания с карты лояльности и сумма в подписи «Списать с карты GJ …» */
+/** Демо: лимит списания с карты лояльности за один заказ */
 const GJ_LOYALTY_MAX_SPEND_RUB = 1000;
+/** Демо: доступный бонусный баланс на карте (для UX «нет бонусов» выставьте 0) */
+const GJ_LOYALTY_WALLET_BALANCE_RUB = 1000;
+/** Минимальная сумма товаров без скидки для списания бонусов; null — правило отключено */
+const GJ_BONUS_MIN_ELIGIBLE_MERCH_RUB: number | null = null;
+
+function isCatalogDiscountedLine(line: { price: number; listPrice?: number | null }): boolean {
+  return line.listPrice != null && line.listPrice > line.price;
+}
+
+/** Сумма продажи по строкам без каталожной скидки (на неё можно списать бонусы). */
+function sumBonusEligibleMerchFromParts(parts: readonly ScenarioPart[]): number {
+  let sum = 0;
+  for (const p of parts) {
+    for (const it of p.items) {
+      if (!isCatalogDiscountedLine(it)) sum += it.price * it.quantity;
+    }
+  }
+  return sum;
+}
+
+function sumMerchSaleFromParts(parts: readonly ScenarioPart[]): number {
+  let sum = 0;
+  for (const p of parts) {
+    for (const it of p.items) sum += it.price * it.quantity;
+  }
+  return sum;
+}
+
+function partsHasCatalogDiscount(parts: readonly ScenarioPart[]): boolean {
+  for (const p of parts) {
+    for (const it of p.items) {
+      if (isCatalogDiscountedLine(it)) return true;
+    }
+  }
+  return false;
+}
+
+function sumBonusEligibleMerchFromCartDetailLines(
+  lines: readonly {
+    price: number;
+    quantity: number;
+    listPrice?: number | null;
+    selected?: boolean;
+  }[],
+): { merchSaleRub: number; bonusEligibleMerchRub: number; hasDiscounted: boolean } {
+  let merchSaleRub = 0;
+  let bonusEligibleMerchRub = 0;
+  let hasDiscounted = false;
+  for (const l of lines) {
+    if (l.selected === false || l.quantity <= 0) continue;
+    const lineSum = l.price * l.quantity;
+    merchSaleRub += lineSum;
+    if (isCatalogDiscountedLine(l)) hasDiscounted = true;
+    else bonusEligibleMerchRub += lineSum;
+  }
+  return { merchSaleRub, bonusEligibleMerchRub, hasDiscounted };
+}
 /** Имя перевозчика в составе заголовка курьерской карточки */
 const COURIER_CARRIER_LABEL = "СДЭК";
 
@@ -4608,15 +4690,139 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
   }, [payOnDeliveryOnlyEffective]);
 
+  const checkoutBonusUi = useMemo(() => {
+    const wallet = GJ_LOYALTY_WALLET_BALANCE_RUB;
+    const cap = GJ_LOYALTY_MAX_SPEND_RUB;
+    const promoBonusFallbackBody =
+      boot?.checkoutCopy?.promoBonusBody ?? fullCheckoutCopy().promoBonusBody;
+
+    let bonusEligibleMerchRub = 0;
+    let merchSaleRub = 0;
+    let hasDiscounted = false;
+
+    if (includedParts.length > 0) {
+      merchSaleRub = sumMerchSaleFromParts(includedParts);
+      bonusEligibleMerchRub = sumBonusEligibleMerchFromParts(includedParts);
+      hasDiscounted = partsHasCatalogDiscount(includedParts);
+    } else {
+      const agg = sumBonusEligibleMerchFromCartDetailLines(cartDetail?.lines ?? []);
+      merchSaleRub = agg.merchSaleRub;
+      bonusEligibleMerchRub = agg.bonusEligibleMerchRub;
+      hasDiscounted = agg.hasDiscounted;
+    }
+
+    const minRule = GJ_BONUS_MIN_ELIGIBLE_MERCH_RUB;
+    const belowMinEligible =
+      minRule != null && bonusEligibleMerchRub > 0 && bonusEligibleMerchRub < minRule;
+
+    const maxBonusToApply = Math.max(0, Math.floor(Math.min(wallet, cap, bonusEligibleMerchRub)));
+
+    let availability: BonusAvailabilityState;
+    if (bonusEligibleMerchRub <= 0) availability = "none";
+    else if (hasDiscounted) availability = "partial";
+    else availability = "full";
+
+    let unavailableReason: BonusUnavailableReason = null;
+    if (promoApplied) unavailableReason = "promo_applied";
+    else if (merchSaleRub <= 0) unavailableReason = "empty_cart";
+    else if (wallet <= 0) unavailableReason = "zero_balance";
+    else if (bonusEligibleMerchRub <= 0) unavailableReason = "discounted_items_only";
+    else if (belowMinEligible) unavailableReason = "min_threshold_not_met";
+
+    const switchDisabled =
+      promoApplied || wallet <= 0 || bonusEligibleMerchRub <= 0 || belowMinEligible;
+
+    const labelsMuted = switchDisabled;
+
+    let mainText: string;
+    let subText: string | null = null;
+    if (promoApplied) {
+      mainText = "Списание бонусов недоступно";
+      subText = "Уже применён промокод";
+    } else if (wallet <= 0 && merchSaleRub > 0) {
+      mainText = "Бонусов на карте пока нет";
+      subText = null;
+    } else if (belowMinEligible && minRule != null) {
+      mainText = "Бонусы пока нельзя списать";
+      subText = `Минимум ${fmt(minRule)} по товарам без скидки`;
+    } else if (bonusEligibleMerchRub <= 0 && merchSaleRub > 0) {
+      mainText = "Бонусы недоступны для этого заказа";
+      subText = "В корзине только товары со скидкой";
+    } else if (merchSaleRub <= 0) {
+      mainText = "Бонусы недоступны";
+      subText = null;
+    } else if (availability === "partial") {
+      mainText = `Можно списать до ${fmt(maxBonusToApply)} бонусами`;
+      subText = "Только на товары без скидки";
+    } else {
+      mainText = `Списать с карты GJ до ${fmt(maxBonusToApply)}`;
+      subText = null;
+    }
+
+    let disclaimer: string;
+    if (promoApplied) {
+      disclaimer = promoBonusFallbackBody;
+    } else if (wallet <= 0 || belowMinEligible) {
+      disclaimer = promoBonusFallbackBody;
+    } else if (bonusEligibleMerchRub <= 0 && merchSaleRub > 0) {
+      disclaimer = "Бонусы на товары со скидкой не списываются.";
+    } else if (availability === "partial") {
+      disclaimer = "Бонусы применяются только к товарам без скидки.";
+    } else {
+      disclaimer = promoBonusFallbackBody;
+    }
+
+    return {
+      bonusEligibleMerchRub,
+      merchSaleRub,
+      hasDiscounted,
+      maxBonusToApply,
+      availability,
+      unavailableReason,
+      switchDisabled,
+      labelsMuted,
+      mainText,
+      subText,
+      disclaimer,
+    };
+  }, [boot?.checkoutCopy?.promoBonusBody, includedParts, cartDetail?.lines, promoApplied]);
+
+  useEffect(() => {
+    if (!bonusOn) return;
+    if (checkoutBonusUi.switchDisabled || checkoutBonusUi.maxBonusToApply <= 0) {
+      setBonusOn(false);
+    }
+  }, [bonusOn, checkoutBonusUi.switchDisabled, checkoutBonusUi.maxBonusToApply]);
+
+  const bonusAnalyticsViewKey = useMemo(
+    () =>
+      `${checkoutBonusUi.availability}:${checkoutBonusUi.unavailableReason ?? ""}:${checkoutBonusUi.maxBonusToApply}`,
+    [checkoutBonusUi.availability, checkoutBonusUi.unavailableReason, checkoutBonusUi.maxBonusToApply],
+  );
+
+  useEffect(() => {
+    if (!recipient) return;
+    trackCheckoutBonus("bonus_block_viewed", {
+      bonusAvailabilityState: checkoutBonusUi.availability,
+      unavailableReason: checkoutBonusUi.unavailableReason,
+      maxBonusToApplyRub: checkoutBonusUi.maxBonusToApply,
+    });
+    const r = checkoutBonusUi.unavailableReason;
+    if (r && r !== "promo_applied") {
+      trackCheckoutBonus("bonus_unavailable_reason_shown", {
+        bonusAvailabilityState: checkoutBonusUi.availability,
+        unavailableReason: r,
+        maxBonusToApplyRub: checkoutBonusUi.maxBonusToApply,
+      });
+    }
+  }, [recipient, bonusAnalyticsViewKey]);
+
   const promoDiscount = promoApplied ? Math.round(goodsMerchForUi * 0.2) : 0;
+  const appliedBonusRub = bonusOn ? checkoutBonusUi.maxBonusToApply : 0;
   const payFinal =
     allDisplayParts.length > 0
-      ? bonusOn
-        ? Math.max(0, partsTotal - Math.min(GJ_LOYALTY_MAX_SPEND_RUB, includedMerch))
-        : partsTotal
-      : bonusOn
-        ? Math.max(0, Math.round(cartGoodsSubtotal * promoFactor) - Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))
-        : Math.round(cartGoodsSubtotal * promoFactor);
+      ? Math.max(0, partsTotal - appliedBonusRub)
+      : Math.max(0, Math.round(cartGoodsSubtotal * promoFactor) - appliedBonusRub);
 
   useEffect(() => {
     setIncluded((prev) => {
@@ -5003,7 +5209,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         });
       }
     }
-    const orderBonusUsed = bonusOn ? Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi) : 0;
+    const orderBonusUsed = bonusOn ? checkoutBonusUi.maxBonusToApply : 0;
     const payload = {
       parts: includedParts
         .map((p) => ({
@@ -5724,7 +5930,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <div>
               <p className="cu-page-title text-neutral-900">{checkoutCopyResolved.promoBonusTitle}</p>
               <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
-                <p>{checkoutCopyResolved.promoBonusBody}</p>
+                <p>{recipient ? checkoutBonusUi.disclaimer : checkoutCopyResolved.promoBonusBody}</p>
               </div>
             </div>
           ) : null}
@@ -5779,13 +5985,45 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
           {promoApplied ? <p className="text-xs text-emerald-700">Применён промокод APP20 (−20%)</p> : null}
           {recipient ? (
-            <BonusPointsToggle
+            <BonusPointsControl
               bonusOn={bonusOn}
-              promoApplied={promoApplied}
-              amountLabel={fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}
+              switchDisabled={checkoutBonusUi.switchDisabled}
+              labelsMuted={checkoutBonusUi.labelsMuted}
+              mainText={checkoutBonusUi.mainText}
+              subText={checkoutBonusUi.subText}
               onToggle={(next) => {
                 setBonusOn(next);
                 if (next) setPromoApplied(false);
+              }}
+              onDisabledSwitchInteract={() => {
+                trackCheckoutBonus("bonus_toggle_disabled_viewed", {
+                  bonusAvailabilityState: checkoutBonusUi.availability,
+                  unavailableReason: checkoutBonusUi.unavailableReason,
+                  maxBonusToApplyRub: checkoutBonusUi.maxBonusToApply,
+                });
+              }}
+              onEnabledToggle={(next) => {
+                trackCheckoutBonus("bonus_toggle_clicked", {
+                  bonusAvailabilityState: checkoutBonusUi.availability,
+                  unavailableReason: checkoutBonusUi.unavailableReason,
+                  maxBonusToApplyRub: checkoutBonusUi.maxBonusToApply,
+                  appliedBonusRub: next ? checkoutBonusUi.maxBonusToApply : 0,
+                });
+                if (next) {
+                  trackCheckoutBonus("bonus_applied", {
+                    bonusAvailabilityState: checkoutBonusUi.availability,
+                    unavailableReason: null,
+                    maxBonusToApplyRub: checkoutBonusUi.maxBonusToApply,
+                    appliedBonusRub: checkoutBonusUi.maxBonusToApply,
+                  });
+                } else {
+                  trackCheckoutBonus("bonus_removed", {
+                    bonusAvailabilityState: checkoutBonusUi.availability,
+                    unavailableReason: null,
+                    maxBonusToApplyRub: checkoutBonusUi.maxBonusToApply,
+                    appliedBonusRub: 0,
+                  });
+                }
               }}
             />
           ) : (
@@ -5825,12 +6063,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 <span className="tabular-nums text-red-600">− {fmt(promoDiscount)}</span>
               </div>
             ) : null}
-            {bonusOn ? (
+            {bonusOn && appliedBonusRub > 0 ? (
               <div className="flex justify-between text-sm">
                 <span className="cu-total-row-label">Бонусные рубли</span>
-                <span className="tabular-nums text-red-600">
-                  − {fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}
-                </span>
+                <span className="tabular-nums text-red-600">− {fmt(appliedBonusRub)}</span>
               </div>
             ) : null}
             <div className="cu-total-final-row">

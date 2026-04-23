@@ -257,6 +257,57 @@ function matchStepSource(
   return { source: best.source, take: best.take };
 }
 
+/**
+ * После шагов правила добирает остаток жадно (склад + магазины), пока есть остаток и не исчерпан лимит отправлений.
+ * Без этого порог threshold и фиксированный набор шагов могли оставлять часть корзины «вне сценария», хотя по складу/магазинам её ещё можно отгрузить.
+ */
+function greedyFillCourierRemainderFromStock(
+  parts: ScenarioPart[],
+  remainder: CartLine[],
+  params: {
+    warehouses: SourceRow[];
+    stores: SourceRow[];
+    useWh: boolean;
+    useStores: boolean;
+    stock: Map<string, Map<string, number>>;
+    products: ProductRow[];
+    rule: RuleRow | null;
+    maxShipments: number;
+  },
+): CartLine[] {
+  const { warehouses, stores, useWh, useStores, stock, products, rule, maxShipments } = params;
+  const wh = warehouses[0];
+  let rem = remainder;
+  let lastSourceId = parts.length > 0 ? parts[parts.length - 1]!.sourceId : undefined;
+
+  while (rem.length > 0 && parts.length < maxShipments) {
+    const candidates: SourceRow[] = [
+      ...(useWh && wh ? [wh] : []),
+      ...(useStores ? stores : []),
+    ].filter((s) => s.id !== lastSourceId);
+    let best: { source: SourceRow; take: CartLine[]; units: number } | null = null;
+    for (const s of candidates) {
+      const take = allocateFromSource(rem, s.id, stock);
+      const units = totalUnits(take);
+      if (!best || units > best.units) best = { source: s, take, units };
+    }
+    if (!best || best.units === 0) break;
+    const part = buildPart(
+      `rule_fill_${parts.length + 1}`,
+      best.source,
+      "courier",
+      best.take,
+      products,
+      rule,
+    );
+    if (!part) break;
+    parts.push(part);
+    rem = subtractLines(rem, best.take).remaining;
+    lastSourceId = best.source.id;
+  }
+  return rem;
+}
+
 function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
   const { cartLines, products, sources, inventories, rule } = ctx;
   const stock = invMap(
@@ -335,11 +386,22 @@ function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
 
     if (step.sourceType === "any" && step.continueAfterMatch) {
       remainder = extendAnyStepToLimit(step, remainder);
-      break;
+      continue;
     }
 
     if (!step.continueAfterMatch) break;
   }
+
+  remainder = greedyFillCourierRemainderFromStock(parts, remainder, {
+    warehouses,
+    stores,
+    useWh,
+    useStores,
+    stock,
+    products,
+    rule,
+    maxShipments,
+  });
 
   if (parts.length > 1) {
     informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
