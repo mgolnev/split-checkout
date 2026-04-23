@@ -663,11 +663,20 @@ function pickupCollectPinLine(summary?: PickupStoreSummary): string {
 function pickupStorePinLines(summary?: PickupStoreSummary): { line1: string; line2?: string } {
   const kind = pickupStoreScenarioKind(summary);
   if (kind === "empty" || !summary) return { line1: "—" };
+  if (summary.totalUnits > 0 && summary.availableUnits <= 0) return { line1: "Нет в наличии" };
   if (kind === "today_all") return { line1: "Все сегодня" };
   if (kind === "today_later") return { line1: `${summary.reserveUnits} сегодня`, line2: `${summary.collectUnits} позже` };
   if (kind === "later_all") return { line1: pickupCollectPinLine(summary) };
   if (kind === "later_partial") return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
   return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
+}
+
+function pickupStorePinOutOfStock(summary?: PickupStoreSummary): boolean {
+  return !!summary && summary.totalUnits > 0 && summary.availableUnits <= 0;
+}
+
+function pvzMapPinOutOfStock(summary?: MethodSummary): boolean {
+  return !!summary && summary.totalUnits > 0 && summary.availableUnits <= 0;
 }
 
 /** Выше = лучше: всё сегодня → сегодня+позже → всё позже → частично позже → не собрать. */
@@ -762,7 +771,7 @@ function pickupStoreCompactScenarioLine(summary?: PickupStoreSummary): string {
   if (kind === "later_all") return pickupCollectAllStoreLine(summary);
   if (kind === "later_partial") return `Сможем привезти ${summary.availableUnits} из ${summary.totalUnits} товаров`;
   if (summary.availableUnits > 0) return `Доступно ${summary.availableUnits} из ${summary.totalUnits} товаров`;
-  return `Доступно 0 из ${summary.totalUnits} товаров`;
+  return "Нет в наличии";
 }
 
 /** Непрозрачные оттенки круга пина: чёрный → тёмно-серые по сценарию и «рекомендованному» магазину. */
@@ -857,6 +866,7 @@ function pvzPointStatusDetail(summary: MethodSummary | undefined, copy: Selector
 
 function pvzPointPinLine(summary?: MethodSummary): string {
   if (!summary || summary.totalUnits <= 0) return "Нет данных";
+  if (summary.availableUnits <= 0) return "Нет в наличии";
   if (summary.availableUnits >= summary.totalUnits) return "Все товары";
   return `${summary.availableUnits} из ${summary.totalUnits}`;
 }
@@ -1251,6 +1261,7 @@ function PickupStoreSelector({
             line1: pinLines.line1,
             line2: pinLines.line2,
             wasLastChoice: lastChosenStoreId === s.id,
+            outOfStock: pickupStorePinOutOfStock(s.summary),
             className: emphasis,
             surface,
           },
@@ -1383,9 +1394,6 @@ function PickupStoreSelector({
                 setSheetMode("collapsed");
               }}
             />
-            {showPreview ? (
-              <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
-            ) : null}
           </>
         ) : (
           <>
@@ -1408,9 +1416,6 @@ function PickupStoreSelector({
             >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-              {showPreview ? (
-                <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
-              ) : null}
               {mapStores.map((store) => {
                 const pinLines = pickupStorePinLines(store.summary);
                 const pos = mapPinPosition(store.id);
@@ -1439,6 +1444,7 @@ function PickupStoreSelector({
                         line1={pinLines.line1}
                         line2={pinLines.line2}
                         wasLastChoice={lastChosenStoreId === store.id}
+                        outOfStock={pickupStorePinOutOfStock(store.summary)}
                         surface={surface}
                       />
                     </span>
@@ -2123,6 +2129,7 @@ function PvzPointSelector({
             brandMark: "ПВЗ",
             line1: pvzPointPinLine(summary),
             wasLastChoice: lastChosenPointId === p.id,
+            outOfStock: pvzMapPinOutOfStock(summary),
             className: `${emphasis} ${selectedRing}`.trim(),
             surface,
           },
@@ -2247,9 +2254,6 @@ function PvzPointSelector({
                 setSheetMode("collapsed");
               }}
             />
-            {showPreview ? (
-              <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
-            ) : null}
           </>
         ) : (
           <>
@@ -2272,9 +2276,6 @@ function PvzPointSelector({
             >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.92))]" />
               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%),linear-gradient(transparent_24%,rgba(148,163,184,0.14)_25%,rgba(148,163,184,0.14)_26%,transparent_27%,transparent_74%,rgba(148,163,184,0.14)_75%,rgba(148,163,184,0.14)_76%,transparent_77%)]" />
-              {showPreview ? (
-                <div className="pointer-events-none absolute inset-0 z-[5] bg-black/10" aria-hidden />
-              ) : null}
               {mapPoints.map((point) => {
                 const pos = mapPointPosition(point.id);
                 const pinOpen = mapPreviewPointId === point.id;
@@ -2305,6 +2306,7 @@ function PvzPointSelector({
                         brandMark="ПВЗ"
                         line1={pvzPointPinLine(summary)}
                         wasLastChoice={wasLastChoice}
+                        outOfStock={pvzMapPinOutOfStock(summary)}
                         surface={surface}
                       />
                     </span>
@@ -4020,6 +4022,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       listPrice?: number | null;
       image: string;
       sizeLabel?: string | null;
+      /** Снято в корзине — в заказ не входит, строка остаётся в `lines` и в localStorage */
+      selected?: boolean;
     }[];
     units: number;
     subtotal: number;
@@ -4031,9 +4035,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
     async function loadCart() {
       const snap = loadCheckoutCart();
+      /** Все позиции с количеством > 0 — чекбокс только влияет на заказ, не на состав хранилища */
       const fromStorage =
         snap?.cityId === cityId && snap.lines.length > 0
-          ? snap.lines.filter((l) => l.selected !== false && l.quantity > 0)
+          ? snap.lines.filter((l) => l.quantity > 0)
           : null;
 
       try {
@@ -4069,15 +4074,27 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             const snapNow = loadCheckoutCart();
             if (snapNow?.cityId === cityId && snapNow.lines.length > 0) {
               const caps = new Map(json.lines.map((l) => [l.productId, l.quantity]));
-              const cappedLines: StoredCartLine[] = [];
-              for (const row of snapNow.lines) {
+              const cappedLines: StoredCartLine[] = snapNow.lines.map((row) => {
                 const q = caps.get(row.productId);
-                if (q === undefined) continue;
-                cappedLines.push({ ...row, quantity: q });
-              }
+                if (q !== undefined) return { ...row, quantity: q };
+                return row.quantity > 0 ? { ...row, quantity: 0 } : row;
+              });
               saveCheckoutCart({ cityId, lines: cappedLines });
             }
-            setCartDetail(json);
+            const selectedByProduct = new Map(
+              (snapNow?.cityId === cityId && snapNow.lines.length ? snapNow.lines : []).map((l) => [
+                l.productId,
+                l.selected !== false,
+              ]),
+            );
+            const mergedLines = json.lines.map((l) => ({
+              ...l,
+              selected: selectedByProduct.get(l.productId) !== false,
+            }));
+            const orderLines = mergedLines.filter((l) => l.selected !== false && l.quantity > 0);
+            const unitsSel = orderLines.reduce((s, l) => s + l.quantity, 0);
+            const subSel = orderLines.reduce((s, l) => s + l.price * l.quantity, 0);
+            setCartDetail({ lines: mergedLines, units: unitsSel, subtotal: subSel });
           }
           return;
         }
@@ -4112,7 +4129,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const cartLinesSignature = useMemo(
     () =>
       cartDetail?.lines
-        ?.map((l) => `${l.productId}:${l.quantity}`)
+        ?.map((l) => `${l.productId}:${l.quantity}:${l.selected === false ? "0" : "1"}`)
         .sort()
         .join("|") ?? "",
     [cartDetail?.lines],
@@ -4139,7 +4156,14 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setCartSummariesFetchFailed(false);
     setCartScopedSummaries(null);
     let cancelled = false;
-    const lines = cartDetail.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
+    const lines = cartDetail.lines
+      .filter((l) => l.selected !== false && l.quantity > 0)
+      .map((l) => ({ productId: l.productId, quantity: l.quantity }));
+    if (!lines.length) {
+      setCartScopedSummaries(null);
+      setCartSummariesFetchFailed(false);
+      return;
+    }
 
     void (async () => {
       try {
@@ -4245,7 +4269,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       setLoading(false);
       return;
     }
-    if (!cartDetail?.lines?.length) {
+    const scenarioCartLines =
+      cartDetail?.lines?.filter((l) => l.selected !== false && l.quantity > 0) ?? [];
+    if (!scenarioCartLines.length) {
       setScenario(null);
       setRemainderResolution(null);
       setSecondarySelections([]);
@@ -4272,7 +4298,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       setLoading(false);
       return;
     }
-    const cartLinesPayload = cartDetail.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
+    const cartLinesPayload = scenarioCartLines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
     /** Сразу убираем прошлый сценарий, иначе один кадр показывает старые PartCard до скелетона. */
     setScenario(null);
     setRemainderResolution(null);
@@ -4492,7 +4518,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const cartLinesFingerprint = useMemo(
     () =>
       (cartDetail?.lines ?? [])
-        .map((l) => `${l.productId}:${l.quantity}`)
+        .map((l) => `${l.productId}:${l.quantity}:${l.selected === false ? "0" : "1"}`)
         .sort()
         .join("|"),
     [cartDetail?.lines],
@@ -5107,14 +5133,22 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       ? Math.round(sumMerchCatalogFromScenarioParts(includedParts))
       : allDisplayParts.length > 0
         ? 0
-        : Math.round(sumMerchCatalogFromCartLines(cartDetail?.lines ?? []));
+        : Math.round(
+            sumMerchCatalogFromCartLines(
+              (cartDetail?.lines ?? []).filter((l) => l.selected !== false && l.quantity > 0),
+            ),
+          );
   /** Скидка на товары по ценам (list − sale), без промокода. */
   const orderGoodsLineDiscountRub =
     includedParts.length > 0
       ? Math.round(sumMerchLineDiscountFromScenarioParts(includedParts))
       : allDisplayParts.length > 0
         ? 0
-        : Math.round(sumMerchLineDiscountFromCartLines(cartDetail?.lines ?? []));
+        : Math.round(
+            sumMerchLineDiscountFromCartLines(
+              (cartDetail?.lines ?? []).filter((l) => l.selected !== false && l.quantity > 0),
+            ),
+          );
   const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;

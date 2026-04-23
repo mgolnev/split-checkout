@@ -53,13 +53,15 @@ export type MapStorePinProps = {
   laterCount?: number;
   /** Ранее выбирали этот магазин — бейдж ↻ на круге */
   wasLastChoice?: boolean;
+  /** Нет доступных позиций — только круг с хвостом, без плашки и подписи */
+  outOfStock?: boolean;
   className?: string;
   /** Заливка круга/хвоста: иерархия без прозрачности */
   surface?: MapStorePinSurface;
 };
 
 /**
- * Кастомный HTML-overlay пина: круг (GJ или ПВЗ) + белая плашка + указатель.
+ * Кастомный HTML-overlay пина: круг (GJ или ПВЗ) + белая плашка + указатель (плашка скрыта при {@link MapStorePinProps.outOfStock}).
  * Якорь геоточки — центр нижней круглой точки; позиционируйте контейнер с учётом {@link MAP_STORE_PIN_ANCHOR_OFFSET_X_PX}.
  */
 export function MapStorePin({
@@ -69,6 +71,7 @@ export function MapStorePin({
   todayCount,
   laterCount,
   wasLastChoice = false,
+  outOfStock = false,
   className = "",
   surface = "ink",
 }: MapStorePinProps) {
@@ -89,7 +92,9 @@ export function MapStorePin({
     <div
       className={`relative inline-flex w-max max-w-[min(100%,calc(100vw-2rem))] shrink-0 flex-row items-start pt-px max-sm:pt-px ${className}`}
     >
-      <div className="flex w-[36px] shrink-0 flex-col items-center">
+      <div
+        className={`flex w-[36px] shrink-0 flex-col items-center ${outOfStock ? "opacity-[0.48]" : ""}`}
+      >
         <div
           className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold text-white ${pal.disk} ${
             brandMark.length > 2 ? "text-[10px] leading-tight" : "text-xs"
@@ -113,16 +118,18 @@ export function MapStorePin({
         </div>
       </div>
 
-      <div
-        className={`z-0 -ml-[18px] flex min-h-[36px] min-w-0 max-w-[min(14rem,calc(100vw-4rem))] flex-col justify-center gap-0.5 rounded-[10px] border border-black/[0.06] bg-white px-1.5 py-1 pl-8 ${pal.labelShadow} max-sm:rounded-lg max-sm:px-1 max-sm:py-0.5 max-sm:pl-7`}
-      >
-        <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">
-          {line1}
+      {!outOfStock ? (
+        <div
+          className={`z-0 -ml-[18px] flex min-h-[36px] min-w-0 max-w-[min(14rem,calc(100vw-4rem))] flex-col justify-center gap-0.5 rounded-[10px] border border-black/[0.06] bg-white px-1.5 py-1 pl-8 ${pal.labelShadow} max-sm:rounded-lg max-sm:px-1 max-sm:py-0.5 max-sm:pl-7`}
+        >
+          <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">
+            {line1}
+          </div>
+          {showLine2 ? (
+            <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">{line2}</div>
+          ) : null}
         </div>
-        {showLine2 ? (
-          <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">{line2}</div>
-        ) : null}
-      </div>
+      ) : null}
     </div>
   );
 }
