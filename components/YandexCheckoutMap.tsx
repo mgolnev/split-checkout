@@ -7,8 +7,8 @@ import { loadYandexMapsScript } from "@/lib/yandex-maps-script";
 import { MapStorePin, MAP_STORE_PIN_ANCHOR_OFFSET_X_PX, type MapStorePinProps } from "@/components/MapStorePin";
 
 /** Выше — плашки; ниже — только компактный круг (гистерезис против дрожания на границе). */
-const PIN_LABEL_ZOOM_EXPAND = 12.5;
-const PIN_LABEL_ZOOM_COLLAPSE = 11.4;
+const PIN_LABEL_ZOOM_EXPAND = 12.3;
+const PIN_LABEL_ZOOM_COLLAPSE = 11.2;
 
 export type YandexCheckoutMapMarker = {
   id: string;

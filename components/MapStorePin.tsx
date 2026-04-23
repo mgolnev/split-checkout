@@ -9,6 +9,9 @@ const PIN_DISK_PX = 36;
 /** Центр круга и нижней точки от левого края пина (половина {@link PIN_DISK_PX}). */
 export const MAP_STORE_PIN_ANCHOR_OFFSET_X_PX = PIN_DISK_PX / 2;
 
+/** Нет в наличии: лёгкое просвечивание карты; выше 0.48 — пин плотнее, но не полностью непрозрачный. */
+const OUT_OF_STOCK_OPACITY = 0.68;
+
 /** Непрозрачная градация: чёрный → тёмно-серые (без opacity на всём пине). */
 export type MapStorePinSurface = "ink" | "charcoal" | "graphite" | "slate";
 
@@ -34,11 +37,11 @@ const SURFACE: Record<
     dot: "bg-[#2a2a2a]",
     labelShadow: "shadow-[0_3px_11px_rgba(0,0,0,0.1)]",
   },
-  /** Частичное покрытие / не рекомендован: заметнее серый, без «почти чёрного». */
+  /** Частичное покрытие / не рекомендован: светло-серый из палитры (neutral-400), без полупрозрачности. */
   slate: {
-    disk: "bg-neutral-600",
-    tail: "border-t-neutral-600",
-    dot: "bg-neutral-600",
+    disk: "bg-neutral-400",
+    tail: "border-t-neutral-400",
+    dot: "bg-neutral-400",
     labelShadow: "shadow-[0_2px_10px_rgba(0,0,0,0.09)]",
   },
 };
@@ -83,9 +86,8 @@ export function MapStorePin({
 }: MapStorePinProps) {
   const pal = SURFACE[surface];
   const showLine2 = line2 != null && line2 !== "";
-  const anchorDotClass = fullCoverageMarker
-    ? "bg-emerald-500"
-    : pal.dot;
+  const anchorDotClass = fullCoverageMarker ? "bg-emerald-500" : pal.dot;
+  const diskTextClass = surface === "slate" ? "text-neutral-950" : "text-white";
   const showPlaque = labelLayout === "expanded" && !outOfStock;
   /**
    * Компактный режим: та же «многослойная» ring-обводка, что и у частичного (янтарь),
@@ -103,10 +105,11 @@ export function MapStorePin({
       className={`relative inline-flex w-max max-w-[min(100%,calc(100vw-2rem))] shrink-0 flex-row items-start pt-px max-sm:pt-px ${className}`}
     >
       <div
-        className={`flex w-[36px] shrink-0 flex-col items-center ${outOfStock ? "opacity-[0.48]" : ""}`}
+        className="flex w-[36px] shrink-0 flex-col items-center"
+        style={outOfStock ? { opacity: OUT_OF_STOCK_OPACITY } : undefined}
       >
         <div
-          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold text-white ${pal.disk} ${compactCoverageRing} ${
+          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold ${diskTextClass} ${pal.disk} ${compactCoverageRing} ${
             brandMark.length > 2 ? "text-[10px] leading-tight" : "text-xs"
           }`}
         >
