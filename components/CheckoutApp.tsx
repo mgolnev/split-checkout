@@ -3707,9 +3707,6 @@ function PartCard({
               {secondaryHeading ? (
                 <p className="mt-1.5 text-sm leading-snug text-neutral-600">{secondaryHeading}</p>
               ) : null}
-              {holdLine ? (
-                <p className="mt-1.5 text-xs text-neutral-500">{holdLine}</p>
-              ) : null}
             </div>
             <span
               className="cu-text-headline shrink-0 tabular-nums leading-tight text-right"
@@ -3729,6 +3726,9 @@ function PartCard({
                 <span className="cu-text-caption shrink-0 text-right">включая доставку</span>
               ) : null}
             </div>
+          ) : null}
+          {holdLine ? (
+            <p className="mt-1.5 text-xs text-neutral-500">{holdLine}</p>
           ) : null}
 
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2.5">
