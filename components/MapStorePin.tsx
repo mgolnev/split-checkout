@@ -34,10 +34,11 @@ const SURFACE: Record<
     dot: "bg-[#2a2a2a]",
     labelShadow: "shadow-[0_3px_11px_rgba(0,0,0,0.1)]",
   },
+  /** Частичное покрытие / не рекомендован: заметнее серый, без «почти чёрного». */
   slate: {
-    disk: "bg-[#404040]",
-    tail: "border-t-[#404040]",
-    dot: "bg-[#404040]",
+    disk: "bg-neutral-600",
+    tail: "border-t-neutral-600",
+    dot: "bg-neutral-600",
     labelShadow: "shadow-[0_2px_10px_rgba(0,0,0,0.09)]",
   },
 };
@@ -45,12 +46,10 @@ const SURFACE: Record<
 export type MapStorePinProps = {
   /** Текст в чёрном круге: по умолчанию GJ; для ПВЗ на карте — «ПВЗ». */
   brandMark?: string;
-  /** Готовые подписи (как из pickupStorePinLines) */
+  /** Первая строка плашки (например «6 из 8» по покрытию заказа). */
   line1?: string;
+  /** Вторая строка (например «3 сегодня»). */
   line2?: string | null;
-  /** Либо счётчики по ТЗ: «N сегодня» / «M позже» */
-  todayCount?: number;
-  laterCount?: number;
   /** Ранее выбирали этот магазин — бейдж ↻ на круге */
   wasLastChoice?: boolean;
   /** Нет доступных позиций — только круг с хвостом, без плашки и подписи */
@@ -58,6 +57,8 @@ export type MapStorePinProps = {
   className?: string;
   /** Заливка круга/хвоста: иерархия без прозрачности */
   surface?: MapStorePinSurface;
+  /** Полное покрытие заказа в точке — зелёная метка на нижней точке пина (как на референсе). */
+  fullCoverageMarker?: boolean;
 };
 
 /**
@@ -66,27 +67,19 @@ export type MapStorePinProps = {
  */
 export function MapStorePin({
   brandMark = "GJ",
-  line1: line1Prop,
-  line2: line2Prop,
-  todayCount,
-  laterCount,
+  line1 = "—",
+  line2 = null,
   wasLastChoice = false,
   outOfStock = false,
   className = "",
   surface = "ink",
+  fullCoverageMarker = false,
 }: MapStorePinProps) {
   const pal = SURFACE[surface];
-  const line1 =
-    todayCount !== undefined
-      ? `${todayCount} сегодня`
-      : (line1Prop ?? "—");
-  const line2 =
-    todayCount !== undefined
-      ? laterCount != null && laterCount > 0
-        ? `${laterCount} позже`
-        : null
-      : line2Prop ?? null;
   const showLine2 = line2 != null && line2 !== "";
+  const anchorDotClass = fullCoverageMarker
+    ? "bg-emerald-500"
+    : pal.dot;
 
   return (
     <div
@@ -113,20 +106,20 @@ export function MapStorePin({
         <div className="-mt-0.5 z-[5] flex flex-col items-center leading-none" aria-hidden>
           <div className={`h-0 w-0 shrink-0 border-x-[5px] border-x-transparent border-t-[7px] ${pal.tail}`} />
           <div
-            className={`-mt-px h-[10px] w-[10px] shrink-0 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(0,0,0,0.22)] ${pal.dot}`}
+            className={`-mt-px h-[10px] w-[10px] shrink-0 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(0,0,0,0.22)] ${anchorDotClass}`}
           />
         </div>
       </div>
 
       {!outOfStock ? (
         <div
-          className={`z-0 -ml-[18px] flex min-h-[36px] min-w-0 max-w-[min(14rem,calc(100vw-4rem))] flex-col justify-center gap-0.5 rounded-[10px] border border-black/[0.06] bg-white px-1.5 py-1 pl-8 ${pal.labelShadow} max-sm:rounded-lg max-sm:px-1 max-sm:py-0.5 max-sm:pl-7`}
+          className={`z-0 -ml-[20px] flex min-h-[36px] min-w-0 max-w-[min(14rem,calc(100vw-4rem))] flex-col justify-center gap-px rounded-[10px] border border-black/[0.06] bg-white px-1.5 py-1 pl-[26px] ${pal.labelShadow} max-sm:rounded-lg max-sm:px-1 max-sm:py-0.5 max-sm:pl-[22px]`}
         >
-          <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">
+          <div className="break-words text-[11px] font-semibold leading-snug text-[#1F1F1F]">
             {line1}
           </div>
           {showLine2 ? (
-            <div className="break-words text-xs font-normal leading-snug text-[#1F1F1F]">{line2}</div>
+            <div className="break-words text-[11px] font-normal leading-snug text-[#1F1F1F]">{line2}</div>
           ) : null}
         </div>
       ) : null}

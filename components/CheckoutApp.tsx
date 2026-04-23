@@ -680,22 +680,8 @@ type PickupScenarioKind =
   | "incomplete"
   | "empty";
 
-const RU_MONTH_SHORT_BY_NAME: Record<string, string> = {
-  января: "01",
-  феврала: "02",
-  марта: "03",
-  апреля: "04",
-  мая: "05",
-  июня: "06",
-  июля: "07",
-  августа: "08",
-  сентября: "09",
-  октября: "10",
-  ноября: "11",
-  декабря: "12",
-};
-
-const RU_MONTH_PATTERN = Object.keys(RU_MONTH_SHORT_BY_NAME).join("|");
+const RU_MONTH_PATTERN =
+  "января|феврала|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
 
 function pickupStoreScenarioKind(summary?: PickupStoreSummary): PickupScenarioKind {
   if (!summary || summary.totalUnits <= 0) return "empty";
@@ -720,37 +706,20 @@ function pickupCollectAllStoreLine(summary?: PickupStoreSummary): string {
   return longDate ? `Привезём все товары в этот магазин ${longDate}` : "Привезём все товары в этот магазин";
 }
 
-function pickupCollectDateShort(summary?: PickupStoreSummary): string | null {
-  const raw = summary?.collectThumb?.leadText?.trim();
-  if (!raw) return null;
-  const longMatch = raw.toLocaleLowerCase("ru-RU").match(new RegExp(`(\\d{1,2})\\s+(${RU_MONTH_PATTERN})`, "i"));
-  if (longMatch) {
-    const day = longMatch[1]!.padStart(2, "0");
-    const month = RU_MONTH_SHORT_BY_NAME[longMatch[2]!.toLocaleLowerCase("ru-RU")];
-    return month ? `${day}.${month}` : null;
-  }
-  const numericMatch = raw.match(/\b(\d{1,2})[./-](\d{1,2})(?:[./-]\d{2,4})?\b/);
-  if (!numericMatch) return null;
-  const day = numericMatch[1]!.padStart(2, "0");
-  const month = numericMatch[2]!.padStart(2, "0");
-  return `${day}.${month}`;
-}
-
-function pickupCollectPinLine(summary?: PickupStoreSummary): string {
-  const shortDate = pickupCollectDateShort(summary);
-  return shortDate ? `Привезём ${shortDate}` : "Привезём позже";
-}
-
-/** Строки на пине карты (как подпись в балуне Яндекса). */
+/**
+ * Строки на пине карты самовывоза: одна шкала для всех точек —
+ * полнота покрытия заказа (единицы корзины) и сколько из них сегодня в магазине.
+ * Детальная расшифровка остаётся в карточке магазина, не здесь.
+ */
 function pickupStorePinLines(summary?: PickupStoreSummary): { line1: string; line2?: string } {
-  const kind = pickupStoreScenarioKind(summary);
-  if (kind === "empty" || !summary) return { line1: "—" };
-  if (summary.totalUnits > 0 && summary.availableUnits <= 0) return { line1: "Нет в наличии" };
-  if (kind === "today_all") return { line1: "Все сегодня" };
-  if (kind === "today_later") return { line1: `${summary.reserveUnits} сегодня`, line2: `${summary.collectUnits} позже` };
-  if (kind === "later_all") return { line1: pickupCollectPinLine(summary) };
-  if (kind === "later_partial") return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
-  return { line1: `${summary.availableUnits} из ${summary.totalUnits}` };
+  if (!summary || summary.totalUnits <= 0) return { line1: "—" };
+  if (summary.availableUnits <= 0) {
+    return { line1: `0 из ${summary.totalUnits}`, line2: "0 сегодня" };
+  }
+  return {
+    line1: `${summary.availableUnits} из ${summary.totalUnits}`,
+    line2: `${summary.reserveUnits} сегодня`,
+  };
 }
 
 function pickupStorePinOutOfStock(summary?: PickupStoreSummary): boolean {
@@ -842,7 +811,7 @@ function pickupStoreTone(summary?: PickupStoreSummary) {
   };
 }
 
-/** Одна строка под названием магазина в свёрнутой карточке (тот же смысл, что на пине). */
+/** Одна строка под названием магазина в списке/карточке (детальнее, чем подпись на пине карты). */
 function pickupStoreCompactScenarioLine(summary?: PickupStoreSummary): string {
   if (!summary || summary.totalUnits <= 0) return "Нет состава корзины для оценки";
   const kind = pickupStoreScenarioKind(summary);
@@ -866,7 +835,7 @@ function pickupStorePinSurface(
   if (opts.recommended) {
     if (kind === "today_all" || kind === "today_later") return "ink";
     if (kind === "later_all") return "charcoal";
-    return "graphite";
+    return "slate";
   }
   if (kind === "today_all") return "charcoal";
   if (kind === "today_later" || kind === "later_all") return "graphite";
@@ -1346,6 +1315,7 @@ function PickupStoreSelector({
             outOfStock: pickupStorePinOutOfStock(s.summary),
             className: emphasis,
             surface,
+            fullCoverageMarker: !!s.summary?.hasFullCoverage,
           },
         };
       });
@@ -1528,6 +1498,7 @@ function PickupStoreSelector({
                         wasLastChoice={lastChosenStoreId === store.id}
                         outOfStock={pickupStorePinOutOfStock(store.summary)}
                         surface={surface}
+                        fullCoverageMarker={!!store.summary?.hasFullCoverage}
                       />
                     </span>
                   </button>
