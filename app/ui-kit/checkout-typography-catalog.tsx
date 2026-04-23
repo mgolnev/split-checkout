@@ -234,7 +234,7 @@ const RAW_ENTRIES: Entry[] = [
     demo: (
       <div className="space-y-2">
         <h2 className="cu-section-title">Способ получения</h2>
-        <p className="cu-muted">Введите номер телефона, чтобы оформить заказ</p>
+        <p className="cu-muted">Введите номер телефона, чтобы оформить заказ и списывать бонусы</p>
         <ChevronDownDemo />
         <span className="rounded-full border border-neutral-200 bg-white/95 px-3 py-1.5 text-sm font-semibold text-neutral-800">
           Сегодня
@@ -264,10 +264,10 @@ const RAW_ENTRIES: Entry[] = [
   {
     sortPx: 10,
     title: "Выгода PartCard (.cu-benefit), день недели в календаре, микротекст на пине",
-    classHint: ".cu-benefit — text-[10px] uppercase tracking-[0.12em] text-[var(--gj-muted)]",
+    classHint: ".cu-benefit — text-[11px] uppercase tracking-[0.12em] rgba(140,130,120,1)",
     spec: {
-      size: "10px (text-[10px])",
-      color: "gj-muted CSS-переменная / neutral-600",
+      size: "11px (text-[11px])",
+      color: "rgba(140, 130, 120, 1) (= gj-muted #8c8278)",
       weight: "font-semibold",
       tracking: "tracking-[0.12em] (разреженнее, чем у .cu-text-badge)",
       caseTransform: "У benefit — ВСЕ ЗАГЛАВНЫЕ",
@@ -284,16 +284,16 @@ const RAW_ENTRIES: Entry[] = [
   {
     sortPx: 9,
     title: "Бейдж «Рекомендуем» на вкладке доставки",
-    classHint: ".cu-text-badge text-emerald-800",
+    classHint: ".cu-text-badge bg-[#009966] text-white py-1",
     spec: {
       size: "10px (text-[10px])",
-      color: "emerald-800 на светлом фоне / белый на тёмной вкладке",
+      color: "фон #009966, текст белый; на выбранной вкладке — bg-white/20 text-white",
       weight: "font-semibold",
       tracking: "tracking-wide",
       caseTransform: "ВЕРХНИЙ РЕГИСТР",
     },
     demo: (
-      <span className="cu-text-badge inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-800">
+      <span className="cu-text-badge inline-flex rounded-full bg-[#009966] px-1.5 py-1 text-white">
         Рекомендуем
       </span>
     ),

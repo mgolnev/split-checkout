@@ -219,9 +219,12 @@ body {
   .checkout-ui .cu-total-final-row {
     @apply flex justify-between text-sm font-semibold tabular-nums text-neutral-900;
   }
-  /** Строка условий/выгоды в PartCard: микролейбл, цвет --gj-muted; разрядка чуть шире, чем у бейджей */
+  /** Строка условий/выгоды в PartCard: микролейбл; разрядка чуть шире, чем у бейджей */
   .checkout-ui .cu-benefit {
-    @apply text-[10px] font-semibold uppercase leading-snug tracking-[0.12em] text-[var(--gj-muted)];
+    @apply text-[11px] font-semibold uppercase leading-snug tracking-[0.12em];
+    color: rgba(140, 130, 120, 1);
+    background-clip: unset;
+    -webkit-background-clip: unset;
   }
 
   /** Логический блок чекаута: плоский блок на полотне (без обводки и тени) */

@@ -146,7 +146,7 @@ export default function UiKitPage() {
             </button>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-neutral-900">Соберём за 30 минут</p>
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gj-muted)]">
+              <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.12em] text-[rgba(140,130,120,1)]">
                 бесплатно / примерка
               </p>
             </div>

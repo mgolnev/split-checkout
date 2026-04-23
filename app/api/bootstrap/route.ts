@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { buildScenario } from "@/lib/build-scenario";
 import { fullCheckoutCopy, selectorCopy, type DisclaimerTextMap } from "@/lib/disclaimers";
+import {
+  databaseUrlSafeInfo,
+  errorNamesFromChain,
+  prismaDiag,
+  prismaMetaSafe,
+} from "@/lib/prisma-error-diag";
 import { prisma } from "@/lib/prisma";
+
+const BOOTSTRAP_DIAG_VERSION = 1;
 
 type MethodCode = "courier" | "pickup" | "pvz";
 
@@ -207,16 +215,25 @@ export async function GET() {
     checkoutSelectorCopy,
   });
   } catch (e) {
+    const { code, hint: hintFromDiag } = prismaDiag(e);
+    const hint =
+      hintFromDiag ??
+      "Полный текст — в логах по строке «[bootstrap]». Частая причина: миграции не применены к прод-БД.";
     console.error("[bootstrap]", e);
     return NextResponse.json(
       {
         error: "bootstrap_failed",
-        message:
-          process.env.NODE_ENV === "development"
-            ? e instanceof Error
-              ? e.message
-              : String(e)
-            : "Database error",
+        diagVersion: BOOTSTRAP_DIAG_VERSION,
+        ...databaseUrlSafeInfo(),
+        errorNames: errorNamesFromChain(e),
+        ...prismaMetaSafe(e),
+        ...(code ? { prismaCode: code } : {}),
+        hint,
+        ...(process.env.NODE_ENV === "development"
+          ? {
+              message: e instanceof Error ? e.message : String(e),
+            }
+          : {}),
       },
       { status: 500 },
     );

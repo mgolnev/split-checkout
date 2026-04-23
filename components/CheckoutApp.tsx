@@ -1779,8 +1779,8 @@ function CheckoutDeliveryMethodTabs({
           )}
           {item.recommended && !coveragePending ? (
             <span
-              className={`cu-text-badge inline-flex rounded-full px-1.5 py-0.5 ${
-                item.selected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+              className={`cu-text-badge inline-flex rounded-full px-1.5 py-1 ${
+                item.selected ? "bg-white/20 text-white" : "bg-[#009966] text-white"
               }`}
             >
               Рекомендуем
@@ -3472,6 +3472,8 @@ function PartCard({
       : part.mode === "click_collect"
         ? PICKUP_COLLECT_TITLE
         : part.sourceName;
+  const courierPaidFeeLine =
+    isCourier && part.deliveryPrice > 0 ? `+${fmt(part.deliveryPrice)} за доставку` : null;
   const benefitLine = isGjStorePickup
     ? part.mode === "click_reserve"
       ? "Бесплатно · примерка"
@@ -3481,7 +3483,7 @@ function PartCard({
       : isCourier
         ? part.deliveryPrice <= 0
           ? "Бесплатная доставка"
-          : `Курьер · ${fmt(part.deliveryPrice)}`
+          : null
         : null;
 
   const headingName = isGjStorePickup
@@ -3547,17 +3549,26 @@ function PartCard({
               {holdLine ? (
                 <p className="mt-1.5 text-xs text-neutral-500">{holdLine}</p>
               ) : null}
-              {benefitLine ? (
-                <p className="cu-benefit mt-4">{benefitLine}</p>
-              ) : null}
             </div>
             <span
-              className="cu-text-headline shrink-0 tabular-nums leading-tight"
+              className="cu-text-headline shrink-0 tabular-nums leading-tight text-right"
               title={priceBreakdownTitle}
             >
               {fmt(lineTotal)}
             </span>
           </div>
+          {(courierPaidFeeLine || benefitLine) || (included && ship > 0) ? (
+            <div className="mt-1.5 flex items-baseline justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                {courierPaidFeeLine || benefitLine ? (
+                  <p className="cu-benefit">{courierPaidFeeLine ?? benefitLine}</p>
+                ) : null}
+              </div>
+              {included && ship > 0 ? (
+                <span className="cu-text-caption shrink-0 text-right">включая доставку</span>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2.5">
             {visible.map((it, thumbIx) => (
@@ -5487,7 +5498,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </h2>
             {!recipient ? (
               <>
-                <p className="cu-muted">Введите номер телефона, чтобы оформить заказ</p>
+                <p className="cu-muted">Введите номер телефона, чтобы оформить заказ и списывать бонусы</p>
                 <input
                   id="checkout-recipient-phone"
                   className="mt-2 w-full rounded-lg bg-white/80 px-3 py-3 text-base placeholder:text-neutral-400 shadow-inner"
