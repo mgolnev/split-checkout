@@ -37,7 +37,7 @@ const SURFACE: Record<
     dot: "bg-[#2a2a2a]",
     labelShadow: "shadow-[0_3px_11px_rgba(0,0,0,0.1)]",
   },
-  /** Частичное покрытие / не рекомендован: светло-серый из палитры (neutral-400), без полупрозрачности. */
+  /** Частичное покрытие / не рекомендован: светло-серый диск (neutral-400), маркировка GJ — белая. */
   slate: {
     disk: "bg-neutral-400",
     tail: "border-t-neutral-400",
@@ -87,7 +87,6 @@ export function MapStorePin({
   const pal = SURFACE[surface];
   const showLine2 = line2 != null && line2 !== "";
   const anchorDotClass = fullCoverageMarker ? "bg-emerald-500" : pal.dot;
-  const diskTextClass = surface === "slate" ? "text-neutral-950" : "text-white";
   const showPlaque = labelLayout === "expanded" && !outOfStock;
   /**
    * Компактный режим: та же «многослойная» ring-обводка, что и у частичного (янтарь),
@@ -109,7 +108,7 @@ export function MapStorePin({
         style={outOfStock ? { opacity: OUT_OF_STOCK_OPACITY } : undefined}
       >
         <div
-          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold ${diskTextClass} ${pal.disk} ${compactCoverageRing} ${
+          className={`relative z-10 flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full font-bold text-white ${pal.disk} ${compactCoverageRing} ${
             brandMark.length > 2 ? "text-[10px] leading-tight" : "text-xs"
           }`}
         >
