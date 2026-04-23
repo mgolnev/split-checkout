@@ -175,7 +175,7 @@ export default function UiKitPage() {
           </div>
         </CompareRow>
 
-        <CompareRow title="Промокод (поле + применить)" token="cu-promo-input · type=search">
+        <CompareRow title="Промокод (поле + применить)" token="cu-promo-input · очистка ×">
           <PromoStripDemo />
         </CompareRow>
 

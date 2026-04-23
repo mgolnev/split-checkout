@@ -175,6 +175,54 @@ const fmt = (n: number) =>
     n,
   );
 
+type CartLinePriceFields = { price: number; quantity: number; listPrice?: number | null };
+
+/** Сумма «Товары» до скидки на позиции: по строке max(list, sale) × qty. */
+function sumMerchCatalogFromScenarioParts(parts: ScenarioPart[]): number {
+  let sum = 0;
+  for (const part of parts) {
+    for (const line of part.items) {
+      const sale = line.price;
+      const unit = line.listPrice != null && line.listPrice > sale ? line.listPrice : sale;
+      sum += unit * line.quantity;
+    }
+  }
+  return sum;
+}
+
+/** Скидка на товары по listPrice > price (входит в саммари отдельной строкой). */
+function sumMerchLineDiscountFromScenarioParts(parts: ScenarioPart[]): number {
+  let sum = 0;
+  for (const part of parts) {
+    for (const line of part.items) {
+      if (line.listPrice != null && line.listPrice > line.price) {
+        sum += (line.listPrice - line.price) * line.quantity;
+      }
+    }
+  }
+  return sum;
+}
+
+function sumMerchCatalogFromCartLines(lines: readonly CartLinePriceFields[]): number {
+  let sum = 0;
+  for (const line of lines) {
+    const sale = line.price;
+    const unit = line.listPrice != null && line.listPrice > sale ? line.listPrice : sale;
+    sum += unit * line.quantity;
+  }
+  return sum;
+}
+
+function sumMerchLineDiscountFromCartLines(lines: readonly CartLinePriceFields[]): number {
+  let sum = 0;
+  for (const line of lines) {
+    if (line.listPrice != null && line.listPrice > line.price) {
+      sum += (line.listPrice - line.price) * line.quantity;
+    }
+  }
+  return sum;
+}
+
 /** Склеивает строки остатка из разных источников в одну витрину (без дублей по productId). */
 function mergeRemainderLineLists(...lists: ReadonlyArray<ReadonlyArray<RemainderLine>>): RemainderLine[] {
   const map = new Map<string, number>();
@@ -3969,6 +4017,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       maxQuantity?: number;
       name: string;
       price: number;
+      listPrice?: number | null;
       image: string;
       sizeLabel?: string | null;
     }[];
@@ -4009,6 +4058,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               maxQuantity?: number;
               name: string;
               price: number;
+              listPrice?: number | null;
               image: string;
               sizeLabel?: string | null;
             }[];
@@ -4040,6 +4090,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             maxQuantity?: number;
             name: string;
             price: number;
+            listPrice?: number | null;
             image: string;
             sizeLabel?: string | null;
           }[];
@@ -5050,13 +5101,20 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const hasSplit = allDisplayParts.length > 1 || unresolvedLines.length > 0;
   const includedDeliveryTotal = includedParts.reduce((sum, part) => sum + part.deliveryPrice, 0);
-  /** Сумма товаров по каталогу/цене без промокода и бонусов (для строки «Товары» в блоке итога). */
-  const orderGoodsFullSubtotal =
+  /** Сумма «Товары» до скидки на позиции (listPrice там, где выше sale). */
+  const orderGoodsCatalogSubtotal =
     includedParts.length > 0
-      ? Math.round(includedMerch)
+      ? Math.round(sumMerchCatalogFromScenarioParts(includedParts))
       : allDisplayParts.length > 0
         ? 0
-        : Math.round(cartGoodsSubtotal);
+        : Math.round(sumMerchCatalogFromCartLines(cartDetail?.lines ?? []));
+  /** Скидка на товары по ценам (list − sale), без промокода. */
+  const orderGoodsLineDiscountRub =
+    includedParts.length > 0
+      ? Math.round(sumMerchLineDiscountFromScenarioParts(includedParts))
+      : allDisplayParts.length > 0
+        ? 0
+        : Math.round(sumMerchLineDiscountFromCartLines(cartDetail?.lines ?? []));
   const keepSinglePartExpanded = !hasSplit && allDisplayParts.length === 1;
 
   const unifiedOrderBlock = !!method && !!scenario && scenario.parts.length > 0;
@@ -5637,26 +5695,43 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </div>
           ) : null}
           <div className="flex w-full items-stretch gap-2 rounded-xl bg-neutral-100 p-1.5 pl-3">
-            <input
-              type="search"
-              name="promo"
-              autoComplete="off"
-              enterKeyHint="done"
-              aria-label="Промокод"
-              className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-base uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
-              placeholder="Промокод"
-              value={promo}
-              onChange={(e) => {
-                const next = e.target.value;
-                setPromo(next);
-                if (!next.trim()) {
-                  setPromoApplied(false);
-                } else if (promoApplied && next.trim().toUpperCase() !== "APP20") {
-                  setPromoApplied(false);
-                }
-              }}
-              disabled={bonusOn}
-            />
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <input
+                type="text"
+                name="promo"
+                autoComplete="off"
+                enterKeyHint="done"
+                aria-label="Промокод"
+                className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-base uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
+                placeholder="Промокод"
+                value={promo}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPromo(next);
+                  if (!next.trim()) {
+                    setPromoApplied(false);
+                  } else if (promoApplied && next.trim().toUpperCase() !== "APP20") {
+                    setPromoApplied(false);
+                  }
+                }}
+                disabled={bonusOn}
+              />
+              {promo.trim().length > 0 && !bonusOn ? (
+                <button
+                  type="button"
+                  aria-label="Очистить промокод"
+                  onClick={() => {
+                    setPromo("");
+                    setPromoApplied(false);
+                  }}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-transparent bg-neutral-300 text-[15px] font-light leading-none text-neutral-600 transition hover:border-transparent hover:bg-neutral-300/90 hover:text-neutral-800"
+                >
+                  <span aria-hidden className="-mt-px block">
+                    ×
+                  </span>
+                </button>
+              ) : null}
+            </div>
             {promo.trim().length > 0 && !promoApplied ? (
               <button
                 type="button"
@@ -5695,25 +5770,33 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <h2 className="cu-section-title">Сумма заказа</h2>
             <div className="mt-3 space-y-1.5">
             <div className="flex justify-between">
-              <span className="cu-total-row-label">Товары</span>
-              <span className="cu-total-row-value">{fmt(orderGoodsFullSubtotal)}</span>
-            </div>
-            {promoDiscount > 0 ? (
-              <div className="flex justify-between text-sm text-red-600">
-                <span>Скидка по промокоду</span>
-                <span className="tabular-nums">− {fmt(promoDiscount)}</span>
-              </div>
-            ) : null}
-            <div className="flex justify-between">
               <span className="cu-total-row-label">Доставка</span>
               <span className="cu-total-row-value">
                 {includedDeliveryTotal > 0 ? fmt(includedDeliveryTotal) : "Бесплатно"}
               </span>
             </div>
+            <div className="flex justify-between">
+              <span className="cu-total-row-label">Товары</span>
+              <span className="cu-total-row-value">{fmt(orderGoodsCatalogSubtotal)}</span>
+            </div>
+            {orderGoodsLineDiscountRub > 0 ? (
+              <div className="flex justify-between text-sm">
+                <span className="cu-total-row-label">Скидка</span>
+                <span className="tabular-nums text-red-600">− {fmt(orderGoodsLineDiscountRub)}</span>
+              </div>
+            ) : null}
+            {promoDiscount > 0 ? (
+              <div className="flex justify-between text-sm">
+                <span className="cu-total-row-label">Промокод</span>
+                <span className="tabular-nums text-red-600">− {fmt(promoDiscount)}</span>
+              </div>
+            ) : null}
             {bonusOn ? (
-              <div className="flex justify-between text-sm text-red-600">
-                <span>Бонусы</span>
-                <span className="tabular-nums">− {fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}</span>
+              <div className="flex justify-between text-sm">
+                <span className="cu-total-row-label">Бонусные рубли</span>
+                <span className="tabular-nums text-red-600">
+                  − {fmt(Math.min(GJ_LOYALTY_MAX_SPEND_RUB, goodsMerchForUi))}
+                </span>
               </div>
             ) : null}
             <div className="cu-total-final-row">
