@@ -170,6 +170,7 @@ export async function buildScenario(params: {
     name: p.name,
     sku: p.sku,
     price: p.price,
+    listPrice: p.listPrice,
     image: p.image,
     sizeLabel: p.sizeLabel,
   }));

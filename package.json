@@ -19,6 +19,8 @@
     "db:seed:export": "tsx scripts/export-seed-snapshot.ts",
     "db:seed:remote": "node scripts/run-seed-remote.mjs",
     "db:studio": "prisma studio",
+    "figma:connect:parse": "figma connect parse -c figma.config.json",
+    "figma:connect:publish": "figma connect publish -c figma.config.json",
     "supabase:urls": "node scripts/supabase-urls.mjs",
     "db:copy-to-prod": "tsx scripts/copy-local-to-prod.ts",
     "postinstall": "prisma generate"
@@ -35,6 +37,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@figma/code-connect": "^1.4.3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

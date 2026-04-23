@@ -51,6 +51,7 @@ export async function POST(req: Request) {
     maxQuantity: number;
     name: string;
     price: number;
+    listPrice?: number | null;
     image: string;
     sizeLabel?: string | null;
   }[] = [];
@@ -65,12 +66,14 @@ export async function POST(req: Request) {
     const maxQ = stockByProduct.get(p.id) ?? 0;
     if (maxQ <= 0) continue;
     const q = Math.min(qReq, maxQ);
+    const lp = p.listPrice != null && p.listPrice > 0 ? p.listPrice : null;
     resolved.push({
       productId: p.id,
       quantity: q,
       maxQuantity: maxQ,
       name: p.name,
       price: p.price,
+      ...(lp != null ? { listPrice: lp } : {}),
       image: p.image,
     });
     subtotal += p.price * q;
@@ -118,12 +121,14 @@ export async function GET(req: Request) {
     subtotal += p.price * q;
     units += q;
     const sl = p.sizeLabel?.trim();
+    const lp = p.listPrice != null && p.listPrice > 0 ? p.listPrice : null;
     return {
       productId: p.id,
       quantity: q,
       maxQuantity: maxQ,
       name: p.name,
       price: p.price,
+      ...(lp != null ? { listPrice: lp } : {}),
       image: p.image,
       ...(sl ? { sizeLabel: sl } : {}),
     };

@@ -5,6 +5,8 @@ export type ScenarioLine = {
   name: string;
   sku: string;
   price: number;
+  /** Зачёркнутая цена до скидки за единицу; опционально */
+  listPrice?: number | null;
   image: string;
   quantity: number;
   /** Размер варианта (напр. «M», «42»), если есть */

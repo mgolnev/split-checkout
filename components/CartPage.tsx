@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -9,6 +8,7 @@ import {
   saveCheckoutCart,
   type StoredCartLine,
 } from "@/lib/checkout-cart-storage";
+import { CartBootstrapSkeleton, CartLinesSkeleton } from "@/components/CartLoadingSkeleton";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 
 type Bootstrap = {
@@ -21,6 +21,7 @@ type ResolvedCartLine = {
   maxQuantity: number;
   name: string;
   price: number;
+  listPrice?: number | null;
   image: string;
   sizeLabel?: string | null;
 };
@@ -32,6 +33,7 @@ type UiLine = {
   maxQuantity: number;
   name: string;
   price: number;
+  listPrice?: number | null;
   image: string;
   size: string;
   selected: boolean;
@@ -65,6 +67,7 @@ function mapSnapshotToUi(stored: StoredCartLine[], resolved: ResolvedCartLine[])
       maxQuantity: maxQ,
       name: r.name,
       price: r.price,
+      listPrice: r.listPrice ?? null,
       image: r.image,
       size: s.size ?? "S",
       selected: s.selected !== false,
@@ -135,6 +138,7 @@ export default function CartPage() {
           j.lines.map((l) => ({
             ...l,
             maxQuantity: l.maxQuantity > 0 ? l.maxQuantity : l.quantity,
+            listPrice: l.listPrice ?? null,
             size: "S",
             selected: true,
             favorite: false,
@@ -169,6 +173,16 @@ export default function CartPage() {
   const selectedLines = useMemo(() => lines.filter((l) => l.selected && l.quantity > 0), [lines]);
   const selectedCount = selectedLines.reduce((s, l) => s + l.quantity, 0);
   const subtotal = selectedLines.reduce((s, l) => s + l.price * l.quantity, 0);
+  /** Сумма «до скидки» по строкам: listPrice×qty если listPrice > price, иначе price×qty */
+  const listSubtotal = useMemo(
+    () =>
+      selectedLines.reduce((s, l) => {
+        const unit = l.listPrice != null && l.listPrice > l.price ? l.listPrice : l.price;
+        return s + unit * l.quantity;
+      }, 0),
+    [selectedLines],
+  );
+  const showListSubtotal = subtotal > 0 && listSubtotal > subtotal;
   const allSelected = lines.length > 0 && lines.every((l) => l.selected);
 
   const toggleSelectAll = useCallback(() => {
@@ -195,8 +209,6 @@ export default function CartPage() {
     setLines((prev) => prev.map((l) => (l.productId === productId ? { ...l, favorite: !l.favorite } : l)));
   }, []);
 
-  const crossedSubtotal = subtotal > 0 ? Math.round(subtotal * 1.33) : 0;
-
   const goCheckout = () => {
     if (!cityId) return;
     saveCheckoutCart({
@@ -212,91 +224,106 @@ export default function CartPage() {
   };
 
   if (!boot) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500">Загрузка…</div>
-    );
+    return <CartBootstrapSkeleton />;
   }
 
   return (
-    <div className="relative mx-auto min-h-screen max-w-md bg-white pb-36">
+    <div className="relative mx-auto min-h-screen max-w-md bg-white pb-32">
       <header className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-3 py-3">
-        <div className="flex items-center gap-2">
-          <Link href="/" className="flex h-10 w-10 items-center justify-center text-xl text-neutral-800" aria-label="На главную">
-            ←
-          </Link>
-          <h1 className="flex-1 text-center text-base font-semibold text-neutral-900">
+        <div className="flex items-center justify-center">
+          <h1 className="text-center text-base font-semibold text-neutral-900">
             Корзина{selectedCount > 0 ? ` (${selectedCount})` : ""}
           </h1>
-          <div className="w-10" />
         </div>
       </header>
 
-      {boot.cities.length > 0 ? (
-        <div className="border-b border-neutral-100 px-4 py-2">
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
-            <span className="shrink-0">Город</span>
-            <select
-              value={cityId}
-              onChange={(e) => setCityId(e.target.value)}
-              className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-medium text-neutral-900"
+      <div className="sticky top-[49px] z-10 border-b border-neutral-100 bg-white px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-sm font-medium text-neutral-900">
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={allSelected}
+              onClick={toggleSelectAll}
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold leading-none ${
+                allSelected ? "border-black bg-black text-white" : "border-neutral-400 bg-white text-transparent"
+              }`}
             >
-              {boot.cities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              ✓
+            </button>
+            Выбрать все
           </label>
+          {boot.cities.length > 0 ? (
+            <div className="relative shrink-0">
+              <select
+                aria-label="Выбор города"
+                value={cityId}
+                onChange={(e) => setCityId(e.target.value)}
+                className="appearance-none rounded-full border-0 bg-transparent pl-3 pr-8 py-1.5 text-sm font-semibold text-neutral-800 shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-neutral-900/15 focus-visible:ring-offset-0"
+              >
+                {boot.cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-neutral-500" aria-hidden>
+                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M4 6.5 8 10l4-3.5"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            </div>
+          ) : null}
         </div>
-      ) : null}
-
-      <div className="border-b border-neutral-100 px-4 py-3">
-        <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-neutral-900">
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={allSelected}
-            onClick={toggleSelectAll}
-            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition ${
-              allSelected ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 bg-white"
-            }`}
-          >
-            {allSelected ? "✓" : null}
-          </button>
-          Выбрать все
-        </label>
       </div>
 
       <div className="px-4 pb-40">
         {!hydrated ? (
-          <p className="py-12 text-center text-sm text-neutral-500">Загрузка корзины…</p>
+          <div className="py-4">
+            <CartLinesSkeleton />
+          </div>
         ) : lines.length === 0 ? (
           <p className="py-12 text-center text-sm text-neutral-500">Корзина пуста для выбранного города.</p>
         ) : (
           <ul className="divide-y divide-neutral-100">
             {lines.map((line) => (
-              <li key={line.productId} className="flex gap-3 py-4">
+              <li key={line.productId} className="flex items-start gap-3 py-4">
                 <button
                   type="button"
+                  role="checkbox"
+                  aria-checked={line.selected}
                   aria-label={line.selected ? "Снять выбор" : "Выбрать"}
                   onClick={() =>
                     setLines((prev) =>
                       prev.map((l) => (l.productId === line.productId ? { ...l, selected: !l.selected } : l)),
                     )
                   }
-                  className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                    line.selected ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 bg-white"
-                  }`}
+                  className="flex min-h-8 min-w-8 shrink-0 items-center justify-center self-start rounded-md [-webkit-tap-highlight-color:transparent]"
                 >
-                  {line.selected ? "✓" : null}
+                  <span
+                    className={`mt-px flex h-5 w-5 items-center justify-center rounded-full border-2 text-xs font-bold leading-none ${
+                      line.selected
+                        ? "border-black bg-black text-white"
+                        : "border-neutral-400 bg-white text-transparent"
+                    }`}
+                    aria-hidden
+                  >
+                    ✓
+                  </span>
                 </button>
-                <div className="relative h-[104px] w-20 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                <div className="relative h-[120px] w-[92px] shrink-0 overflow-hidden rounded-lg bg-neutral-100">
                   <Image
                     src={line.image || "/product-placeholder.svg"}
                     alt=""
                     fill
                     className="object-cover"
-                    sizes="80px"
+                    sizes="92px"
                   />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -324,7 +351,16 @@ export default function CartPage() {
                         ▾
                       </span>
                     </div>
-                    <p className="text-sm font-semibold text-neutral-900">{fmt(line.price * line.quantity)}</p>
+                    <span className="flex flex-wrap items-baseline gap-1.5">
+                      <span className="text-sm font-semibold text-neutral-900 tabular-nums">
+                        {fmt(line.price * line.quantity)}
+                      </span>
+                      {line.listPrice != null && line.listPrice > line.price ? (
+                        <span className="text-sm text-neutral-400 line-through tabular-nums">
+                          {fmt(line.listPrice * line.quantity)}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-1 py-0.5">
@@ -372,7 +408,7 @@ export default function CartPage() {
         )}
       </div>
 
-      <div className="fixed bottom-14 left-0 right-0 z-10 border-t border-neutral-200 bg-white px-4 py-2">
+      <div className="fixed bottom-0 left-0 right-0 z-10 border-t border-neutral-200 bg-white px-4 pt-2 [padding-bottom:max(0.5rem,env(safe-area-inset-bottom,0px))]">
         <div className="mx-auto max-w-md">
           <p className="mb-2 text-center text-[11px] text-neutral-500">
             {selectedCount > 0 ? `${selectedCount} ${pluralizeProducts(selectedCount)}` : "Нет выбранных позиций"}
@@ -386,10 +422,16 @@ export default function CartPage() {
             <span>Далее</span>
             <span className="flex items-baseline gap-2">
               {subtotal > 0 ? (
-                <>
-                  <span className="text-sm font-normal text-red-300 line-through">{fmt(crossedSubtotal)}</span>
-                  <span>{fmt(subtotal)}</span>
-                </>
+                showListSubtotal ? (
+                  <>
+                    <span className="text-sm font-normal text-neutral-400 line-through tabular-nums">
+                      {fmt(listSubtotal)}
+                    </span>
+                    <span className="tabular-nums">{fmt(subtotal)}</span>
+                  </>
+                ) : (
+                  <span className="tabular-nums">{fmt(subtotal)}</span>
+                )
               ) : (
                 <span>—</span>
               )}
@@ -397,43 +439,6 @@ export default function CartPage() {
           </button>
         </div>
       </div>
-
-      <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-neutral-200 bg-white px-2 pb-safe pt-2">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 text-[10px] text-neutral-500">
-          <Link href="/" className="flex flex-col items-center gap-0.5 py-1 text-neutral-400">
-            <span className="text-lg">⌂</span>
-            <span>Главная</span>
-          </Link>
-          <span className="flex flex-col items-center gap-0.5 py-1 opacity-40">
-            <span className="text-lg">☰</span>
-            <span>Каталог</span>
-          </span>
-          <Link href="/cart" className="flex flex-col items-center gap-0.5 py-1 font-medium text-neutral-900">
-            <span className="relative text-lg">
-              🛍
-              {selectedCount > 0 ? (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[9px] font-bold text-white">
-                  {selectedCount > 99 ? "99+" : selectedCount}
-                </span>
-              ) : null}
-            </span>
-            <span>Корзина</span>
-          </Link>
-          <span className="flex flex-col items-center gap-0.5 py-1 opacity-40">
-            <span className="relative text-lg">
-              ♡
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[9px] font-bold text-white">
-                20
-              </span>
-            </span>
-            <span>Избранное</span>
-          </span>
-          <span className="flex flex-col items-center gap-0.5 py-1 opacity-40">
-            <span className="text-lg">👤</span>
-            <span>Профиль</span>
-          </span>
-        </div>
-      </nav>
     </div>
   );
 }

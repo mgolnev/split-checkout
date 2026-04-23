@@ -14,6 +14,8 @@ model Product {
   name        String
   sku         String      @unique
   price       Int
+  /** «До скидки» / зачёркнутая; актуальная цена продажи — price */
+  listPrice   Int?
   image       String
   /** Подпись размера для чекаута (напр. «M», «42»); опционально */
   sizeLabel   String?

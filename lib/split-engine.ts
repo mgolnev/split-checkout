@@ -19,6 +19,7 @@ type ProductRow = {
   name: string;
   sku: string;
   price: number;
+  listPrice?: number | null;
   image: string;
   sizeLabel?: string | null;
 };
@@ -173,6 +174,7 @@ function buildPart(
       name: p.name,
       sku: p.sku,
       price: p.price,
+      ...(p.listPrice != null && p.listPrice > 0 ? { listPrice: p.listPrice } : {}),
       image: p.image,
       quantity: l.quantity,
       ...(sl ? { sizeLabel: sl } : {}),

@@ -25,6 +25,7 @@ import {
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { formatHoldNoticeForPart } from "@/lib/hold-display";
 import { MapStorePin, type MapStorePinSurface } from "@/components/MapStorePin";
+import { CheckoutBootstrapSkeleton } from "@/components/CartLoadingSkeleton";
 import { YandexCheckoutMap } from "@/components/YandexCheckoutMap";
 import type {
   AlternativeMethodOption,
@@ -49,7 +50,15 @@ const FALLBACK_SELECTOR_COPY = selectorCopy();
 type Bootstrap = {
   cities: { id: string; name: string; hasClickCollect: boolean }[];
   deliveryMethods: { id: string; code: string; name: string }[];
-  products: { id: string; name: string; price: number; image: string; sku: string; sizeLabel?: string | null }[];
+  products: {
+    id: string;
+    name: string;
+    price: number;
+    listPrice?: number | null;
+    image: string;
+    sku: string;
+    sizeLabel?: string | null;
+  }[];
   storesByCity: Record<
     string,
     { id: string; name: string; mapLat: number | null; mapLng: number | null }[]
@@ -1080,7 +1089,7 @@ function PickupStoreSelector({
   const pickupFilterDisclaimer = useMemo(() => {
     if (filterAvailability.all === 0) return null;
     if (!todayAllAvailable && !todayLaterAvailable) {
-      return pickupSelectorCopy.noTodayOptions;
+      return null;
     }
     if (!todayAllAvailable) {
       return pickupSelectorCopy.noTodayAllButTodayLater;
@@ -1090,6 +1099,13 @@ function PickupStoreSelector({
     }
     return null;
   }, [filterAvailability.all, pickupSelectorCopy, todayAllAvailable, todayLaterAvailable]);
+
+  const showPickupFilterChips = todayAllAvailable || todayLaterAvailable;
+  useEffect(() => {
+    if (!todayAllAvailable && !todayLaterAvailable && listFilter !== "all") {
+      setListFilter("all");
+    }
+  }, [todayAllAvailable, todayLaterAvailable, listFilter]);
 
   const toggleExpandedStore = (id: string) => {
     setExpandedStoreIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -1394,7 +1410,8 @@ function PickupStoreSelector({
         style={sheetFixedStyle}
       >
         <div
-          className="cursor-grab shrink-0 px-4 pb-2 pt-2 active:cursor-grabbing"
+          className="flex min-h-11 shrink-0 cursor-grab items-center justify-center px-4 pb-3 pt-4 active:cursor-grabbing"
+          aria-label="Потяните шторку вверх или вниз"
           onPointerDown={(event) => {
             sheetDragRef.current = { startY: event.clientY };
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -1410,7 +1427,7 @@ function PickupStoreSelector({
               if (ignoreSheetClickRef.current) return;
               setSheetMode((prev) => (prev === "expanded" ? (mapPreviewStore ? "preview" : "collapsed") : "expanded"));
             }}
-            className="block w-full rounded-xl outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-neutral-900"
+            className="flex w-full items-center justify-center rounded-xl py-1 outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-neutral-900"
             aria-expanded={sheetExpanded}
           >
             <span className="mx-auto block h-1 w-10 rounded-full bg-neutral-200" aria-hidden />
@@ -1482,11 +1499,13 @@ function PickupStoreSelector({
                 </button>
               ) : null}
             </div>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              {filterChip("all", "Все магазины")}
-              {filterChip("today_all", "Забрать всё сегодня")}
-              {filterChip("today_later", "Сегодня + позже")}
-            </div>
+            {showPickupFilterChips ? (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {filterChip("all", "Все магазины")}
+                {filterChip("today_all", "Забрать всё сегодня")}
+                {filterChip("today_later", "Сегодня + позже")}
+              </div>
+            ) : null}
             {pickupFilterDisclaimer ? (
               <p className="mt-1.5 px-1 text-xs leading-snug text-neutral-950">
                 {pickupFilterDisclaimer}
@@ -2257,7 +2276,8 @@ function PvzPointSelector({
         style={sheetFixedStyle}
       >
         <div
-          className="cursor-grab shrink-0 px-4 pb-2 pt-2 active:cursor-grabbing"
+          className="flex min-h-11 shrink-0 cursor-grab items-center justify-center px-4 pb-3 pt-4 active:cursor-grabbing"
+          aria-label="Потяните шторку вверх или вниз"
           onPointerDown={(event) => {
             sheetDragRef.current = { startY: event.clientY };
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -2273,7 +2293,7 @@ function PvzPointSelector({
               if (ignoreSheetClickRef.current) return;
               setSheetMode((prev) => (prev === "expanded" ? (mapPreviewPoint ? "preview" : "collapsed") : "expanded"));
             }}
-            className="block w-full rounded-xl outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-neutral-900"
+            className="flex w-full items-center justify-center rounded-xl py-1 outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-neutral-900"
             aria-expanded={sheetExpanded}
           >
             <span className="mx-auto block h-1 w-10 rounded-full bg-neutral-200" aria-hidden />
@@ -3709,7 +3729,7 @@ function ScenarioOrderSkeleton({
         role="status"
         aria-busy="true"
         aria-live="polite"
-        className="pointer-events-none select-none divide-y divide-neutral-100 border-t border-neutral-100"
+        className="pointer-events-none select-none"
       >
         {inner}
       </div>
@@ -5012,9 +5032,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }
 
   if (!boot) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-neutral-500">Загрузка…</div>
-    );
+    return <CheckoutBootstrapSkeleton />;
   }
 
   const checkoutCopyResolved = boot.checkoutCopy ?? fullCheckoutCopy();
@@ -5059,7 +5077,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       variant === "unified"
         ? "w-full bg-white px-5 py-5"
         : variant === "stacked-inline"
-          ? "w-full border-b border-neutral-100 px-5 py-5"
+          ? "w-full px-5 py-5"
           : "mb-5 w-full rounded-2xl bg-white px-5 py-5";
     return (
       <div className={wrapClass}>
@@ -5307,7 +5325,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
 
           {method === "courier" && !courierAddress.trim() ? (
-            <div className="border-t border-neutral-100 px-5 py-4 text-sm text-neutral-500">
+            <div className="px-5 pb-4 pt-1 text-sm text-neutral-500">
               Для курьерской доставки нужен адрес. После ввода покажем доступные отправления.
             </div>
           ) : null}
@@ -5315,8 +5333,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           {showScenarioSkeleton ? (
             <ScenarioOrderSkeleton variant="unified" embedded />
           ) : unifiedOrderBlock ? (
-            <div className="border-t border-neutral-100">
-              <div className="border-b border-neutral-100 px-4 py-4">{renderScenarioMethodSummary()}</div>
+            <div>
+              <div className="px-4 py-4">{renderScenarioMethodSummary()}</div>
               {renderPrimarySplitContextBar("unified")}
               {(scenario?.parts ?? [])
                 .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
@@ -5356,7 +5374,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 ))}
             </div>
           ) : (
-            <div className="border-t border-neutral-100">
+            <div>
               {renderPrimarySplitContextBar("stacked-inline")}
               <div className="space-y-3 px-5 pb-5 pt-2">
                 {(scenario?.parts ?? [])

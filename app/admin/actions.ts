@@ -16,10 +16,11 @@ export async function createProduct(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
+  const listPrice = parseOptionalListPrice(formData);
   const image = String(formData.get("image") ?? "").trim() || "/product-placeholder.svg";
   if (!name || !sku) return;
   await prisma.product.create({
-    data: { name, sku, price: Math.round(price), image, isActive: true },
+    data: { name, sku, price: Math.round(price), listPrice, image, isActive: true },
   });
   revalidatePath("/admin/products");
 }
@@ -29,13 +30,14 @@ export async function createProductWithStocks(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
+  const listPrice = parseOptionalListPrice(formData);
   const image = String(formData.get("image") ?? "").trim() || "/product-placeholder.svg";
   const sizeLabelRaw = String(formData.get("sizeLabel") ?? "").trim();
   const sizeLabel = sizeLabelRaw.length > 0 ? sizeLabelRaw : null;
   if (!name || !sku) return;
 
   const product = await prisma.product.create({
-    data: { name, sku, price: Math.round(price), image, sizeLabel, isActive: true },
+    data: { name, sku, price: Math.round(price), listPrice, image, sizeLabel, isActive: true },
   });
 
   const sources = await prisma.source.findMany({ where: { isActive: true } });
@@ -124,6 +126,15 @@ const toInt = (v: FormDataEntryValue | null, fallback = 0) => {
   return Number.isFinite(n) ? Math.round(n) : fallback;
 };
 
+/** Пустое поле → null; иначе положительное целое. */
+function parseOptionalListPrice(formData: FormData): number | null {
+  const raw = String(formData.get("listPrice") ?? "").trim();
+  if (raw === "") return null;
+  const n = Number(raw.replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n);
+}
+
 /** Пара опциональных координат WGS84; обе пустые → null,null; обе заданы — валидация. Иначе игнорируем (не обновляем). */
 function parseOptionalMapCoords(formData: FormData): {
   mapLat: number | null;
@@ -165,6 +176,7 @@ export async function saveProductFull(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
+  const listPrice = parseOptionalListPrice(formData);
   const imageRaw = String(formData.get("image") ?? "").trim();
   const sizeLabelRaw = String(formData.get("sizeLabel") ?? "").trim();
   const sizeLabel = sizeLabelRaw.length > 0 ? sizeLabelRaw : null;
@@ -185,7 +197,7 @@ export async function saveProductFull(formData: FormData) {
 
   await prisma.product.update({
     where: { id: productId },
-    data: { name, sku, price: priceInt, image, sizeLabel, isActive },
+    data: { name, sku, price: priceInt, listPrice, image, sizeLabel, isActive },
   });
 
   const sources = await prisma.source.findMany({ where: { isActive: true } });

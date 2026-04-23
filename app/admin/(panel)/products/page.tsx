@@ -59,6 +59,12 @@ export default async function AdminProductsPage() {
                 <input id="new-price" name="price" type="number" min={0} placeholder="3499" required />
               </div>
               <div className="lg:col-span-2">
+                <label className="admin-field-label" htmlFor="new-listPrice" title="Показывается зачёркнутой, если больше «Цена»">
+                  Старая цена, ₽
+                </label>
+                <input id="new-listPrice" name="listPrice" type="number" min={0} placeholder="—" />
+              </div>
+              <div className="lg:col-span-2">
                 <label className="admin-field-label" htmlFor="new-sizeLabel">
                   Размер (чекаут)
                 </label>
@@ -169,6 +175,19 @@ export default async function AdminProductsPage() {
                           Цена, ₽
                         </label>
                         <input id={`price-${p.id}`} name="price" type="number" min={0} defaultValue={p.price} required />
+                      </div>
+                      <div className="lg:col-span-2">
+                        <label className="admin-field-label" htmlFor={`listPrice-${p.id}`}>
+                          Старая цена, ₽
+                        </label>
+                        <input
+                          id={`listPrice-${p.id}`}
+                          name="listPrice"
+                          type="number"
+                          min={0}
+                          defaultValue={p.listPrice ?? ""}
+                          placeholder="—"
+                        />
                       </div>
                       <div className="lg:col-span-2">
                         <label className="admin-field-label" htmlFor={`sizeLabel-${p.id}`}>
