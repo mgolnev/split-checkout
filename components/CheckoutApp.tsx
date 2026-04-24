@@ -24,6 +24,7 @@ import {
 } from "@/lib/cart-method-summaries";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { formatHoldNoticeForPart } from "@/lib/hold-display";
+import { parseCheckoutInformer } from "@/lib/parse-checkout-informer";
 import { MapStorePin, type MapStorePinSurface } from "@/components/MapStorePin";
 import { CheckoutBootstrapSkeleton } from "@/components/CartLoadingSkeleton";
 import { YandexCheckoutMap } from "@/components/YandexCheckoutMap";
@@ -442,27 +443,6 @@ function splitCourierDateLabel(label: string): { primary: string; secondary: str
     .trim()
     .toLowerCase();
   return { primary, secondary: secondary || "дата" };
-}
-
-function parseCheckoutInformer(raw: string): { title: string; body: string } {
-  const text = raw.trim();
-  if (!text) return { title: "", body: "" };
-  if (text.includes("\n")) {
-    const [title, ...rest] = text.split("\n");
-    return { title: title.trim(), body: rest.join(" ").trim() };
-  }
-  if (text.includes("::")) {
-    const [title, ...rest] = text.split("::");
-    return { title: title.trim(), body: rest.join("::").trim() };
-  }
-  const sentenceSplit = text.match(/^(.+?[.!?])\s+(.+)$/);
-  if (sentenceSplit) {
-    return {
-      title: sentenceSplit[1]!.replace(/[.!?]\s*$/, "").trim(),
-      body: sentenceSplit[2]!.trim(),
-    };
-  }
-  return { title: text, body: "" };
 }
 
 /** Ближайшие 10 календарных дней в формате `18 сб` (слово «Завтра» только в заголовке карточки, не в пилюле). */
@@ -5240,6 +5220,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
     const orderBonusUsed = bonusOn ? checkoutBonusUi.maxBonusToApply : 0;
     const payload = {
+      orderedAtIso: new Date().toISOString(),
+      orderNumber: `GJ-${Date.now().toString(36).toUpperCase()}`,
       parts: includedParts
         .map((p) => ({
           ...p,
