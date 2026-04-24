@@ -5935,14 +5935,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
         <section>
           <div className="cu-checkout-block space-y-3">
-          {(recipient || promoApplied || bonusOn) ? (
             <div>
               <p className="cu-page-title text-neutral-900">{checkoutCopyResolved.promoBonusTitle}</p>
               <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
                 <p>{recipient ? checkoutBonusUi.disclaimer : checkoutCopyResolved.promoBonusBody}</p>
               </div>
             </div>
-          ) : null}
           <div className="cu-inline-field-shell">
             <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
               <input
