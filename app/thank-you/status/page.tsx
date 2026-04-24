@@ -182,7 +182,9 @@ function ShipmentCard({
           type="button"
           disabled={!canCancel}
           onClick={onCancel}
-          className={`inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+          className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+            status === "paid_online" ? "w-full" : "flex-1"
+          } ${
             canCancel
               ? "border-neutral-200 bg-white text-neutral-800 hover:bg-neutral-50"
               : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
@@ -190,18 +192,20 @@ function ShipmentCard({
         >
           {status === "cancelled" ? "Отменён" : "Отменить"}
         </button>
-        <button
-          type="button"
-          disabled={!canPrepay}
-          onClick={onPayNow}
-          className={`inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
-            canPrepay
-              ? "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800"
-              : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-          }`}
-        >
-          {status === "paid_online" ? "Оплачено" : "Оплатить сразу"}
-        </button>
+        {status !== "paid_online" ? (
+          <button
+            type="button"
+            disabled={!canPrepay}
+            onClick={onPayNow}
+            className={`inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+              canPrepay
+                ? "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800"
+                : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+            }`}
+          >
+            Оплатить сразу
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -293,7 +297,9 @@ export default function OrderStatusPage() {
               <p className="text-sm font-medium text-neutral-500">{multi ? `${data.parts.length} отправления` : "1 отправление"}</p>
               {data.orderNumber ? <p className="mt-1 text-sm text-neutral-700">Заказ {data.orderNumber}</p> : null}
             </div>
-            <p className="text-lg font-semibold text-neutral-900">{fmt(data.total)}</p>
+            {data.total > 0 ? (
+              <p className="text-lg font-semibold text-neutral-900">{fmt(data.total)}</p>
+            ) : null}
           </div>
         </section>
 
@@ -311,26 +317,30 @@ export default function OrderStatusPage() {
           ))}
         </section>
 
-        <section className="rounded-2xl border border-neutral-100 bg-white px-4 py-4">
-          <div className="space-y-2">
-            {orderPromoDiscount > 0 ? (
-              <div className="flex justify-between gap-3 text-sm">
-                <span className="text-neutral-500">Скидка</span>
-                <span className="tabular-nums text-red-600">− {fmt(orderPromoDiscount)}</span>
-              </div>
-            ) : null}
-            {orderBonusUsed > 0 ? (
-              <div className="flex justify-between gap-3 text-sm">
-                <span className="text-neutral-500">Бонусы</span>
-                <span className="tabular-nums text-red-600">− {fmt(orderBonusUsed)}</span>
-              </div>
-            ) : null}
-            <div className="flex justify-between gap-3 text-base font-semibold text-neutral-900">
-              <span>Итого по заказу</span>
-              <span>{fmt(data.total)}</span>
+        {orderPromoDiscount > 0 || orderBonusUsed > 0 || data.total > 0 ? (
+          <section className="rounded-2xl border border-neutral-100 bg-white px-4 py-4">
+            <div className="space-y-2">
+              {orderPromoDiscount > 0 ? (
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="text-neutral-500">Скидка</span>
+                  <span className="tabular-nums text-red-600">− {fmt(orderPromoDiscount)}</span>
+                </div>
+              ) : null}
+              {orderBonusUsed > 0 ? (
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="text-neutral-500">Бонусы</span>
+                  <span className="tabular-nums text-red-600">− {fmt(orderBonusUsed)}</span>
+                </div>
+              ) : null}
+              {data.total > 0 ? (
+                <div className="flex justify-between gap-3 text-base font-semibold text-neutral-900">
+                  <span>Итого по заказу</span>
+                  <span>{fmt(data.total)}</span>
+                </div>
+              ) : null}
             </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
       </div>
     </CheckoutShell>
   );

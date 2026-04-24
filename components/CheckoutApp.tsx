@@ -1561,10 +1561,10 @@ function PickupStoreSelector({
         {!showPreview ? (
           <div className="shrink-0 px-4 pb-3">
             <div className="flex items-center gap-2">
-              <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 focus-within:border-neutral-400">
+              <label className="cu-search-field">
                 <span className="sr-only">Поиск по магазинам</span>
                 <svg
-                  className="h-5 w-5 shrink-0 text-neutral-700"
+                  className="h-5 w-5 shrink-0 text-neutral-900"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1590,7 +1590,6 @@ function PickupStoreSelector({
                   }}
                   placeholder="Поиск по магазинам"
                   autoComplete="off"
-                  className="min-w-0 flex-1 bg-transparent text-base outline-none"
                 />
               </label>
               {searchActive || storeSearch.trim() ? (
@@ -1601,7 +1600,7 @@ function PickupStoreSelector({
                     setSearchActive(false);
                     setSheetMode("collapsed");
                   }}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl leading-none text-neutral-950 shadow-sm"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl leading-none text-neutral-950"
                   aria-label="Свернуть поиск"
                 >
                   ×
@@ -2465,10 +2464,10 @@ function PvzPointSelector({
         {!showPreview ? (
           <div className="shrink-0 px-4 pb-4">
             <div className="flex items-center gap-2">
-              <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 focus-within:border-neutral-400">
+              <label className="cu-search-field">
                 <span className="sr-only">Поиск ПВЗ</span>
                 <svg
-                  className="h-5 w-5 shrink-0 text-neutral-700"
+                  className="h-5 w-5 shrink-0 text-neutral-900"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -2494,7 +2493,6 @@ function PvzPointSelector({
                   }}
                   placeholder="Поиск по ПВЗ"
                   autoComplete="off"
-                  className="min-w-0 flex-1 bg-transparent text-base outline-none"
                 />
               </label>
               {searchActive || pvzSearch.trim() ? (
@@ -2505,7 +2503,7 @@ function PvzPointSelector({
                     setSearchActive(false);
                     setSheetMode("collapsed");
                   }}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl leading-none text-neutral-950 shadow-sm"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-2xl leading-none text-neutral-950"
                   aria-label="Свернуть поиск"
                 >
                   ×
@@ -2894,7 +2892,7 @@ function CourierAddressModal({
                 spellCheck={false}
                 data-1p-ignore
                 data-lpignore="true"
-                className="min-h-[2.75rem] w-full border-0 border-b border-neutral-200 bg-transparent py-2 text-base text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none focus:ring-0"
+                className="cu-input-surface min-h-[3rem]"
                 placeholder="Укажите адрес доставки"
                 value={value}
                 onChange={(e) => {
@@ -5810,7 +5808,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 <p className="cu-muted">Введите номер телефона, чтобы оформить заказ и списывать бонусы</p>
                 <input
                   id="checkout-recipient-phone"
-                  className="mt-2 w-full rounded-lg bg-white/80 px-3 py-3 text-base placeholder:text-neutral-400 shadow-inner"
+                  className="cu-input-surface mt-2"
                   placeholder="+7 (___) ___-__-__"
                   inputMode="tel"
                   autoComplete="tel"
@@ -5945,15 +5943,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               </div>
             </div>
           ) : null}
-          <div className="flex w-full items-stretch gap-2 rounded-xl bg-neutral-100 p-1.5 pl-3">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <div className="cu-inline-field-shell">
+            <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
               <input
                 type="text"
                 name="promo"
                 autoComplete="off"
                 enterKeyHint="done"
                 aria-label="Промокод"
-                className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2 text-base uppercase tracking-wide text-neutral-900 outline-none placeholder:text-neutral-500"
+                className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base text-neutral-900 outline-none ring-0"
                 placeholder="Промокод"
                 value={promo}
                 onChange={(e) => {
@@ -5986,7 +5984,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             {promo.trim().length > 0 && !promoApplied ? (
               <button
                 type="button"
-                className="shrink-0 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-800 shadow-sm"
+                className="shrink-0 rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-800"
                 onClick={handlePromo}
                 disabled={bonusOn}
               >
@@ -6113,7 +6111,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               return (
                 <>
                   <span>{label}</span>
-                  <span className="tabular-nums">{price}</span>
+                  {payFinal > 0 ? <span className="tabular-nums">{price}</span> : null}
                 </>
               );
             })()}
@@ -6219,7 +6217,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </div>
             <div className="px-5 pb-5 pt-3">
               <input
-                className="w-full rounded-lg border border-neutral-200 px-3 py-3 text-base"
+                className="cu-input-surface"
                 placeholder="+7 (___) ___-__-__"
                 inputMode="tel"
                 autoComplete="tel"

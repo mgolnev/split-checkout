@@ -190,8 +190,10 @@ export default function ThankYouPage() {
                 Номер заказа: <span className="tabular-nums">{orderNumber}</span>
               </p>
             ) : null}
-            <p className="cu-text-headline mt-6 tabular-nums text-neutral-900">{fmt(data.total)}</p>
-            <p className="cu-muted mt-1 text-sm">{paymentLine}</p>
+            {data.total > 0 ? (
+              <p className="cu-text-headline mt-6 tabular-nums text-neutral-900">{fmt(data.total)}</p>
+            ) : null}
+            <p className={`cu-muted text-sm ${data.total > 0 ? "mt-1" : "mt-6"}`}>{paymentLine}</p>
           </div>
 
           <div className="mt-6 border-t border-neutral-100 pt-4">

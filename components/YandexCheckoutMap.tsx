@@ -2,7 +2,7 @@
 
 import type { MapEventUpdateHandler } from "@yandex/ymaps3-types";
 import { createRoot, type Root } from "react-dom/client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { loadYandexMapsScript } from "@/lib/yandex-maps-script";
 import { MapStorePin, MAP_STORE_PIN_ANCHOR_OFFSET_X_PX, type MapStorePinProps } from "@/components/MapStorePin";
 
@@ -101,6 +101,75 @@ function initialLocationForMarkers(
  * Подложка Яндекс.Карт + кастомные пины {@link MapStorePin} через `YMapMarker`.
  */
 const DEFAULT_FOCUS_EXTRA_BOTTOM_PX = 40;
+
+const MAP_ZOOM_MIN = 2;
+const MAP_ZOOM_MAX = 19;
+
+function readMapCenterForZoom(
+  map: InstanceType<YMapModule["YMap"]>,
+  focus: { lng: number; lat: number } | null,
+): [number, number] {
+  const loc = (map as unknown as { location?: { center?: unknown } }).location;
+  const c = loc?.center;
+  if (Array.isArray(c) && c.length >= 2) {
+    const lng = Number(c[0]);
+    const lat = Number(c[1]);
+    if (Number.isFinite(lng) && Number.isFinite(lat)) return [lng, lat];
+  }
+  if (focus && Number.isFinite(focus.lng) && Number.isFinite(focus.lat)) {
+    return [focus.lng, focus.lat];
+  }
+  return [37.617644, 55.755819];
+}
+
+function MapZoomControls({
+  mapRef,
+  focus,
+}: {
+  mapRef: RefObject<InstanceType<YMapModule["YMap"]> | null>;
+  focus: { lng: number; lat: number } | null;
+}) {
+  const nudgeZoom = useCallback(
+    (delta: number) => {
+      const map = mapRef.current;
+      if (!map) return;
+      const z0 = map.zoom;
+      if (!Number.isFinite(z0)) return;
+      const z1 = Math.min(MAP_ZOOM_MAX, Math.max(MAP_ZOOM_MIN, z0 + delta));
+      if (z1 === z0) return;
+      const center = readMapCenterForZoom(map, focus);
+      map.setLocation({ center, zoom: z1, duration: 160 });
+    },
+    [focus, mapRef],
+  );
+
+  return (
+    <div className="pointer-events-auto absolute right-4 top-1/2 z-[2] flex -translate-y-1/2 flex-col gap-1.5 rounded-lg border border-neutral-200 bg-white p-1.5">
+      <button
+        type="button"
+        className="flex h-9 w-9 items-center justify-center rounded-md text-lg font-medium leading-none text-neutral-900 transition hover:bg-neutral-50 active:bg-neutral-100 touch-manipulation"
+        aria-label="Приблизить карту"
+        onClick={(e) => {
+          e.stopPropagation();
+          nudgeZoom(1);
+        }}
+      >
+        +
+      </button>
+      <button
+        type="button"
+        className="flex h-9 w-9 items-center justify-center rounded-md text-lg font-medium leading-none text-neutral-900 transition hover:bg-neutral-50 active:bg-neutral-100 touch-manipulation"
+        aria-label="Отдалить карту"
+        onClick={(e) => {
+          e.stopPropagation();
+          nudgeZoom(-1);
+        }}
+      >
+        −
+      </button>
+    </div>
+  );
+}
 
 export function YandexCheckoutMap({
   markers,
@@ -284,11 +353,17 @@ export function YandexCheckoutMap({
 
   return (
     <div
-      ref={containerRef}
       className={`absolute inset-0 z-0 ${className}`}
       role="region"
       aria-label="Карта с точками выбора"
-    />
+    >
+      <div ref={containerRef} className="absolute inset-0 z-0" />
+      {mapReady ? (
+        <div className="pointer-events-none absolute inset-0 z-[2]">
+          <MapZoomControls mapRef={mapRef} focus={focus} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
