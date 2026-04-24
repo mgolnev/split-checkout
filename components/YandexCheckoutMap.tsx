@@ -6,9 +6,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { loadYandexMapsScript } from "@/lib/yandex-maps-script";
 import { MapStorePin, MAP_STORE_PIN_ANCHOR_OFFSET_X_PX, type MapStorePinProps } from "@/components/MapStorePin";
 
-/** Выше — плашки; ниже — только компактный круг (гистерезис против дрожания на границе). */
-const PIN_LABEL_ZOOM_EXPAND = 12.3;
-const PIN_LABEL_ZOOM_COLLAPSE = 11.2;
+/**
+ * Плашки при zoom ≥ EXPAND; при отдалении скрываются только ниже COLLAPSE (узкий гистерезис).
+ * Раньше разрыв ~1.1 уровня давал эффект «при приближении плашки позже, чем при отдалении».
+ */
+const PIN_LABEL_ZOOM_EXPAND = 10.5;
+const PIN_LABEL_ZOOM_COLLAPSE = 10.2;
 
 export type YandexCheckoutMapMarker = {
   id: string;
