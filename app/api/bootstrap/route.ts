@@ -71,6 +71,12 @@ export async function GET() {
   const disclaimerRows = await prisma.disclaimerTemplate.findMany({
     select: { code: true, text: true, isActive: true },
   });
+  const clientProfile =
+    (await prisma.clientProfileSettings.findUnique({ where: { id: 1 } })) ?? {
+      firstName: "Елизавета",
+      lastName: "Петрова-Водкина",
+      bonusBalanceRub: 1000,
+    };
 
   const disclaimerMap = Object.fromEntries(
     disclaimerRows.map((r) => [r.code, r.isActive ? r.text : null]),
@@ -213,6 +219,7 @@ export async function GET() {
     pickupSummaryByStore,
     checkoutCopy,
     checkoutSelectorCopy,
+    clientProfile,
   });
   } catch (e) {
     const { code, hint: hintFromDiag } = prismaDiag(e);

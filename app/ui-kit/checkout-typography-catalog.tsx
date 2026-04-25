@@ -121,7 +121,7 @@ const RAW_ENTRIES: Entry[] = [
   {
     sortPx: 18,
     title: "Заголовок шита / модалки",
-    classHint: ".cu-sheet-title — text-lg font-semibold leading-snug text-neutral-900",
+    classHint: ".cu-sheet-title — text-lg font-semibold leading-snug tracking-tight text-neutral-900",
     spec: {
       size: "18px (text-lg)",
       color: "neutral-900",

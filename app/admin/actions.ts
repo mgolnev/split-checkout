@@ -669,3 +669,21 @@ export async function deleteOverride(formData: FormData) {
   await prisma.scenarioOverride.delete({ where: { id } });
   revalidatePath("/admin/overrides");
 }
+
+export async function upsertClientProfileSettings(formData: FormData) {
+  await gate();
+  const firstName = String(formData.get("firstName") ?? "").trim();
+  const lastName = String(formData.get("lastName") ?? "").trim();
+  const bonusBalanceRub = Math.max(0, toInt(formData.get("bonusBalanceRub"), 0));
+  if (!firstName || !lastName) return;
+
+  await prisma.clientProfileSettings.upsert({
+    where: { id: 1 },
+    create: { id: 1, firstName, lastName, bonusBalanceRub },
+    update: { firstName, lastName, bonusBalanceRub },
+  });
+
+  revalidatePath("/admin/clients");
+  revalidatePath("/checkout");
+  revalidatePath("/cart");
+}

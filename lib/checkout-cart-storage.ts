@@ -7,6 +7,11 @@ export type StoredCartLine = CartLine & { size?: string; selected?: boolean };
 export type CheckoutCartSnapshot = {
   cityId: string;
   lines: StoredCartLine[];
+  /** Состояние промокода, чтобы переносить из корзины в checkout. */
+  promoCode?: string;
+  promoApplied?: boolean;
+  /** Признак, что в корзине включили списание бонусов. */
+  bonusOn?: boolean;
 };
 
 export function loadCheckoutCart(): CheckoutCartSnapshot | null {

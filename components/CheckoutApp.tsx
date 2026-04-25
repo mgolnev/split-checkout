@@ -42,7 +42,15 @@ import type {
   ScenarioResult,
 } from "@/lib/types";
 
-const DEMO_RECIPIENT_FULL_NAME = "Петрова-Водкина Елизавета Валерьяновна";
+const DEFAULT_DEMO_FIRST_NAME = "Елизавета";
+const DEFAULT_DEMO_LAST_NAME = "Петрова-Водкина";
+
+function toRecipientName(raw: string): string {
+  const parts = raw.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0]!;
+  return `${parts[0]} ${parts[1]}`;
+}
 
 function phoneHasMinDigits(value: string, min = 10): boolean {
   const digits = value.replace(/\D/g, "");
@@ -93,6 +101,12 @@ type Bootstrap = {
   checkoutCopy?: CheckoutCopy;
   /** Тексты модалок выбора магазина/ПВЗ из DisclaimerTemplate */
   checkoutSelectorCopy?: SelectorCopy;
+  /** Настройки демо-клиента из админки */
+  clientProfile?: {
+    firstName: string;
+    lastName: string;
+    bonusBalanceRub: number;
+  };
 };
 
 type MethodSummary = Bootstrap["methodSummaryByCity"][string]["courier"];
@@ -108,6 +122,12 @@ type PvzPointOption = Bootstrap["pvzByCity"][string][number];
 
 function applyCopyTemplate(text: string, values: Record<string, string | number>): string {
   return text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+}
+
+function demoRecipientFullNameFromBoot(boot: Bootstrap | null): string {
+  const first = boot?.clientProfile?.firstName?.trim() || DEFAULT_DEMO_FIRST_NAME;
+  const last = boot?.clientProfile?.lastName?.trim() || DEFAULT_DEMO_LAST_NAME;
+  return toRecipientName(`${last} ${first}`);
 }
 
 type PartDeliverySchedule = {
@@ -325,6 +345,7 @@ function GjMark({ className = "" }: { className?: string }) {
 type BonusPointsControlProps = {
   bonusOn: boolean;
   switchDisabled: boolean;
+  showSwitch?: boolean;
   labelsMuted: boolean;
   mainText: string;
   subText: string | null;
@@ -336,6 +357,7 @@ type BonusPointsControlProps = {
 function BonusPointsControl({
   bonusOn,
   switchDisabled,
+  showSwitch = true,
   labelsMuted,
   mainText,
   subText,
@@ -353,31 +375,33 @@ function BonusPointsControl({
             <span className="mt-0.5 block text-xs font-normal leading-snug text-neutral-500">{subText}</span>
           ) : null}
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-disabled={switchDisabled}
-          aria-checked={bonusOn}
-          onClick={() => {
-            if (switchDisabled) {
-              onDisabledSwitchInteract();
-              return;
-            }
-            const next = !bonusOn;
-            onToggle(next);
-            onEnabledToggle(next);
-          }}
-          className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
-            switchDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
-          } ${bonusOn && !switchDisabled ? "bg-neutral-900" : "bg-neutral-300"}`}
-        >
-          <span className="sr-only">Списать бонусы с карты GJ</span>
-          <span
-            className={`pointer-events-none block h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
-              bonusOn && !switchDisabled ? "translate-x-5" : "translate-x-0"
-            }`}
-          />
-        </button>
+        {showSwitch ? (
+          <button
+            type="button"
+            role="switch"
+            aria-disabled={switchDisabled}
+            aria-checked={bonusOn}
+            onClick={() => {
+              if (switchDisabled) {
+                onDisabledSwitchInteract();
+                return;
+              }
+              const next = !bonusOn;
+              onToggle(next);
+              onEnabledToggle(next);
+            }}
+            className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
+              switchDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+            } ${bonusOn && !switchDisabled ? "bg-neutral-900" : "bg-neutral-300"}`}
+          >
+            <span className="sr-only">Списать бонусы с карты GJ</span>
+            <span
+              className={`pointer-events-none block h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+                bonusOn && !switchDisabled ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -457,7 +481,7 @@ function buildCourierDateLabels(reference: Date = new Date()): string[] {
 /** Демо: лимит списания с карты лояльности за один заказ */
 const GJ_LOYALTY_MAX_SPEND_RUB = 1000;
 /** Демо: доступный бонусный баланс на карте (для UX «нет бонусов» выставьте 0) */
-const GJ_LOYALTY_WALLET_BALANCE_RUB = 1000;
+const DEFAULT_GJ_LOYALTY_WALLET_BALANCE_RUB = 1000;
 /** Минимальная сумма товаров без скидки для списания бонусов; null — правило отключено */
 const GJ_BONUS_MIN_ELIGIBLE_MERCH_RUB: number | null = null;
 
@@ -1656,7 +1680,7 @@ function PickupStoreSelector({
                   <button
                     type="button"
                     onClick={() => onSelect(sheetStore.id)}
-                    className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                    className="w-full rounded-lg bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
                   >
                     Выбрать
                   </button>
@@ -1701,7 +1725,7 @@ function PickupStoreSelector({
                             <button
                               type="button"
                               onClick={() => onSelect(store.id)}
-                              className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
+                              className="shrink-0 rounded-lg bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
                               aria-pressed={selected}
                             >
                               Выбрать
@@ -1762,7 +1786,7 @@ function PickupStoreSelector({
   );
 }
 
-/** Круглая кнопка: × (закрыть) или стрелка «назад» — белый фон, серая обводка, тень. */
+/** Круглая кнопка: × (закрыть) или стрелка «назад» — белый фон, серая обводка, без тени. */
 function CheckoutCloseCrossButton({
   ariaLabel,
   onClick,
@@ -1783,7 +1807,7 @@ function CheckoutCloseCrossButton({
       onClick={onClick}
       aria-label={ariaLabel}
       style={style}
-      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-950 shadow-[0_6px_18px_rgba(0,0,0,0.12)] backdrop-blur-md ${
+      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-950 ${
         variant === "close" ? "text-xl leading-none" : ""
       } ${className}`}
     >
@@ -1811,7 +1835,7 @@ function CheckoutSheetStickyHeader({
     <div
       className={
         variant === "floating"
-          ? "pointer-events-auto absolute left-0 right-0 top-0 z-40 border-b border-neutral-100/80 bg-white/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-sm backdrop-blur-md sm:px-5 sm:pb-4"
+          ? "pointer-events-auto absolute left-0 right-0 top-0 z-40 border-b border-neutral-100/80 bg-white/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-md sm:px-5 sm:pb-4"
           : "sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5"
       }
     >
@@ -2536,7 +2560,7 @@ function PvzPointSelector({
                 <button
                   type="button"
                   onClick={() => onSelect(sheetPoint.id)}
-                  className="w-full rounded-xl bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                  className="w-full rounded-lg bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
                 >
                   Выбрать
                 </button>
@@ -2569,7 +2593,7 @@ function PvzPointSelector({
                           <button
                             type="button"
                             onClick={() => onSelect(point.id)}
-                            className="shrink-0 rounded-xl bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
+                            className="shrink-0 rounded-lg bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
                             aria-pressed={selected}
                           >
                             Выбрать
@@ -2856,7 +2880,7 @@ function CourierAddressModal({
       >
         <div className="flex min-h-12 shrink-0 items-center border-b border-neutral-100 px-2 py-2 sm:px-3">
           <div className="flex min-h-12 w-12 shrink-0 items-center justify-start" aria-hidden />
-          <h2 className="cu-section-title min-w-0 flex-1 text-center">Куда доставить</h2>
+          <h2 className="cu-sheet-title min-w-0 flex-1 text-center">Куда доставить</h2>
           <div className="flex shrink-0 items-center justify-end">
             <CheckoutCloseCrossButton ariaLabel="Закрыть" onClick={onClose} />
           </div>
@@ -2935,7 +2959,7 @@ function CourierAddressModal({
               <button
                 type="button"
                 onClick={() => onSave(value.trim(), target)}
-                className="w-full rounded-2xl bg-neutral-900 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2"
+                className="w-full rounded-lg bg-black py-4 text-sm font-semibold text-white transition hover:bg-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2"
               >
                 Выбрать адрес
               </button>
@@ -2953,7 +2977,7 @@ function CourierAddressModal({
             <button
               type="button"
               onClick={() => onSave(value.trim(), target)}
-              className="w-full rounded-2xl bg-neutral-900 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2"
+              className="w-full rounded-lg bg-black py-4 text-sm font-semibold text-white transition hover:bg-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2"
             >
               Выбрать адрес
             </button>
@@ -3041,7 +3065,7 @@ function UnresolvedItemsBlock({
           type="button"
           onClick={onChoose}
           disabled={ctaDisabled}
-          className="w-full rounded-2xl bg-black px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
+          className="w-full rounded-lg bg-black py-4 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
         >
           {copy.cta}
         </button>
@@ -3080,7 +3104,7 @@ function SecondarySelectionCard({
         </div>
         {option.methodCode === "pickup" && pickupStore ? (
           <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-neutral-800">{pickupStore.name}</p>
+            <p className="min-w-0 cu-text-body-medium text-neutral-800">{pickupStore.name}</p>
             <button
               type="button"
               onClick={onEdit}
@@ -3092,7 +3116,7 @@ function SecondarySelectionCard({
         ) : null}
         {option.methodCode === "courier" ? (
           <div className="mt-2 flex items-start justify-between gap-3">
-            <p className="min-w-0 flex-1 break-words text-sm leading-snug text-neutral-800">
+            <p className="min-w-0 flex-1 break-words cu-text-body-medium text-neutral-800">
               {courierAddress?.trim() ? courierAddress : "Укажите адрес доставки"}
             </p>
             <button
@@ -3107,8 +3131,8 @@ function SecondarySelectionCard({
         {option.methodCode === "pvz" && pvzPoint ? (
           <div className="mt-2 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-neutral-800">{pvzPoint.name}</p>
-              <p className="mt-0.5 truncate text-xs text-neutral-500">{pvzPoint.address}</p>
+              <p className="cu-text-body-medium text-neutral-800">{pvzPoint.name}</p>
+              <p className="mt-0.5 truncate cu-text-caption">{pvzPoint.address}</p>
             </div>
             <button
               type="button"
@@ -3507,7 +3531,7 @@ function SplitSelectionModal({
               )
             }
             disabled={confirmDisabled}
-            className="w-full rounded-2xl bg-black px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
+            className="w-full rounded-lg bg-black py-4 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
           >
             {saving ? "Подтверждаем…" : "Выбрать этот вариант"}
           </button>
@@ -3972,8 +3996,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [recipient, setRecipient] = useState<CheckoutRecipientPayload | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneGateOpen, setPhoneGateOpen] = useState(false);
+  const [phoneGateStep, setPhoneGateStep] = useState<"phone" | "code">("phone");
+  const [smsCodeDraft, setSmsCodeDraft] = useState("");
   /** Откуда открыли шит телефона: оформление заказа — после ввода уходим на thank-you; бонусы — только сохраняем номер. */
   const [phoneGateReason, setPhoneGateReason] = useState<"submit" | "bonus" | null>(null);
+  const phoneGatePhoneInputRef = useRef<HTMLInputElement | null>(null);
+  const phoneGateCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [courierAddress, setCourierAddress] = useState("");
   const [courierAddressModalTarget, setCourierAddressModalTarget] = useState<CourierAddressModalTarget | null>(null);
   const latestScenarioRequestRef = useRef(0);
@@ -4004,8 +4032,29 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const closePhoneGate = useCallback(() => {
     setPhoneGateOpen(false);
+    setPhoneGateStep("phone");
+    setSmsCodeDraft("");
     setPhoneGateReason(null);
   }, []);
+
+  const openPhoneGate = useCallback((reason: "submit" | "bonus") => {
+    setPhoneGateReason(reason);
+    setPhoneGateStep("phone");
+    setSmsCodeDraft("");
+    setPhoneGateOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!phoneGateOpen) return;
+    const id = window.setTimeout(() => {
+      if (phoneGateStep === "phone") {
+        phoneGatePhoneInputRef.current?.focus();
+      } else {
+        phoneGateCodeInputRef.current?.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [phoneGateOpen, phoneGateStep]);
 
   const checkoutSheetOpen =
     pickupSelectorOpen ||
@@ -4118,12 +4167,37 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     subtotal: number;
   } | null>(null);
 
+  /** Двусторонняя синхронизация promo/bonus между корзиной и checkout через общий snapshot. */
+  useEffect(() => {
+    if (!cityId) return;
+    // Не перезаписываем snapshot значениями по умолчанию до первой загрузки cartDetail.
+    if (!cartDetail) return;
+    const snap = loadCheckoutCart();
+    if (!snap || snap.cityId !== cityId) return;
+    saveCheckoutCart({
+      cityId,
+      lines: snap.lines,
+      promoCode: promo.trim(),
+      promoApplied,
+      bonusOn,
+    });
+  }, [cityId, cartDetail, promo, promoApplied, bonusOn]);
+
   useEffect(() => {
     if (!boot || !cityId) return;
     let cancelled = false;
 
     async function loadCart() {
       const snap = loadCheckoutCart();
+      if (snap?.cityId === cityId) {
+        setPromo(snap.promoCode ?? "");
+        setPromoApplied(snap.promoApplied === true);
+        setBonusOn(snap.bonusOn === true);
+      } else {
+        setPromo("");
+        setPromoApplied(false);
+        setBonusOn(false);
+      }
       /** Все позиции с количеством > 0 — чекбокс только влияет на заказ, не на состав хранилища */
       const fromStorage =
         snap?.cityId === cityId && snap.lines.length > 0
@@ -4168,7 +4242,13 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 if (q !== undefined) return { ...row, quantity: q };
                 return row.quantity > 0 ? { ...row, quantity: 0 } : row;
               });
-              saveCheckoutCart({ cityId, lines: cappedLines });
+              saveCheckoutCart({
+                cityId,
+                lines: cappedLines,
+                promoCode: snapNow.promoCode ?? "",
+                promoApplied: snapNow.promoApplied === true,
+                bonusOn: snapNow.bonusOn === true,
+              });
             }
             const selectedByProduct = new Map(
               (snapNow?.cityId === cityId && snapNow.lines.length ? snapNow.lines : []).map((l) => [
@@ -4683,6 +4763,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     if (!recipient) setBonusOn(false);
   }, [recipient]);
 
+  /** Если бонусы включили в корзине, восстанавливаем флаг после загрузки получателя в checkout. */
+  useEffect(() => {
+    if (!recipient || bonusOn || !cityId) return;
+    const snap = loadCheckoutCart();
+    if (snap?.cityId === cityId && snap.bonusOn === true && snap.promoApplied !== true) {
+      setBonusOn(true);
+    }
+  }, [recipient, bonusOn, cityId]);
+
   const payOnDeliveryDisclaimerText = useMemo(() => commonDisclaimer("payOnDeliveryOnly"), []);
 
   const scenarioInformersForBanner = useMemo(() => {
@@ -4698,7 +4787,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [payOnDeliveryOnlyEffective]);
 
   const checkoutBonusUi = useMemo(() => {
-    const wallet = GJ_LOYALTY_WALLET_BALANCE_RUB;
+    const wallet = Math.max(
+      0,
+      Math.floor(boot?.clientProfile?.bonusBalanceRub ?? DEFAULT_GJ_LOYALTY_WALLET_BALANCE_RUB),
+    );
     const cap = GJ_LOYALTY_MAX_SPEND_RUB;
     const promoBonusFallbackBody =
       boot?.checkoutCopy?.promoBonusBody ?? fullCheckoutCopy().promoBonusBody;
@@ -4741,14 +4833,21 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
     const labelsMuted = switchDisabled;
 
+    const potentialEarnRub = Math.max(0, Math.floor(bonusEligibleMerchRub * 0.2));
+
     let mainText: string;
     let subText: string | null = null;
     if (promoApplied) {
       mainText = "Списание бонусов недоступно";
       subText = "Уже применён промокод";
     } else if (wallet <= 0 && merchSaleRub > 0) {
-      mainText = "Бонусов на карте пока нет";
-      subText = null;
+      if (bonusEligibleMerchRub > 0) {
+        mainText = "На карте нет бонусов";
+        subText = `За этот заказ начислим до ${fmt(potentialEarnRub)}`;
+      } else {
+        mainText = "Начисление по этому заказу недоступно";
+        subText = "В корзине только товары со скидкой";
+      }
     } else if (belowMinEligible && minRule != null) {
       mainText = "Бонусы пока нельзя списать";
       subText = `Минимум ${fmt(minRule)} по товарам без скидки`;
@@ -4769,7 +4868,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     let disclaimer: string;
     if (promoApplied) {
       disclaimer = promoBonusFallbackBody;
-    } else if (wallet <= 0 || belowMinEligible) {
+    } else if (wallet <= 0) {
+      disclaimer =
+        bonusEligibleMerchRub > 0
+          ? "Начисляем 20% на товары без скидки."
+          : "Начисление недоступно: в корзине только товары со скидкой.";
+    } else if (belowMinEligible) {
       disclaimer = promoBonusFallbackBody;
     } else if (bonusEligibleMerchRub <= 0 && merchSaleRub > 0) {
       disclaimer = "Бонусы на товары со скидкой не списываются.";
@@ -4786,20 +4890,24 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       maxBonusToApply,
       availability,
       unavailableReason,
+      zeroBalance: wallet <= 0,
       switchDisabled,
       labelsMuted,
       mainText,
       subText,
       disclaimer,
     };
-  }, [boot?.checkoutCopy?.promoBonusBody, includedParts, cartDetail?.lines, promoApplied]);
+  }, [boot?.checkoutCopy?.promoBonusBody, boot?.clientProfile?.bonusBalanceRub, includedParts, cartDetail?.lines, promoApplied]);
 
   useEffect(() => {
     if (!bonusOn) return;
+    if (!cartDetail) {
+      return;
+    }
     if (checkoutBonusUi.switchDisabled || checkoutBonusUi.maxBonusToApply <= 0) {
       setBonusOn(false);
     }
-  }, [bonusOn, checkoutBonusUi.switchDisabled, checkoutBonusUi.maxBonusToApply]);
+  }, [bonusOn, checkoutBonusUi.switchDisabled, checkoutBonusUi.maxBonusToApply, checkoutBonusUi.availability, checkoutBonusUi.unavailableReason, recipient, cartDetail]);
 
   const bonusAnalyticsViewKey = useMemo(
     () =>
@@ -5253,7 +5361,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       courierAddress: courierAddress.trim() ? courierAddress : null,
       paymentMethod,
       recipientPhone: rec.phone,
-      recipientName: rec.fullName,
+      recipientName: toRecipientName(rec.fullName),
     };
     sessionStorage.setItem("thankyou", JSON.stringify(payload));
     router.push("/thank-you");
@@ -5262,8 +5370,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const submit = () => {
     if (!boot || !scenario || !cartDetail || !method) return;
     if (!recipient) {
-      setPhoneGateReason("submit");
-      setPhoneGateOpen(true);
+      openPhoneGate("submit");
       return;
     }
     completeCheckoutSubmit();
@@ -5272,7 +5379,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const buildRecipientPayload = (raw: string): CheckoutRecipientPayload | null => {
     const phone = raw.trim();
     if (!phoneHasMinDigits(phone)) return null;
-    return { phone, fullName: DEMO_RECIPIENT_FULL_NAME };
+    return { phone, fullName: demoRecipientFullNameFromBoot(boot) };
   };
 
   const applyRecipientPayload = (p: CheckoutRecipientPayload) => {
@@ -5281,13 +5388,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setPhoneDraft(p.phone);
   };
 
-  const confirmRecipientInline = () => {
+  const proceedPhoneGateToSms = () => {
     const p = buildRecipientPayload(phoneDraft);
     if (!p) return;
-    applyRecipientPayload(p);
+    setPhoneDraft(p.phone);
+    setPhoneGateStep("code");
   };
 
-  const confirmRecipientFromGate = () => {
+  const confirmRecipientFromSms = () => {
+    if (!/^\d{4}$/.test(smsCodeDraft)) return;
     const p = buildRecipientPayload(phoneDraft);
     if (!p) return;
     const shouldSubmit = phoneGateReason === "submit";
@@ -5423,7 +5532,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       <>
         {method === "pickup" && selectedPickupStore ? (
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-neutral-800">{selectedPickupStore.name}</p>
+            <p className="min-w-0 cu-text-body-medium text-neutral-800">{selectedPickupStore.name}</p>
             <button
               type="button"
               onClick={() => setPickupSelectorOpen(true)}
@@ -5435,7 +5544,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : null}
         {method === "courier" ? (
           <div className="flex items-start justify-between gap-3">
-            <p className="min-w-0 flex-1 break-words text-sm leading-snug text-neutral-800">
+            <p className="min-w-0 flex-1 break-words cu-text-body-medium text-neutral-800">
               {courierAddress.trim() ? courierAddress : "Укажите адрес доставки"}
             </p>
             <button
@@ -5450,8 +5559,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         {method === "pvz" && selectedPvzPoint ? (
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-neutral-800">{selectedPvzPoint.name}</p>
-              <p className="mt-0.5 truncate text-xs text-neutral-500">{selectedPvzPoint.address}</p>
+              <p className="cu-text-body-medium text-neutral-800">{selectedPvzPoint.name}</p>
+              <p className="mt-0.5 truncate cu-text-caption">{selectedPvzPoint.address}</p>
             </div>
             <button
               type="button"
@@ -5812,21 +5921,15 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   placeholder="+7 (___) ___-__-__"
                   inputMode="tel"
                   autoComplete="tel"
+                  readOnly
                   value={phoneDraft}
-                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  onFocus={() => openPhoneGate("submit")}
+                  onClick={() => openPhoneGate("submit")}
                 />
-                <button
-                  type="button"
-                  disabled={!phoneHasMinDigits(phoneDraft)}
-                  onClick={confirmRecipientInline}
-                  className="mt-2 w-full rounded-lg bg-neutral-900 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Получить смс с кодом
-                </button>
               </>
             ) : (
               <div className="space-y-1">
-                <p className="cu-label-primary text-neutral-900">{recipient.fullName}</p>
+                <p className="cu-label-primary text-neutral-900">{toRecipientName(recipient.fullName)}</p>
                 <p className="text-sm text-neutral-600">{recipient.phone}</p>
                 <button
                   type="button"
@@ -5936,7 +6039,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         <section>
           <div className="cu-checkout-block space-y-3">
             <div>
-              <p className="cu-page-title text-neutral-900">{checkoutCopyResolved.promoBonusTitle}</p>
+              <p className="cu-page-title text-neutral-900">Или промокод или бонусы</p>
               <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
                 <p>{recipient ? checkoutBonusUi.disclaimer : checkoutCopyResolved.promoBonusBody}</p>
               </div>
@@ -5995,6 +6098,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <BonusPointsControl
               bonusOn={bonusOn}
               switchDisabled={checkoutBonusUi.switchDisabled}
+              showSwitch={!checkoutBonusUi.zeroBalance}
               labelsMuted={checkoutBonusUi.labelsMuted}
               mainText={checkoutBonusUi.mainText}
               subText={checkoutBonusUi.subText}
@@ -6036,8 +6140,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           ) : (
             <BonusAuthBar
               onOpenPhoneGate={() => {
-                setPhoneGateReason("bonus");
-                setPhoneGateOpen(true);
+                openPhoneGate("bonus");
               }}
             />
           )}
@@ -6198,14 +6301,23 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1 pr-1">
-                  <h3 className="cu-sheet-title">Подтвердите телефон</h3>
-                  <p className="cu-sheet-lead mt-1">
-                    {phoneGateReason === "bonus" ? (
-                      <>Введите номер телефона, пришлём смс-код для бонусов GJ</>
-                    ) : (
-                      <>Введите номер телефона, пришлём смс-код</>
-                    )}
-                  </p>
+                  {phoneGateStep === "phone" ? (
+                    <>
+                      <h3 className="cu-sheet-title">Подтвердите телефон</h3>
+                      <p className="cu-sheet-lead mt-1">
+                        {phoneGateReason === "bonus" ? (
+                          <>Введите номер телефона, пришлём смс-код для бонусов GJ</>
+                        ) : (
+                          <>Введите номер телефона, пришлём смс-код</>
+                        )}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="cu-sheet-title">Введите код из SMS</h3>
+                      <p className="cu-sheet-lead mt-1">Отправили код на {phoneDraft.trim() || "указанный номер"}</p>
+                    </>
+                  )}
                 </div>
                 <CheckoutCloseCrossButton
                   ariaLabel="Закрыть окно телефона"
@@ -6214,22 +6326,51 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               </div>
             </div>
             <div className="px-5 pb-5 pt-3">
-              <input
-                className="cu-input-surface"
-                placeholder="+7 (___) ___-__-__"
-                inputMode="tel"
-                autoComplete="tel"
-                value={phoneDraft}
-                onChange={(e) => setPhoneDraft(e.target.value)}
-              />
-              <button
-                type="button"
-                disabled={!phoneHasMinDigits(phoneDraft)}
-                onClick={confirmRecipientFromGate}
-                className="mt-3 w-full rounded-lg bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
-              >
-                Получить смс с кодом
-              </button>
+              {phoneGateStep === "phone" ? (
+                <>
+                  <input
+                    ref={phoneGatePhoneInputRef}
+                    className="cu-input-surface"
+                    placeholder="+7 (___) ___-__-__"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={!phoneHasMinDigits(phoneDraft)}
+                    onClick={proceedPhoneGateToSms}
+                    className="mt-3 w-full rounded-lg bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    Получить смс с кодом
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    ref={phoneGateCodeInputRef}
+                    className="cu-input-surface text-center tracking-[0.4em] [text-indent:0.35em]"
+                    placeholder="0000"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={4}
+                    value={smsCodeDraft}
+                    onChange={(e) => {
+                      const next = e.target.value.replace(/\D/g, "").slice(0, 4);
+                      setSmsCodeDraft(next);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!/^\d{4}$/.test(smsCodeDraft)}
+                    onClick={confirmRecipientFromSms}
+                    className="mt-3 w-full rounded-lg bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    Подтвердить
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

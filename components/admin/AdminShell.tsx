@@ -31,6 +31,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/admin/rules", label: "Логистические правила", description: "Сроки, цены, шаги" },
       { href: "/admin/disclaimers", label: "Дисклеймеры", description: "Тексты в checkout" },
+      { href: "/admin/clients", label: "Клиенты", description: "Имя и бонусы демо-профиля" },
       { href: "/admin/overrides", label: "Overrides", description: "Принудительный JSON-сценарий" },
     ],
   },

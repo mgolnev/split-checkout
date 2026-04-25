@@ -146,3 +146,13 @@ model DisclaimerTemplate {
   text     String
   isActive Boolean @default(true)
 }
+
+/** Единые клиентские настройки демо-профиля для checkout/cart. */
+model ClientProfileSettings {
+  /** Singleton-строка; всегда используем id=1 через upsert. */
+  id             Int      @id
+  firstName      String   @default("Елизавета")
+  lastName       String   @default("Петрова-Водкина")
+  bonusBalanceRub Int     @default(1000)
+  updatedAt      DateTime @updatedAt
+}

@@ -2,7 +2,13 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  loadCheckoutRecipient,
+  saveCheckoutRecipient,
+  type CheckoutRecipientPayload,
+} from "@/lib/checkout-recipient-storage";
+import { fullCheckoutCopy } from "@/lib/disclaimers";
 import {
   loadCheckoutCart,
   saveCheckoutCart,
@@ -13,6 +19,11 @@ import { fetchWithRetry } from "@/lib/fetch-retry";
 
 type Bootstrap = {
   cities: { id: string; name: string }[];
+  clientProfile?: {
+    firstName: string;
+    lastName: string;
+    bonusBalanceRub: number;
+  };
 };
 
 type ResolvedCartLine = {
@@ -53,6 +64,11 @@ function pluralizeProducts(n: number) {
   return "товаров";
 }
 
+function phoneHasMinDigits(value: string, min = 10): boolean {
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= min;
+}
+
 function mapSnapshotToUi(stored: StoredCartLine[], resolved: ResolvedCartLine[]): UiLine[] {
   const resolvedById = new Map(resolved.map((r) => [r.productId, r]));
   const out: UiLine[] = [];
@@ -77,12 +93,142 @@ function mapSnapshotToUi(stored: StoredCartLine[], resolved: ResolvedCartLine[])
   return out;
 }
 
+const GJ_LOYALTY_MAX_SPEND_RUB = 1000;
+const DEFAULT_GJ_LOYALTY_WALLET_BALANCE_RUB = 1000;
+const GJ_BONUS_MIN_ELIGIBLE_MERCH_RUB: number | null = null;
+const DEFAULT_DEMO_FIRST_NAME = "Елизавета";
+const DEFAULT_DEMO_LAST_NAME = "Петрова-Водкина";
+
+function isCatalogDiscountedLine(line: { price: number; listPrice?: number | null }): boolean {
+  return line.listPrice != null && line.listPrice > line.price;
+}
+
+function sumBonusEligibleMerchFromUiLines(
+  lines: readonly { price: number; quantity: number; listPrice?: number | null; selected?: boolean }[],
+): { merchSaleRub: number; bonusEligibleMerchRub: number; hasDiscounted: boolean } {
+  let merchSaleRub = 0;
+  let bonusEligibleMerchRub = 0;
+  let hasDiscounted = false;
+  for (const l of lines) {
+    if (l.selected === false || l.quantity <= 0) continue;
+    const lineSum = l.price * l.quantity;
+    merchSaleRub += lineSum;
+    if (isCatalogDiscountedLine(l)) hasDiscounted = true;
+    else bonusEligibleMerchRub += lineSum;
+  }
+  return { merchSaleRub, bonusEligibleMerchRub, hasDiscounted };
+}
+
+function GjMark({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center rounded-md bg-neutral-900 font-bold leading-none text-white ${className}`}
+    >
+      GJ
+    </span>
+  );
+}
+
+function BonusAuthBar({ onOpenPhoneGate }: { onOpenPhoneGate: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpenPhoneGate}
+      aria-label="Ввести телефон, чтобы копить и списывать бонусы"
+      className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-neutral-900 transition hover:opacity-90 active:opacity-90"
+    >
+      <GjMark className="h-10 min-w-[2.75rem] px-1 text-xs" />
+      <span className="min-w-0 flex-1 text-sm leading-snug text-neutral-900">
+        Войдите в аккаунт, чтобы копить и списывать бонусы GJ
+      </span>
+      <svg
+        className="h-5 w-5 shrink-0 text-neutral-700"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </button>
+  );
+}
+
+type BonusPointsControlProps = {
+  bonusOn: boolean;
+  switchDisabled: boolean;
+  showSwitch?: boolean;
+  labelsMuted: boolean;
+  mainText: string;
+  subText: string | null;
+  onToggle: (next: boolean) => void;
+};
+
+function BonusPointsControl({
+  bonusOn,
+  switchDisabled,
+  showSwitch = true,
+  labelsMuted,
+  mainText,
+  subText,
+  onToggle,
+}: BonusPointsControlProps) {
+  return (
+    <div className="flex w-full flex-col gap-0.5">
+      <div className="flex w-full items-start gap-3">
+        <GjMark className="mt-0.5 h-8 min-w-[2.25rem] shrink-0 px-1 text-[10px]" />
+        <div className={`min-w-0 flex-1 ${labelsMuted ? "text-neutral-500" : "text-neutral-900"}`}>
+          <span className="block min-w-0 text-sm font-medium leading-snug">{mainText}</span>
+          {subText ? (
+            <span className="mt-0.5 block text-xs font-normal leading-snug text-neutral-500">{subText}</span>
+          ) : null}
+        </div>
+        {showSwitch ? (
+          <button
+            type="button"
+            role="switch"
+            aria-disabled={switchDisabled}
+            aria-checked={bonusOn}
+            onClick={() => {
+              if (switchDisabled) return;
+              onToggle(!bonusOn);
+            }}
+            className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
+              switchDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+            } ${bonusOn && !switchDisabled ? "bg-neutral-900" : "bg-neutral-300"}`}
+          >
+            <span className="sr-only">Списать бонусы с карты GJ</span>
+            <span
+              className={`pointer-events-none block h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+                bonusOn && !switchDisabled ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function CartPage() {
   const router = useRouter();
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [cityId, setCityId] = useState("");
   const [lines, setLines] = useState<UiLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [promo, setPromo] = useState("");
+  const [promoApplied, setPromoApplied] = useState(false);
+  const [bonusOn, setBonusOn] = useState(false);
+  const [recipientPhone, setRecipientPhone] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [phoneGateOpen, setPhoneGateOpen] = useState(false);
+  const [phoneGateStep, setPhoneGateStep] = useState<"phone" | "code">("phone");
+  const [smsCodeDraft, setSmsCodeDraft] = useState("");
+  const phoneGatePhoneInputRef = useRef<HTMLInputElement | null>(null);
+  const phoneGateCodeInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +260,8 @@ export default function CartPage() {
       try {
         const snap = loadCheckoutCart();
         if (snap?.cityId === cityId && snap.lines.length > 0) {
+          setPromo(snap.promoCode ?? "");
+          setPromoApplied(snap.promoApplied === true);
           const r = await fetchWithRetry("/api/cart-lines", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -125,6 +273,9 @@ export default function CartPage() {
           if (!r.ok) throw new Error(String(r.status));
           const j = (await r.json()) as { lines: ResolvedCartLine[] };
           if (cancelled) return;
+          setPromo(snap.promoCode ?? "");
+          setPromoApplied(snap.promoApplied === true);
+          setBonusOn(snap.bonusOn === true);
           setLines(mapSnapshotToUi(snap.lines, j.lines));
           setHydrated(true);
           return;
@@ -134,6 +285,9 @@ export default function CartPage() {
         if (!r.ok) throw new Error(String(r.status));
         const j = (await r.json()) as { lines: ResolvedCartLine[] };
         if (cancelled) return;
+        setPromo("");
+        setPromoApplied(false);
+        setBonusOn(false);
         setLines(
           j.lines.map((l) => ({
             ...l,
@@ -167,8 +321,69 @@ export default function CartPage() {
       size: l.size,
       selected: l.selected,
     }));
-    saveCheckoutCart({ cityId, lines: toStore });
-  }, [cityId, lines, hydrated]);
+    saveCheckoutCart({
+      cityId,
+      lines: toStore,
+      promoCode: promo.trim(),
+      promoApplied,
+      bonusOn,
+    });
+  }, [cityId, lines, hydrated, promo, promoApplied, bonusOn]);
+
+  useEffect(() => {
+    const rec = loadCheckoutRecipient();
+    const phone = rec?.phone?.trim() ? rec.phone : null;
+    setRecipientPhone(phone);
+    setPhoneDraft(phone ?? "");
+  }, []);
+
+  const closePhoneGate = useCallback(() => {
+    setPhoneGateOpen(false);
+    setPhoneGateStep("phone");
+    setSmsCodeDraft("");
+  }, []);
+
+  const openPhoneGate = useCallback(() => {
+    setPhoneGateStep("phone");
+    setSmsCodeDraft("");
+    setPhoneGateOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!phoneGateOpen) return;
+    const id = window.setTimeout(() => {
+      if (phoneGateStep === "phone") {
+        phoneGatePhoneInputRef.current?.focus();
+      } else {
+        phoneGateCodeInputRef.current?.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [phoneGateOpen, phoneGateStep]);
+
+  const buildRecipientPayload = useCallback((raw: string): CheckoutRecipientPayload | null => {
+    const phone = raw.trim();
+    if (!phoneHasMinDigits(phone)) return null;
+    const first = boot?.clientProfile?.firstName?.trim() || DEFAULT_DEMO_FIRST_NAME;
+    const last = boot?.clientProfile?.lastName?.trim() || DEFAULT_DEMO_LAST_NAME;
+    return { phone, fullName: `${last} ${first}`.trim() };
+  }, [boot?.clientProfile?.firstName, boot?.clientProfile?.lastName]);
+
+  const proceedPhoneGateToSms = useCallback(() => {
+    const p = buildRecipientPayload(phoneDraft);
+    if (!p) return;
+    setPhoneDraft(p.phone);
+    setPhoneGateStep("code");
+  }, [buildRecipientPayload, phoneDraft]);
+
+  const confirmRecipientFromSms = useCallback(() => {
+    if (!/^\d{4}$/.test(smsCodeDraft)) return;
+    const p = buildRecipientPayload(phoneDraft);
+    if (!p) return;
+    saveCheckoutRecipient(p);
+    setRecipientPhone(p.phone);
+    closePhoneGate();
+  }, [buildRecipientPayload, closePhoneGate, phoneDraft, smsCodeDraft]);
 
   const selectedLines = useMemo(() => lines.filter((l) => l.selected && l.quantity > 0), [lines]);
   const selectedCount = selectedLines.reduce((s, l) => s + l.quantity, 0);
@@ -184,6 +399,87 @@ export default function CartPage() {
   );
   const showListSubtotal = subtotal > 0 && listSubtotal > subtotal;
   const allSelected = lines.length > 0 && lines.every((l) => l.selected);
+  const checkoutCopy = useMemo(() => fullCheckoutCopy(), []);
+
+  const checkoutBonusUi = useMemo(() => {
+    const cap = GJ_LOYALTY_MAX_SPEND_RUB;
+    const wallet = Math.max(
+      0,
+      Math.floor(boot?.clientProfile?.bonusBalanceRub ?? DEFAULT_GJ_LOYALTY_WALLET_BALANCE_RUB),
+    );
+    const agg = sumBonusEligibleMerchFromUiLines(selectedLines);
+    const merchSaleRub = agg.merchSaleRub;
+    const bonusEligibleMerchRub = agg.bonusEligibleMerchRub;
+    const hasDiscounted = agg.hasDiscounted;
+    const minRule = GJ_BONUS_MIN_ELIGIBLE_MERCH_RUB;
+    const belowMinEligible = minRule != null && bonusEligibleMerchRub < minRule;
+
+    let unavailableReason:
+      | null
+      | "promo_applied"
+      | "wallet_empty"
+      | "no_bonus_eligible_items"
+      | "below_min_eligible"
+      | "empty_selection" = null;
+    if (selectedCount === 0) unavailableReason = "empty_selection";
+    else if (promoApplied) unavailableReason = "promo_applied";
+    else if (wallet <= 0) unavailableReason = "wallet_empty";
+    else if (bonusEligibleMerchRub <= 0) unavailableReason = "no_bonus_eligible_items";
+    else if (belowMinEligible) unavailableReason = "below_min_eligible";
+
+    const switchDisabled = unavailableReason != null;
+    const maxBonusToApply = Math.max(
+      0,
+      Math.min(cap, wallet, Math.floor(bonusEligibleMerchRub), Math.floor(merchSaleRub)),
+    );
+    const labelsMuted = switchDisabled;
+
+    const potentialEarnRub = Math.max(0, Math.floor(bonusEligibleMerchRub * 0.2));
+
+    let mainText = `Можно списать до ${fmt(maxBonusToApply)} бонусами`;
+    let subText: string | null = hasDiscounted ? "Только на товары без скидки" : null;
+    if (selectedCount === 0) {
+      mainText = "Выберите товары для расчёта бонусов";
+      subText = null;
+    } else if (promoApplied) {
+      mainText = "Списание бонусов недоступно";
+      subText = "Уже применён промокод";
+    } else if (wallet <= 0) {
+      if (bonusEligibleMerchRub > 0) {
+        mainText = "На карте нет бонусов";
+        subText = `За этот заказ начислим до ${fmt(potentialEarnRub)}`;
+      } else {
+        mainText = "Начисление по этому заказу недоступно";
+        subText = "В корзине только товары со скидкой";
+      }
+    } else if (bonusEligibleMerchRub <= 0) {
+      mainText = "Нет товаров для списания бонусов";
+      subText = hasDiscounted ? "Бонусы не списываются на товары со скидкой" : null;
+    } else if (belowMinEligible) {
+      mainText = `Минимум ${fmt(minRule!)} товаров без скидки`;
+      subText = "Добавьте подходящие товары";
+    }
+
+    const disclaimer =
+      wallet <= 0
+        ? bonusEligibleMerchRub > 0
+          ? "Начисляем 20% на товары без скидки."
+          : "Начисление недоступно: в корзине только товары со скидкой."
+        : checkoutCopy.promoBonusBody;
+    return { switchDisabled, maxBonusToApply, labelsMuted, zeroBalance: wallet <= 0, mainText, subText, disclaimer };
+  }, [boot?.clientProfile?.bonusBalanceRub, checkoutCopy.promoBonusBody, promoApplied, selectedCount, selectedLines]);
+
+  useEffect(() => {
+    if (checkoutBonusUi.switchDisabled || checkoutBonusUi.maxBonusToApply <= 0) {
+      setBonusOn(false);
+    }
+  }, [checkoutBonusUi.switchDisabled, checkoutBonusUi.maxBonusToApply]);
+
+  const appliedBonusRub = bonusOn ? checkoutBonusUi.maxBonusToApply : 0;
+  const promoDiscount = promoApplied ? Math.round(subtotal * 0.2) : 0;
+  const payFinal = promoApplied
+    ? Math.max(0, Math.round(subtotal * 0.8))
+    : Math.max(0, subtotal - appliedBonusRub);
 
   const toggleSelectAll = useCallback(() => {
     const next = !allSelected;
@@ -219,6 +515,9 @@ export default function CartPage() {
         size: l.size,
         selected: l.selected,
       })),
+      promoCode: promo.trim(),
+      promoApplied,
+      bonusOn,
     });
     router.push("/checkout");
   };
@@ -228,7 +527,7 @@ export default function CartPage() {
   }
 
   return (
-    <div className="relative mx-auto min-h-screen max-w-md bg-white pb-32">
+    <div className="checkout-ui relative mx-auto min-h-screen max-w-md bg-white pb-32">
       <header className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-3 py-3">
         <div className="flex items-center justify-center">
           <h1 className="text-center text-base font-semibold text-neutral-900">
@@ -406,6 +705,90 @@ export default function CartPage() {
             ))}
           </ul>
         )}
+
+        <section className="mt-4">
+          <div className="cu-checkout-block space-y-3">
+            <div>
+              <p className="cu-page-title text-neutral-900">Или промокод или бонусы</p>
+              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
+                <p>{checkoutBonusUi.disclaimer}</p>
+              </div>
+            </div>
+            <div className="cu-inline-field-shell">
+              <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
+                <input
+                  type="text"
+                  name="promo"
+                  autoComplete="off"
+                  enterKeyHint="done"
+                  aria-label="Промокод"
+                  className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base text-neutral-900 outline-none ring-0"
+                  placeholder="Промокод"
+                  value={promo}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPromo(next);
+                    if (!next.trim()) {
+                      setPromoApplied(false);
+                    } else if (promoApplied && next.trim().toUpperCase() !== "APP20") {
+                      setPromoApplied(false);
+                    }
+                  }}
+                  disabled={bonusOn}
+                />
+                {promo.trim().length > 0 && !bonusOn ? (
+                  <button
+                    type="button"
+                    aria-label="Очистить промокод"
+                    onClick={() => {
+                      setPromo("");
+                      setPromoApplied(false);
+                    }}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-transparent bg-neutral-300 text-[15px] font-light leading-none text-neutral-600 transition hover:border-transparent hover:bg-neutral-300/90 hover:text-neutral-800"
+                  >
+                    <span aria-hidden className="-mt-px block">
+                      ×
+                    </span>
+                  </button>
+                ) : null}
+              </div>
+              {promo.trim().length > 0 && !promoApplied ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-800"
+                  onClick={() => {
+                    if (promo.trim().toUpperCase() === "APP20") {
+                      setPromoApplied(true);
+                      setBonusOn(false);
+                    } else {
+                      setPromoApplied(false);
+                    }
+                  }}
+                  disabled={bonusOn}
+                >
+                  Применить
+                </button>
+              ) : null}
+            </div>
+            {promoApplied ? <p className="text-xs text-emerald-700">Применён промокод APP20 (−20%)</p> : null}
+            {recipientPhone ? (
+              <BonusPointsControl
+                bonusOn={bonusOn}
+                switchDisabled={checkoutBonusUi.switchDisabled}
+                showSwitch={!checkoutBonusUi.zeroBalance}
+                labelsMuted={checkoutBonusUi.labelsMuted}
+                mainText={checkoutBonusUi.mainText}
+                subText={checkoutBonusUi.subText}
+                onToggle={(next) => {
+                  setBonusOn(next);
+                  if (next) setPromoApplied(false);
+                }}
+              />
+            ) : (
+              <BonusAuthBar onOpenPhoneGate={openPhoneGate} />
+            )}
+          </div>
+        </section>
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10 border-t border-neutral-200 bg-white px-4 pt-2 [padding-bottom:max(0.5rem,env(safe-area-inset-bottom,0px))]">
@@ -427,10 +810,10 @@ export default function CartPage() {
                     <span className="text-sm font-normal text-neutral-400 line-through tabular-nums">
                       {fmt(listSubtotal)}
                     </span>
-                    <span className="tabular-nums">{fmt(subtotal)}</span>
+                    <span className="tabular-nums">{fmt(payFinal)}</span>
                   </>
                 ) : (
-                  <span className="tabular-nums">{fmt(subtotal)}</span>
+                  <span className="tabular-nums">{fmt(payFinal)}</span>
                 )
               ) : (
                 <span>—</span>
@@ -439,6 +822,82 @@ export default function CartPage() {
           </button>
         </div>
       </div>
+
+      {phoneGateOpen ? (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
+          <button
+            type="button"
+            aria-label="Закрыть окно телефона"
+            className="absolute inset-0"
+            onClick={closePhoneGate}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 max-h-[95dvh] w-full max-w-md overflow-y-auto overscroll-y-contain rounded-t-3xl bg-white shadow-2xl sm:max-h-[95vh] sm:rounded-3xl"
+          >
+            <div className="sticky top-0 z-20 border-b border-neutral-100 bg-white px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
+              <div className="min-w-0 flex-1 pr-1">
+                {phoneGateStep === "phone" ? (
+                  <>
+                    <h3 className="cu-sheet-title">Подтвердите телефон</h3>
+                    <p className="cu-sheet-lead mt-1">Введите номер телефона, пришлём смс-код для бонусов GJ</p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="cu-sheet-title">Введите код из SMS</h3>
+                    <p className="cu-sheet-lead mt-1">Отправили код на {phoneDraft.trim() || "указанный номер"}</p>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="px-5 pb-5 pt-3">
+              {phoneGateStep === "phone" ? (
+                <>
+                  <input
+                    ref={phoneGatePhoneInputRef}
+                    className="cu-input-surface"
+                    placeholder="+7 (___) ___-__-__"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={!phoneHasMinDigits(phoneDraft)}
+                    onClick={proceedPhoneGateToSms}
+                    className="mt-3 w-full rounded-lg bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    Получить смс с кодом
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    ref={phoneGateCodeInputRef}
+                    className="cu-input-surface text-center tracking-[0.4em] [text-indent:0.35em]"
+                    placeholder="0000"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={4}
+                    value={smsCodeDraft}
+                    onChange={(e) => setSmsCodeDraft(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  />
+                  <button
+                    type="button"
+                    disabled={!/^\d{4}$/.test(smsCodeDraft)}
+                    onClick={confirmRecipientFromSms}
+                    className="mt-3 w-full rounded-lg bg-black py-3 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    Подтвердить
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
