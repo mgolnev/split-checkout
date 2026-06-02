@@ -3635,14 +3635,16 @@ function PartCard({
       : part.mode === "click_collect"
         ? PICKUP_COLLECT_TITLE
         : part.sourceName;
-  const courierPaidFeeLine =
-    isCourier && part.deliveryPrice > 0 ? `+${fmt(part.deliveryPrice)} за доставку` : null;
+  const paidDeliveryFeeLine =
+    (isCourier || isPvz) && part.deliveryPrice > 0 ? `+${fmt(part.deliveryPrice)} за доставку` : null;
   const benefitLine = isGjStorePickup
     ? part.mode === "click_reserve"
       ? "Бесплатно · примерка"
       : "Бесплатно"
     : isPvz
-      ? "Бесплатно · ПВЗ"
+      ? part.deliveryPrice <= 0
+        ? "Бесплатно · ПВЗ"
+        : null
       : isCourier
         ? part.deliveryPrice <= 0
           ? "Бесплатная доставка"
@@ -3717,14 +3719,14 @@ function PartCard({
               {fmt(lineTotal)}
             </span>
           </div>
-          {(courierPaidFeeLine || benefitLine) || (included && ship > 0) ? (
+          {(paidDeliveryFeeLine || benefitLine) || (included && ship > 0) ? (
             <div className="mt-1.5 flex items-baseline justify-between gap-4">
               <div className="min-w-0 flex-1">
-                {courierPaidFeeLine || benefitLine ? (
-                  <p className="cu-benefit">{courierPaidFeeLine ?? benefitLine}</p>
+                {paidDeliveryFeeLine || benefitLine ? (
+                  <p className="cu-benefit">{paidDeliveryFeeLine ?? benefitLine}</p>
                 ) : null}
               </div>
-              {included && ship > 0 ? (
+              {included && ship > 0 && !benefitLine ? (
                 <span className="cu-text-caption shrink-0 text-right">включая доставку</span>
               ) : null}
             </div>
@@ -3999,7 +4001,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [phoneGateStep, setPhoneGateStep] = useState<"phone" | "code">("phone");
   const [smsCodeDraft, setSmsCodeDraft] = useState("");
   /** Откуда открыли шит телефона: оформление заказа — после ввода уходим на thank-you; бонусы — только сохраняем номер. */
-  const [phoneGateReason, setPhoneGateReason] = useState<"submit" | "bonus" | null>(null);
+  const [phoneGateReason, setPhoneGateReason] = useState<"submit" | "recipient" | "bonus" | null>(null);
   const phoneGatePhoneInputRef = useRef<HTMLInputElement | null>(null);
   const phoneGateCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [courierAddress, setCourierAddress] = useState("");
@@ -4037,7 +4039,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setPhoneGateReason(null);
   }, []);
 
-  const openPhoneGate = useCallback((reason: "submit" | "bonus") => {
+  const openPhoneGate = useCallback((reason: "submit" | "recipient" | "bonus") => {
     setPhoneGateReason(reason);
     setPhoneGateStep("phone");
     setSmsCodeDraft("");
@@ -5923,8 +5925,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   autoComplete="tel"
                   readOnly
                   value={phoneDraft}
-                  onFocus={() => openPhoneGate("submit")}
-                  onClick={() => openPhoneGate("submit")}
+                  onFocus={() => openPhoneGate("recipient")}
+                  onClick={() => openPhoneGate("recipient")}
                 />
               </>
             ) : (

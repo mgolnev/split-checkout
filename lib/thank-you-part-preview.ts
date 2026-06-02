@@ -38,6 +38,7 @@ export type ThankYouPartCardPreview = {
   lineTotal: number;
   priceBreakdownTitle: string | undefined;
   benefitOrFee: string | null;
+  showIncludingDeliveryCaption: boolean;
 };
 
 /**
@@ -97,20 +98,29 @@ export function thankYouPartCardPreview(
         : `Товары: ${fmtRub(merch)} · Доставка бесплатно`
       : undefined;
 
-  const courierPaidFeeLine = isCourier && ship > 0 ? `+${fmtRub(ship)} за доставку` : null;
+  const paidDeliveryFeeLine = (isCourier || isPvz) && ship > 0 ? `+${fmtRub(ship)} за доставку` : null;
   const benefitLine = isGjStorePickup
     ? mode === "click_reserve"
       ? "Бесплатно · примерка"
       : "Бесплатно"
     : isPvz
-      ? "Бесплатно · ПВЗ"
+      ? ship <= 0
+        ? "Бесплатно · ПВЗ"
+        : null
       : isCourier
         ? ship <= 0
           ? "Бесплатная доставка"
           : null
         : null;
 
-  const benefitOrFee = courierPaidFeeLine ?? benefitLine;
+  const benefitOrFee = paidDeliveryFeeLine ?? benefitLine;
 
-  return { primaryHeading, secondaryHeading, lineTotal, priceBreakdownTitle, benefitOrFee };
+  return {
+    primaryHeading,
+    secondaryHeading,
+    lineTotal,
+    priceBreakdownTitle,
+    benefitOrFee,
+    showIncludingDeliveryCaption: ship > 0 && benefitLine === null,
+  };
 }

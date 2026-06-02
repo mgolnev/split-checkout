@@ -160,7 +160,7 @@ function ShipmentCard({
               <div className="min-w-0 flex-1">
                 {preview.benefitOrFee ? <p className="cu-benefit">{preview.benefitOrFee}</p> : null}
               </div>
-              {ship > 0 ? (
+              {preview.showIncludingDeliveryCaption ? (
                 <span className="cu-text-caption shrink-0 text-right">включая доставку</span>
               ) : null}
             </div>
