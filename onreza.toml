@@ -35,7 +35,3 @@ name = "split-checkout"
 # PUBLIC_API_URL = "plain"
 # OPTIONAL_VAR = { visibility = "plain", required = false }
 workspace = "mgolnev-n7m3"
-
-[deploy]
-compute = "process"
-health_check_path = "/api/live"

@@ -5,72 +5,43 @@ import {
   prismaDiag,
   prismaMetaSafe,
 } from "@/lib/prisma-error-diag";
+import { prisma } from "@/lib/prisma";
 
 /** Меняйте при изменении полей диагностики — по значению видно, что задеплоено. */
-const HEALTH_DIAG_VERSION = 5;
-
-const DB_CHECK_RETRIES = 3;
-const DB_CHECK_RETRY_DELAY_MS = 2_000;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function pingDatabase() {
-  const { getPrisma } = await import("@/lib/prisma");
-  const prisma = getPrisma();
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= DB_CHECK_RETRIES; attempt++) {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      return { ok: true as const, attempts: attempt };
-    } catch (e) {
-      lastError = e;
-      if (attempt < DB_CHECK_RETRIES) {
-        await sleep(DB_CHECK_RETRY_DELAY_MS);
-      }
-    }
-  }
-  return { ok: false as const, error: lastError, attempts: DB_CHECK_RETRIES };
-}
+const HEALTH_DIAG_VERSION = 3;
 
 /**
- * Liveness для ONREZA readiness: всегда HTTP 200, если процесс жив.
- * Prisma/pg подгружаются только здесь (dynamic import), не при boot.
+ * Проверка БД после деплоя: GET /api/health
+ * При сбое в теле ответа есть prismaCode / hint — без полного текста ошибки в проде.
  */
 export async function GET() {
-  const db = await pingDatabase();
-
-  if (db.ok) {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
     return NextResponse.json({
       ok: true,
       database: "up",
       diagVersion: HEALTH_DIAG_VERSION,
-      dbAttempts: db.attempts,
     });
+  } catch (e) {
+    const { code, hint: hintFromDiag } = prismaDiag(e);
+    const hint =
+      hintFromDiag ??
+      "Полный текст — в логах ONREZA по строке «[health] database check failed». Сверьте DATABASE_URL с панелью Kaiki и доступ compute→БД.";
+    const metaSafe = prismaMetaSafe(e);
+    console.error("[health] database check failed", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        database: "down",
+        error: "connection_failed",
+        diagVersion: HEALTH_DIAG_VERSION,
+        ...databaseUrlSafeInfo(),
+        errorNames: errorNamesFromChain(e),
+        ...metaSafe,
+        ...(code ? { prismaCode: code } : {}),
+        hint,
+      },
+      { status: 503 },
+    );
   }
-
-  const e = db.error;
-  const { code, hint: hintFromDiag } = prismaDiag(e);
-  const hint =
-    hintFromDiag ??
-    "Полный текст — в логах ONREZA по строке «[health] database check failed». Сверьте DATABASE_URL с панелью Kaiki и доступ compute→БД.";
-  const metaSafe = prismaMetaSafe(e);
-  console.error("[health] database check failed", e);
-
-  return NextResponse.json(
-    {
-      ok: false,
-      database: "down",
-      error: "connection_failed",
-      diagVersion: HEALTH_DIAG_VERSION,
-      dbAttempts: db.attempts,
-      ...databaseUrlSafeInfo(),
-      errorNames: errorNamesFromChain(e),
-      ...metaSafe,
-      ...(code ? { prismaCode: code } : {}),
-      hint,
-    },
-    { status: 200 },
-  );
 }

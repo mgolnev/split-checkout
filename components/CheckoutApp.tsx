@@ -21,7 +21,7 @@ import {
   pickupSummaryFromScenario,
   type CartMethodSummariesResult,
   type PickupStoreSummary,
-} from "@/lib/cart-method-summaries-shared";
+} from "@/lib/cart-method-summaries";
 import { fetchWithRetry } from "@/lib/fetch-retry";
 import { formatHoldNoticeForPart } from "@/lib/hold-display";
 import { parseCheckoutInformer } from "@/lib/parse-checkout-informer";

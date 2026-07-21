@@ -1,8 +1,7 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
-  // Driver adapter (postgres.js) — без native Query Engine; нужно для ONREZA Compute (Bun).
-  binaryTargets   = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+  provider = "prisma-client-js"
+  // Несколько рантаймов: локально — native; Vercel/serverless AWS — rhel-openssl-3.0.x; ONREZA (glibc) — debian; сборка в musl / Docker slim — linux-musl.
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
