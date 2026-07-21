@@ -5,10 +5,9 @@ import {
   prismaDiag,
   prismaMetaSafe,
 } from "@/lib/prisma-error-diag";
-import { prisma } from "@/lib/prisma";
 
 /** Меняйте при изменении полей диагностики — по значению видно, что задеплоено. */
-const HEALTH_DIAG_VERSION = 4;
+const HEALTH_DIAG_VERSION = 5;
 
 const DB_CHECK_RETRIES = 3;
 const DB_CHECK_RETRY_DELAY_MS = 2_000;
@@ -18,6 +17,8 @@ function sleep(ms: number) {
 }
 
 async function pingDatabase() {
+  const { getPrisma } = await import("@/lib/prisma");
+  const prisma = getPrisma();
   let lastError: unknown;
   for (let attempt = 1; attempt <= DB_CHECK_RETRIES; attempt++) {
     try {
@@ -35,7 +36,7 @@ async function pingDatabase() {
 
 /**
  * Liveness для ONREZA readiness: всегда HTTP 200, если процесс жив.
- * Статус БД — в теле (`database: up|down`); повторы учитывают autosleep Kaiki (~2–3 с).
+ * Prisma/pg подгружаются только здесь (dynamic import), не при boot.
  */
 export async function GET() {
   const db = await pingDatabase();

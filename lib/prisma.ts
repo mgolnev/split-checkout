@@ -31,7 +31,17 @@ function createPrismaClient() {
   });
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+/** Ленивая инициализация — health/readiness не тянет pg при старте процесса. */
+export function getPrisma(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
+}
 
-/** В production на Vercel/ONREZA тоже кэшируем на globalThis — иначе возможны лишние клиенты при hot paths. */
-globalForPrisma.prisma = prisma;
+/** @deprecated Используйте getPrisma(); оставлено для постепенной миграции импортов. */
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getPrisma(), prop, receiver);
+  },
+});

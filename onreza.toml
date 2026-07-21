@@ -38,4 +38,4 @@ workspace = "mgolnev-n7m3"
 
 [deploy]
 compute = "process"
-health_check_path = "/api/health"
+health_check_path = "/api/live"
