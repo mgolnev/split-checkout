@@ -1,7 +1,7 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
-  // Driver adapter (pg) — без native Query Engine; нужно для ONREZA Compute (Bun), где .so не грузится.
+  // Driver adapter (postgres.js) — без native Query Engine; нужно для ONREZA Compute (Bun).
   binaryTargets   = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 

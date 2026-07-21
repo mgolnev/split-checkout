@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /** Образ Docker / Yandex Cloud Container Registry, VM, Kubernetes */
   output: "standalone",
+  /** Prisma driver adapter + postgres.js — не бандлить, иначе Bun/standalone ломает драйвер. */
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg"],
   /** Убирает предупреждение при открытии dev с 127.0.0.1 вместо localhost */
   allowedDevOrigins: ["http://127.0.0.1:3000", "http://localhost:3000"],
   images: {
