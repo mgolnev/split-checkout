@@ -1,0 +1,41 @@
+#:schema https://docs.onreza.ru/schemas/onreza-project-v1.schema.json
+
+[project]
+id = "019d8f79-668a-746e-8fee-50dd9bc45b3b"
+name = "split-checkout"
+
+# [dev]
+# command = ""
+# port = 4321
+# host = "127.0.0.1"
+
+# data_dir = ".onreza/data"
+
+# [dev.aliases]
+# network = "npm run dev -- --host 0.0.0.0"
+# staging = "npm run dev -- --host 0.0.0.0 --port 3001"
+
+# [build]
+# install_command = "npm install"
+# command = "npm run build"
+# output_directory = "dist"
+# output_dirs = ["dist", ".output", "build", "out", "_site", "www", ".vitepress/dist"]
+
+# [deploy]
+# compute = "static"    # "static" or "process"
+# entry = "server.ts"   # entry point for PROCESS deployments
+# health_check_path = "/health"  # HTTP health check path, or false for TCP only
+
+# [db]
+# database = ""          # managed database id or name (auto-resolved if omitted)
+# branch = ""            # branch for nrz dev (main if omitted)
+
+# [env.declarations]
+# DATABASE_URL = "sensitive"
+# PUBLIC_API_URL = "plain"
+# OPTIONAL_VAR = { visibility = "plain", required = false }
+workspace = "mgolnev-n7m3"
+
+[deploy]
+compute = "process"
+health_check_path = "/api/health"
