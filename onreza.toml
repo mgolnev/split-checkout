@@ -21,10 +21,9 @@ name = "split-checkout"
 # output_directory = "dist"
 # output_dirs = ["dist", ".output", "build", "out", "_site", "www", ".vitepress/dist"]
 
-# [deploy]
-# compute = "static"    # "static" or "process"
-# entry = "server.ts"   # entry point for PROCESS deployments
-# health_check_path = "/health"  # HTTP health check path, or false for TCP only
+[deploy]
+compute = "process"
+health_check_path = "/api/health"
 
 # [db]
 # database = ""          # managed database id or name (auto-resolved if omitted)
