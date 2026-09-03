@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "npm run test:autocheck",
-    "test:logic": "tsx scripts/check-split-engine.ts",
+    "test:logic": "tsx scripts/check-split-engine.ts && tsx scripts/check-shipment-payments.ts",
     "test:autocheck": "node scripts/autotest.mjs",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",

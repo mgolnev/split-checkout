@@ -405,7 +405,7 @@ function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
 
   if (parts.length > 1) {
     informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-    informers.push(commonDisclaimer("payOnDeliveryOnly", ctx.disclaimers));
+    informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
   } else if (parts.length === 1 && remainder.length > 0) {
     informers.push(commonDisclaimer("oneShipmentPartial", ctx.disclaimers));
   }
@@ -429,7 +429,7 @@ function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
     parts,
     remainder,
     informers,
-    payOnDeliveryOnly: parts.length > 1,
+    payOnDeliveryOnly: false,
     fromOverride: false,
     deliveryMethodCode: "courier",
   };
@@ -596,7 +596,7 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
 
       if (parts.length > 1) {
         informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-        informers.push(commonDisclaimer("payOnDeliveryOnly", ctx.disclaimers));
+        informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
       }
       if (remainder.length > 0) {
         informers.push(commonDisclaimer("remainderUnavailable", ctx.disclaimers));
@@ -607,7 +607,7 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
         parts,
         remainder,
         informers,
-        payOnDeliveryOnly: parts.length > 1,
+        payOnDeliveryOnly: false,
         fromOverride: false,
         deliveryMethodCode: "courier",
       };
@@ -646,7 +646,7 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
 
     if (parts.length > 1) {
       informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-      informers.push(commonDisclaimer("payOnDeliveryOnly", ctx.disclaimers));
+      informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
     }
     if (remainder.length > 0) {
       informers.push(commonDisclaimer("remainderUnavailable", ctx.disclaimers));
@@ -657,7 +657,7 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
       parts,
       remainder,
       informers,
-      payOnDeliveryOnly: parts.length > 1,
+      payOnDeliveryOnly: false,
       fromOverride: false,
       deliveryMethodCode: "courier",
     };
@@ -692,7 +692,7 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
 
     if (parts.length > 1) {
       informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-      informers.push(commonDisclaimer("payOnDeliveryOnly", ctx.disclaimers));
+      informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
     } else {
       informers.push(commonDisclaimer("oneShipmentPartial", ctx.disclaimers));
     }
@@ -705,7 +705,7 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
       parts,
       remainder,
       informers,
-      payOnDeliveryOnly: parts.length > 1,
+      payOnDeliveryOnly: false,
       fromOverride: false,
       deliveryMethodCode: "courier",
     };
@@ -834,10 +834,10 @@ function pickupScenario(ctx: EngineInput): ScenarioResult {
       parts.length > 1
         ? [
             ...informers,
-            methodDisclaimer("pickup", "payOnDeliveryOnlySplitPickup", ctx.disclaimers),
+            methodDisclaimer("pickup", "separatePaymentSplitPickup", ctx.disclaimers),
           ]
         : informers,
-    payOnDeliveryOnly: parts.length > 1,
+    payOnDeliveryOnly: false,
     fromOverride: false,
     deliveryMethodCode: "pickup",
   };
@@ -991,11 +991,11 @@ export function scenarioFromOverride(
         : [
             "Активен ручной сценарий (override) для UX-теста.",
             ...(parts.length > 1
-              ? [commonDisclaimer("payOnDeliveryOnly", disclaimers)]
+              ? [commonDisclaimer("separatePayment", disclaimers)]
               : []),
           ],
     ),
-    payOnDeliveryOnly: parts.length > 1,
+    payOnDeliveryOnly: false,
     fromOverride: true,
     deliveryMethodCode,
   };

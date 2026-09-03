@@ -10,12 +10,11 @@ import { loadCheckoutCart, saveCheckoutCart, type StoredCartLine } from "@/lib/c
 import { loadLastPickupStoreId, saveLastPickupStore } from "@/lib/pickup-store-storage";
 import { loadLastPvzPointId, saveLastPvzPoint } from "@/lib/pvz-point-storage";
 import {
-  clearCheckoutRecipient,
   loadCheckoutRecipient,
   saveCheckoutRecipient,
   type CheckoutRecipientPayload,
 } from "@/lib/checkout-recipient-storage";
-import { commonDisclaimer, fullCheckoutCopy, selectorCopy } from "@/lib/disclaimers";
+import { fullCheckoutCopy, selectorCopy } from "@/lib/disclaimers";
 import {
   buildPvzSheetThumbMeta,
   pickupSummaryFromScenario,
@@ -41,6 +40,9 @@ import type {
   ScenarioPart,
   ScenarioResult,
 } from "@/lib/types";
+
+import { ShipmentPaymentOptions } from "@/components/ShipmentPaymentOptions";
+import { allocateDiscount, normalizeThankYouData, writeThankYouPayload, type CheckoutPaymentMethod } from "@/lib/thank-you-session";
 
 const DEFAULT_DEMO_FIRST_NAME = "Елизавета";
 const DEFAULT_DEMO_LAST_NAME = "Петрова-Водкина";
@@ -166,9 +168,6 @@ function getScheduleForSplitModal(
 
 type DeliveryMethodCode = "courier" | "pickup" | "pvz";
 
-/** Выбранный способ оплаты на чекауте (макет). */
-type CheckoutPaymentMethod = "sbp" | "card" | "on_receipt";
-
 type SecondarySelection = {
   id: string;
   inputLines: CartLine[];
@@ -287,15 +286,6 @@ function pluralizeProducts(n: number) {
   if (mod10 === 1 && mod100 !== 11) return "товар";
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "товара";
   return "товаров";
-}
-
-function checkoutPaymentMethodLabel(method: CheckoutPaymentMethod): string {
-  const labels: Record<CheckoutPaymentMethod, string> = {
-    sbp: "СБП",
-    card: "Банковской картой онлайн",
-    on_receipt: "При получении, картой или наличными",
-  };
-  return labels[method];
 }
 
 /** Шеврон вниз (как у «Подробнее» в списке магазинов): селекты, раскрытия. */
@@ -1019,22 +1009,22 @@ function Stepper({
   /** «Оформление» не подсвечиваем зелёным — заказ ещё не отправлен, этап завершается кнопкой. */
   const items: { label: string; done: boolean }[] = [
     { label: "Доставка", done: deliveryDone },
+    { label: "Способ оплаты", done: paymentDone },
     { label: "Получатель", done: recipientDone },
-    { label: "Оплата", done: paymentDone },
     { label: "Оформление", done: false },
   ];
   return (
     <nav className="mb-0" aria-label="Этапы оформления заказа">
       <div className="relative grid grid-cols-4">
         <div
-          className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-2 z-0 h-px bg-neutral-950"
+          className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-1.5 z-0 h-px bg-neutral-950"
           aria-hidden
         />
         {items.map(({ label, done }) => (
           <div key={label} className="relative z-10 flex flex-col items-center gap-1">
             <div
-              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                done ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-900 bg-white"
+              className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${
+                done ? "border-[#65a000] bg-[#65a000] text-white" : "border-neutral-900 bg-white"
               }`}
             >
               {done ? <StepperCheckIcon /> : null}
@@ -3587,6 +3577,10 @@ function PartCard({
   courierDateLabels,
   /** Совпадает с расчётом `partsTotal` / кнопки «Оформить» (напр. APP20 → 0.8 на товары, доставка без скидки). */
   promoFactor = 1,
+  paymentMethod,
+  onPaymentChange,
+  bonusUsed = 0,
+  showOrderSummary = false,
 }: {
   part: ScenarioPart;
   included: boolean;
@@ -3604,17 +3598,21 @@ function PartCard({
   /** Подписи дат курьера (от календаря), по индексу совпадают с `selectedDateIx` */
   courierDateLabels: string[];
   promoFactor?: number;
+  paymentMethod?: CheckoutPaymentMethod;
+  onPaymentChange?: (method: CheckoutPaymentMethod) => void;
+  bonusUsed?: number;
+  showOrderSummary?: boolean;
 }) {
   const visible = part.items.slice(0, 5);
   const extra = part.items.reduce((s, i) => s + i.quantity, 0) - visible.reduce((s, i) => s + i.quantity, 0);
   const merchWithPromo = Math.round(part.subtotal * promoFactor);
   const ship = included ? part.deliveryPrice : 0;
-  const lineTotal = merchWithPromo + ship;
+  const lineTotal = Math.max(0, merchWithPromo + ship - bonusUsed);
   const priceBreakdownTitle =
     included && (merchWithPromo > 0 || ship > 0)
       ? ship > 0
-        ? `Товары: ${fmt(merchWithPromo)} · Доставка: ${fmt(ship)}`
-        : `Товары: ${fmt(merchWithPromo)} · Доставка бесплатно`
+        ? `Товары: ${fmt(merchWithPromo - bonusUsed)} · Доставка: ${fmt(ship)}`
+        : `Товары: ${fmt(merchWithPromo - bonusUsed)} · Доставка бесплатно`
       : undefined;
   const isCourier = part.mode === "courier";
   const dateIx = Math.min(Math.max(selectedDateIx ?? 0, 0), Math.max(0, courierDateLabels.length - 1));
@@ -3680,7 +3678,7 @@ function PartCard({
   return (
     <div
       className={`transition ${
-        inGroup ? "px-5 pb-8 pt-6" : "p-5"
+        inGroup ? "px-4 pb-6 pt-6" : "p-5"
       } ${
         inGroup
           ? included
@@ -3697,7 +3695,7 @@ function PartCard({
             onClick={onToggle}
             role="checkbox"
             aria-checked={included}
-            className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold leading-none ${
+            className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] border-2 text-xs font-bold leading-none ${
               included ? "border-black bg-black text-white" : "border-neutral-400 bg-white text-transparent"
             } ${part.canToggle ? "" : "opacity-40"}`}
           >
@@ -3776,7 +3774,7 @@ function PartCard({
                       key={`courier-date-${i}`}
                       type="button"
                       onClick={() => onDateChange?.(i)}
-                      className={`h-[44px] w-[54px] shrink-0 rounded-[14px] border px-1.5 py-1 text-center transition ${
+                      className={`h-[44px] w-[54px] shrink-0 rounded-[4px] border px-1.5 py-1 text-center transition ${
                         i === dateIx
                           ? "border-neutral-900 bg-neutral-900 text-white"
                           : "border-neutral-200 bg-white text-neutral-900"
@@ -3796,7 +3794,7 @@ function PartCard({
                     key={s}
                     type="button"
                     onClick={() => onSlotChange?.(i)}
-                    className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                    className={`shrink-0 rounded-[4px] border px-3 py-1.5 text-sm font-medium transition ${
                       i === (selectedSlotIx ?? 0)
                         ? "border-neutral-900 bg-neutral-900 text-white"
                         : "border-neutral-200 bg-white text-neutral-900"
@@ -3813,6 +3811,24 @@ function PartCard({
           ) : null}
         </div>
       </div>
+      {included && paymentMethod && onPaymentChange ? (
+        <div className="mt-6 border-t border-neutral-100 pt-6">
+          <ShipmentPaymentOptions value={paymentMethod} onChange={onPaymentChange} />
+          {showOrderSummary ? (
+            <details className="mt-6 border-t border-neutral-100 pt-6">
+              <summary className="flex cursor-pointer items-center justify-between gap-3 text-[17px] leading-5">
+                <span>Сумма заказа</span><span className="tabular-nums">{fmt(lineTotal)} <span className="text-neutral-400">⌄</span></span>
+              </summary>
+              <dl className="mt-5 space-y-3 text-sm">
+                <div className="flex justify-between"><dt className="text-neutral-500">{part.items.reduce((sum, item) => sum + item.quantity, 0)} {pluralizeProducts(part.items.reduce((sum, item) => sum + item.quantity, 0))}</dt><dd>{fmt(part.subtotal)}</dd></div>
+                <div className="flex justify-between"><dt className="text-neutral-500">Доставка</dt><dd>{ship > 0 ? fmt(ship) : "Бесплатно"}</dd></div>
+                {promoFactor < 1 ? <div className="flex justify-between"><dt className="text-neutral-500">Промокод</dt><dd className="text-[#ea1d2d]">− {fmt(part.subtotal - merchWithPromo)}</dd></div> : null}
+                {bonusUsed > 0 ? <div className="flex justify-between"><dt className="text-neutral-500">Бонусы</dt><dd className="text-[#ea1d2d]">− {fmt(bonusUsed)}</dd></div> : null}
+              </dl>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3923,49 +3939,6 @@ function ScenarioOrderSkeleton({
   );
 }
 
-function SbpBrandIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-      <path fill="#21A038" d="M16 4 28 16H16V4Z" />
-      <path fill="#2B59FF" d="M28 16 16 28V16h12Z" />
-      <path fill="#FF5F40" d="M16 28 4 16h12v12Z" />
-      <path fill="#FFCB00" d="M4 16 16 4v12H4Z" />
-    </svg>
-  );
-}
-
-function PaymentCardOutlineIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      aria-hidden
-    >
-      <rect x="2.5" y="5" width="19" height="14" rx="2" />
-      <path d="M2.5 10h19" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function PaymentBagOutlineIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      aria-hidden
-    >
-      <path d="M6 9h12l-1 11H7L6 9Z" strokeLinejoin="round" />
-      <path d="M9 9V7a3 3 0 0 1 6 0v2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 export default function CheckoutApp(props: { variant?: "classic" | "redesign" } = {}) {
   void props.variant;
   const router = useRouter();
@@ -3994,7 +3967,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [promo, setPromo] = useState("");
   const [promoApplied, setPromoApplied] = useState(false);
   const [bonusOn, setBonusOn] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>("sbp");
+  const [partPaymentMethods, setPartPaymentMethods] = useState<Record<string, CheckoutPaymentMethod>>({});
   const [recipient, setRecipient] = useState<CheckoutRecipientPayload | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneGateOpen, setPhoneGateOpen] = useState(false);
@@ -4759,7 +4732,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   /** Пока нет сценария доставки — берём сумму корзины; иначе из включённых частей */
   const goodsMerchForUi = allDisplayParts.length > 0 ? includedMerch : cartGoodsSubtotal;
 
-  const payOnDeliveryOnlyEffective = includedParts.length > 1;
 
   useEffect(() => {
     if (!recipient) setBonusOn(false);
@@ -4774,19 +4746,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
   }, [recipient, bonusOn, cityId]);
 
-  const payOnDeliveryDisclaimerText = useMemo(() => commonDisclaimer("payOnDeliveryOnly"), []);
-
-  const scenarioInformersForBanner = useMemo(() => {
-    if (!scenario?.informers?.length) return [];
-    if (!payOnDeliveryOnlyEffective) return scenario.informers;
-    return scenario.informers.filter((t) => t.trim() !== payOnDeliveryDisclaimerText.trim());
-  }, [scenario?.informers, payOnDeliveryOnlyEffective, payOnDeliveryDisclaimerText]);
-
-  useEffect(() => {
-    if (payOnDeliveryOnlyEffective) {
-      setPaymentMethod("on_receipt");
-    }
-  }, [payOnDeliveryOnlyEffective]);
+  const scenarioInformersForBanner = scenario?.informers ?? [];
 
   const checkoutBonusUi = useMemo(() => {
     const wallet = Math.max(
@@ -4934,8 +4894,19 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     }
   }, [recipient, bonusAnalyticsViewKey]);
 
-  const promoDiscount = promoApplied ? Math.round(goodsMerchForUi * 0.2) : 0;
+  const promoDiscount = promoApplied
+    ? includedParts.length > 0
+      ? includedParts.reduce((sum, part) => sum + part.subtotal - Math.round(part.subtotal * promoFactor), 0)
+      : Math.round(goodsMerchForUi * 0.2)
+    : 0;
   const appliedBonusRub = bonusOn ? checkoutBonusUi.maxBonusToApply : 0;
+  const shipmentDiscounts = useMemo(() => {
+    const bonuses = allocateDiscount(appliedBonusRub, includedParts.map((part) => sumBonusEligibleMerchFromParts([part])));
+    return Object.fromEntries(includedParts.map((part, index) => [part.key, {
+      promoDiscount: part.subtotal - Math.round(part.subtotal * promoFactor),
+      bonusUsed: bonuses[index],
+    }]));
+  }, [appliedBonusRub, includedParts, promoFactor]);
   const payFinal =
     allDisplayParts.length > 0
       ? Math.max(0, partsTotal - appliedBonusRub)
@@ -5337,8 +5308,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           items: p.items,
           subtotal: Math.round(p.subtotal),
           deliveryPrice: p.deliveryPrice,
-          promoDiscount: 0,
-          bonusUsed: 0,
+          promoDiscount: shipmentDiscounts[p.key]?.promoDiscount ?? 0,
+          bonusUsed: shipmentDiscounts[p.key]?.bonusUsed ?? 0,
+          paymentMethod: partPaymentMethods[p.key] ?? "card",
           holdNotice: formatHoldNoticeForPart(p.mode, p.holdDays, new Date()) ?? undefined,
           selectedDate:
             p.mode === "courier"
@@ -5351,21 +5323,20 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               : undefined,
           selectedSlot: p.mode === "courier" ? MOCK_SLOTS[partSchedules[p.key]?.slotIx ?? 0] : undefined,
         })),
-      orderPromoDiscount: promoDiscount,
+      orderPromoDiscount: includedParts.reduce((sum, p) => sum + (shipmentDiscounts[p.key]?.promoDiscount ?? 0), 0),
       orderBonusUsed,
       remainder: finalRemainderLines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
-      payOnDeliveryOnly: payOnDeliveryOnlyEffective,
+      payOnDeliveryOnly: false,
       informers: scenario.informers,
       total: payFinal,
       method,
       pvzId: method === "pvz" ? pvzId : null,
       storeId: method === "pickup" ? storeId : null,
       courierAddress: courierAddress.trim() ? courierAddress : null,
-      paymentMethod,
       recipientPhone: rec.phone,
       recipientName: toRecipientName(rec.fullName),
     };
-    sessionStorage.setItem("thankyou", JSON.stringify(payload));
+    writeThankYouPayload(normalizeThankYouData(payload));
     router.push("/thank-you");
   };
 
@@ -5407,12 +5378,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     if (shouldSubmit) {
       queueMicrotask(() => completeCheckoutSubmit(p));
     }
-  };
-
-  const clearRecipient = () => {
-    clearCheckoutRecipient();
-    setRecipient(null);
-    setPhoneDraft("");
   };
 
   /** Закрыли выбор магазина/ПВЗ без подтверждения точки — убираем способ, иначе остаётся плейсхолдер «Выберите…». */
@@ -5510,10 +5475,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           : "mb-5 w-full rounded-2xl bg-white px-5 py-5";
     return (
       <div className={wrapClass}>
-        <div className="min-w-0">
+        <div className="min-w-0 rounded-lg bg-[#f2ece2] p-4">
           {primary.title ? <p className="cu-page-title text-neutral-900">{primary.title}</p> : null}
           {bodyLines.length > 0 ? (
-            <div className="mt-3 space-y-1.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-700">
+            <div className="mt-2 space-y-1.5 text-sm leading-4 text-[#535353]">
               {bodyLines.map((line, i) => (
                 <p key={i}>{line}</p>
               ))}
@@ -5578,8 +5543,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   };
 
   return (
-    <div className="checkout-ui relative isolate mx-auto min-h-screen max-w-md bg-neutral-100 pb-28">
-      <div className="sticky top-0 z-50 mb-3 border-b border-neutral-100 bg-white">
+    <div className="checkout-ui checkout-payment-redesign relative isolate mx-auto min-h-screen max-w-md bg-[#f4f4f4] pb-28">
+      <div className="sticky top-0 z-50 mb-2 border-b border-neutral-100 bg-white">
         <header className="px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
@@ -5598,9 +5563,9 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </div>
       </div>
 
-      <div className="relative z-0 flex flex-col gap-3 px-4 pt-4">
-        <section className="overflow-hidden rounded-2xl bg-white">
-          <div className="p-5">
+      <div className="relative z-0 flex flex-col gap-2 px-2 pt-0">
+        <section className="overflow-hidden rounded-xl bg-white">
+          <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
             <h2 className="cu-section-title">Способ получения</h2>
             <div className="relative">
@@ -5622,6 +5587,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             </div>
           </div>
           <CheckoutDeliveryMethodTabs
+            className="checkout-method-tabs"
             coveragePending={methodTabsCoveragePending}
             items={deliveryOptions.map((dm) => {
               const tabName = dm.code === "pickup" ? "Магазины" : dm.name;
@@ -5767,11 +5733,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               {renderPrimarySplitContextBar("unified")}
               {(scenario?.parts ?? [])
                 .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
+                .slice(0, 1)
                 .map((p, partIndex) => (
                   <div key={p.key} className={partIndex > 0 ? "border-t border-neutral-100" : ""}>
                     <PartCard
                       inGroup
                       part={p}
+                      paymentMethod={partPaymentMethods[p.key] ?? "card"}
+                      onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [p.key]: payment }))}
+                      bonusUsed={shipmentDiscounts[p.key]?.bonusUsed ?? 0}
+                      showOrderSummary={includedParts.length > 1}
                       included={included[p.key] !== false}
                       onToggle={() =>
                         setIncluded((prev) => {
@@ -5808,11 +5779,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <div className="space-y-3 px-5 pb-5 pt-2">
                 {(scenario?.parts ?? [])
                   .filter((p) => !primaryPartKeysSupersededBySecondary.has(p.key))
+                  .slice(0, 1)
                   .map((p, partIndex) => (
                     <PartCard
                       key={p.key}
                       courierDateLabels={courierDateLabels}
                       part={p}
+                      paymentMethod={partPaymentMethods[p.key] ?? "card"}
+                      onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [p.key]: payment }))}
+                      bonusUsed={shipmentDiscounts[p.key]?.bonusUsed ?? 0}
+                      showOrderSummary={includedParts.length > 1}
                       included={included[p.key] !== false}
                       onToggle={() =>
                         setIncluded((prev) => {
@@ -5845,6 +5821,27 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           )}
         </section>
 
+        {(scenario?.parts ?? []).filter((part) => !primaryPartKeysSupersededBySecondary.has(part.key)).slice(1).map((part) => (
+          <section key={part.key} className="overflow-hidden rounded-xl bg-white">
+            <div className="border-b border-neutral-100 p-4">
+              <h2 className="cu-section-title mb-4">{part.mode === "courier" ? "Доставка курьером" : part.mode === "pvz" ? "Доставка в ПВЗ" : "Получение в магазине"}</h2>
+              {renderScenarioMethodSummary()}
+            </div>
+            <PartCard inGroup part={part} included={included[part.key] !== false}
+              onToggle={() => setIncluded((prev) => ({ ...prev, [part.key]: prev[part.key] === false }))}
+              showSelectionControl showRemainderHint={false}
+              selectedDateIx={partSchedules[part.key]?.dateIx ?? 0}
+              selectedSlotIx={partSchedules[part.key]?.slotIx ?? 0}
+              onDateChange={(dateIx) => setPartSchedules((prev) => ({ ...prev, [part.key]: { dateIx, slotIx: prev[part.key]?.slotIx ?? 0 } }))}
+              onSlotChange={(slotIx) => setPartSchedules((prev) => ({ ...prev, [part.key]: { dateIx: prev[part.key]?.dateIx ?? 0, slotIx } }))}
+              courierDateLabels={courierDateLabels} promoFactor={promoFactor}
+              paymentMethod={partPaymentMethods[part.key] ?? "card"}
+              onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [part.key]: payment }))}
+              bonusUsed={shipmentDiscounts[part.key]?.bonusUsed ?? 0} showOrderSummary={includedParts.length > 1}
+            />
+          </section>
+        ))}
+
         {secondaryDisplaySelections.map((selection, selectionIndex) => (
           <section
             key={selection.id}
@@ -5865,6 +5862,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 key={part.key}
                 inGroup
                 part={part}
+                      paymentMethod={partPaymentMethods[part.key] ?? "card"}
+                      onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [part.key]: payment }))}
+                      bonusUsed={shipmentDiscounts[part.key]?.bonusUsed ?? 0}
+                      showOrderSummary={includedParts.length > 1}
                 included={included[part.key] !== false}
                 onToggle={() =>
                   setIncluded((prev) => {
@@ -5911,9 +5912,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
         <section aria-labelledby="checkout-recipient-heading">
           <div className="cu-checkout-block">
-            <h2 id="checkout-recipient-heading" className="cu-section-title mb-3">
-              Мои данные
-            </h2>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 id="checkout-recipient-heading" className="cu-section-title">Получатель</h2>
+              {recipient ? <button type="button" onClick={() => openPhoneGate("recipient")}
+                className="min-h-8 rounded-[4px] border border-[#e6e6e6] px-2 text-sm">Изменить</button> : null}
+            </div>
             {!recipient ? (
               <>
                 <p className="cu-muted">Введите номер телефона, чтобы оформить заказ и списывать бонусы</p>
@@ -5933,116 +5936,16 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               <div className="space-y-1">
                 <p className="cu-label-primary text-neutral-900">{toRecipientName(recipient.fullName)}</p>
                 <p className="text-sm text-neutral-600">{recipient.phone}</p>
-                <button
-                  type="button"
-                  onClick={clearRecipient}
-                  className="mt-3 text-sm font-semibold text-neutral-600 underline underline-offset-2"
-                >
-                  Сменить номер
-                </button>
               </div>
             )}
-          </div>
-        </section>
-
-        <section aria-labelledby="checkout-payment-heading">
-          <div className="cu-checkout-block">
-            <h2 id="checkout-payment-heading" className="cu-section-title mb-3">
-              Способ оплаты
-            </h2>
-          {payOnDeliveryOnlyEffective ? (
-            <div className="mb-3">
-              <p className="cu-page-title text-neutral-900">Несколько отправлений</p>
-              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
-                <p>{payOnDeliveryDisclaimerText}</p>
-              </div>
-            </div>
-          ) : null}
-          <div role="radiogroup" aria-labelledby="checkout-payment-heading" className="space-y-2">
-            {(
-              payOnDeliveryOnlyEffective
-                ? [
-                    {
-                      id: "on_receipt" as const,
-                      Icon: PaymentBagOutlineIcon,
-                      iconClass: "h-7 w-7 text-neutral-900",
-                    },
-                    { id: "sbp" as const, Icon: SbpBrandIcon, iconClass: "h-7 w-7" },
-                    {
-                      id: "card" as const,
-                      Icon: PaymentCardOutlineIcon,
-                      iconClass: "h-7 w-7 text-neutral-900",
-                    },
-                  ]
-                : [
-                    { id: "sbp" as const, Icon: SbpBrandIcon, iconClass: "h-7 w-7" },
-                    {
-                      id: "card" as const,
-                      Icon: PaymentCardOutlineIcon,
-                      iconClass: "h-7 w-7 text-neutral-900",
-                    },
-                    {
-                      id: "on_receipt" as const,
-                      Icon: PaymentBagOutlineIcon,
-                      iconClass: "h-7 w-7 text-neutral-900",
-                    },
-                  ]
-            ).map(({ id, Icon, iconClass }) => {
-              const label = checkoutPaymentMethodLabel(id);
-              const selected = paymentMethod === id;
-              const onlyReceipt = payOnDeliveryOnlyEffective;
-              const disabled = onlyReceipt && id !== "on_receipt";
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  disabled={disabled}
-                  onClick={() => {
-                    if (!disabled) setPaymentMethod(id);
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-xl border bg-white p-4 text-left transition ${
-                    disabled
-                      ? "cursor-not-allowed border-neutral-100 opacity-45"
-                      : selected
-                        ? "border-neutral-900 ring-1 ring-neutral-900"
-                        : "border-neutral-200 hover:border-neutral-300"
-                  }`}
-                >
-                  <span
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                      selected ? "border-neutral-900" : "border-neutral-300"
-                    }`}
-                    aria-hidden
-                  >
-                    {selected ? <span className="h-2.5 w-2.5 rounded-full bg-neutral-900" /> : null}
-                  </span>
-                  <Icon className={`shrink-0 ${iconClass}`} />
-                  <span className="cu-label-primary min-w-0 flex-1 text-neutral-900">
-                    {id === "on_receipt" ? (
-                      <span className="block min-w-0">
-                        <span className="block leading-snug">При получении</span>
-                        <span className="mt-0.5 block text-xs font-medium leading-snug text-neutral-600">
-                          картой или наличными
-                        </span>
-                      </span>
-                    ) : (
-                      label
-                    )}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
           </div>
         </section>
 
         <section>
           <div className="cu-checkout-block space-y-3">
             <div>
-              <p className="cu-page-title text-neutral-900">Или промокод или бонусы</p>
-              <div className="mt-2.5 border-l-2 border-neutral-900 pl-2.5 text-sm leading-snug text-neutral-800">
+              <p className="cu-page-title text-neutral-900">Промокод или бонусы</p>
+              <div className="mt-2 text-sm leading-4 text-[#535353]">
                 <p>{recipient ? checkoutBonusUi.disclaimer : checkoutCopyResolved.promoBonusBody}</p>
               </div>
             </div>
@@ -6149,10 +6052,10 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           </div>
         </section>
 
-        <section className="mb-24">
+        <section>
           <div className="cu-checkout-block">
-            <h2 className="cu-section-title">Сумма заказа</h2>
-            <div className="mt-3 space-y-1.5">
+            <div className="flex items-center justify-between"><h2 className="cu-section-title">Итого</h2><span className="text-[17px] tabular-nums">{fmt(payFinal)}</span></div>
+            <div className="mt-6 space-y-4">
             <div className="flex justify-between">
               <span className="cu-total-row-label">Доставка</span>
               <span className="cu-total-row-value">
@@ -6177,26 +6080,42 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             ) : null}
             {bonusOn && appliedBonusRub > 0 ? (
               <div className="flex justify-between text-sm">
-                <span className="cu-total-row-label">Бонусные рубли</span>
+                <span className="cu-total-row-label">Бонусы</span>
                 <span className="tabular-nums text-red-600">− {fmt(appliedBonusRub)}</span>
               </div>
             ) : null}
-            <div className="cu-total-final-row">
-              <span>Итого</span>
-              <span>{fmt(payFinal)}</span>
-            </div>
           </div>
           </div>
         </section>
+        {includedParts.length > 0 ? (
+          <section className="cu-checkout-block">
+            <details>
+              <summary className="flex cursor-pointer items-center justify-between text-[17px] leading-5">
+                Товары <CheckoutChevronDownIcon className="h-4 w-4 text-neutral-400" />
+              </summary>
+              <ul className="mt-5 space-y-4">
+                {includedParts.flatMap((part) => part.items.map((item, index) => (
+                  <li key={`${part.key}-${item.productId}-${index}`} className="flex items-center gap-3 text-sm">
+                    <div className="relative h-[70px] w-[55px] shrink-0 overflow-hidden rounded-[4px]">
+                      <SafeProductImage src={item.image} alt={item.name} fill sizes="55px" className="object-cover" />
+                    </div>
+                    <div className="min-w-0 flex-1"><p>{item.name}</p><p className="mt-1 text-xs text-neutral-500">{item.sizeLabel ? `${item.sizeLabel} · ` : ""}{item.quantity} шт.</p></div>
+                    <span className="tabular-nums">{fmt(item.price * item.quantity)}</span>
+                  </li>
+                )))}
+              </ul>
+            </details>
+          </section>
+        ) : null}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-200 bg-white p-4">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-200 bg-white p-4 [padding-bottom:max(1rem,env(safe-area-inset-bottom,0px))]">
         <div className="mx-auto max-w-md">
           <button
             type="button"
             onClick={submit}
             disabled={!scenario || includedParts.length === 0}
-            className="inline-flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 rounded-lg bg-black py-4 text-sm font-semibold text-white disabled:opacity-40"
+            className="order-payment-button gap-3 disabled:opacity-40"
           >
             {(() => {
               const orderedUnits = includedParts.reduce((s, p) => s + p.items.reduce((ps, i) => ps + i.quantity, 0), 0);
@@ -6204,10 +6123,12 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               let label: string;
               if (units > 0 && orderedUnits === 0) {
                 label = "Выберите способ получения";
-              } else if (units > 0 && orderedUnits < units) {
-                label = `Оформить ${orderedUnits} из ${units} товаров`;
-              } else if (units > 0 && orderedUnits > 0) {
-                label = `Оформить ${orderedUnits} ${pluralizeProducts(orderedUnits)}`;
+              } else if (includedParts.length > 1) {
+                const count = includedParts.length;
+                const mod10 = count % 10;
+                const mod100 = count % 100;
+                const word = mod10 === 1 && mod100 !== 11 ? "заказ" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "заказа" : "заказов";
+                label = `Оформить ${count} ${word}`;
               } else {
                 label = "Оформить заказ";
               }

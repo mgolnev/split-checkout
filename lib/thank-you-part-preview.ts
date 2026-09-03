@@ -1,4 +1,5 @@
 import type { ThankYouPart } from "@/lib/thank-you-session";
+import { shipmentMerchTotal, shipmentTotal } from "@/lib/thank-you-session";
 
 function startOfStableCalendarDay(d: Date): Date {
   const x = new Date(d);
@@ -88,9 +89,9 @@ export function thankYouPartCardPreview(
   const secondaryHeading =
     isCourier || isGjStorePickup || isPvz || primaryHeading === headingName ? null : headingName;
 
-  const merch = part.subtotal;
+  const merch = shipmentMerchTotal(part) - (part.onlineDiscount ?? 0);
   const ship = part.deliveryPrice;
-  const lineTotal = merch + ship;
+  const lineTotal = shipmentTotal(part);
   const priceBreakdownTitle =
     merch > 0 || ship > 0
       ? ship > 0

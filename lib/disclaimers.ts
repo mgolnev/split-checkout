@@ -3,8 +3,8 @@ export type DeliveryMethodCode = "courier" | "pickup" | "pvz";
 const COMMON = {
   splitApplied:
     "Несколько отправлений — так из корзины попадает в заказ больше позиций.",
-  payOnDeliveryOnly:
-    "Два и более отправления: оплата только при получении.",
+  separatePayment:
+    "Каждый заказ можно оплатить отдельно после оформления.",
   remainderUnavailable:
     "Часть позиций при текущем выборе не входит в это оформление.",
   remainderKeep:
@@ -47,8 +47,8 @@ const BY_METHOD = {
     clickCollectUnavailable: "Доставка со склада в магазин (click & collect) здесь недоступна.",
     remainderUnavailableInStore:
       "В этом магазине не всё из заказа оформляется сразу — часть уйдёт в остаток.",
-    payOnDeliveryOnlySplitPickup:
-      "Несколько получений в магазине\nОформим отдельными получениями. Для такого заказа доступна только оплата при получении.",
+    separatePaymentSplitPickup:
+      "Несколько получений в магазине\nОформим отдельными получениями. Для каждого заказа можно выбрать свой способ оплаты.",
     selectorNoTodayAllButTodayLater:
       "Сейчас ни в одном магазине нет всех товаров из корзины. Часть можно забрать сегодня, остальные привезём позже.",
     selectorNoTodayLater:
@@ -86,7 +86,7 @@ type MethodKey = {
 
 const CODE_TITLES: Record<string, string> = {
   "common.splitApplied": "Общий: заказ разделён",
-  "common.payOnDeliveryOnly": "Общий: только оплата при получении",
+  "common.separatePayment": "Общий: отдельная оплата заказов",
   "common.remainderUnavailable": "Общий: часть товаров недоступна",
   "common.remainderKeep": "Общий: остаток остаётся в корзине",
   "common.oneShipmentPartial": "Общий: оформляем доступную часть",
@@ -112,7 +112,7 @@ const CODE_TITLES: Record<string, string> = {
   "pickup.storeNotFound": "Самовывоз: магазин не найден",
   "pickup.clickCollectUnavailable": "Самовывоз: click&collect недоступен",
   "pickup.remainderUnavailableInStore": "Самовывоз: часть недоступна в магазине",
-  "pickup.payOnDeliveryOnlySplitPickup": "Самовывоз: несколько получений — оплата при получении",
+  "pickup.separatePaymentSplitPickup": "Самовывоз: отдельная оплата заказов",
   "pickup.selectorNoTodayAllButTodayLater": "Выбор магазина: нет «забрать всё сегодня»",
   "pickup.selectorNoTodayLater": "Выбор магазина: нет «сегодня + позже»",
   "pickup.selectorNoTodayOptions": "Выбор магазина: нет вариантов на сегодня",

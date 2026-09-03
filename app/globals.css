@@ -24,6 +24,76 @@ body {
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }
 
+.order-payment-button {
+  @apply inline-flex min-h-10 w-full items-center justify-center rounded-[4px] bg-black px-3 py-2 text-center text-[13px] leading-4 tracking-[0.65px] text-white uppercase;
+}
+
+.order-payment-button:focus-visible {
+  @apply outline-2 outline-offset-2 outline-black;
+}
+
+/* Typography and spacing of the revised checkout, scoped away from cart/admin. */
+.checkout-payment-redesign .cu-section-title,
+.checkout-payment-redesign .cu-page-title,
+.checkout-payment-redesign .cu-text-headline {
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: -0.17px;
+  text-transform: none;
+}
+
+.checkout-payment-redesign .cu-benefit {
+  color: #535353;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 16px;
+  letter-spacing: -0.14px;
+  text-transform: none;
+}
+
+.checkout-payment-redesign .cu-checkout-block {
+  border-radius: 12px;
+  padding: 24px 16px;
+}
+
+.checkout-payment-redesign .cu-stepper-label {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 12px;
+  letter-spacing: -0.11px;
+  max-width: none;
+}
+
+.checkout-payment-redesign .checkout-method-tabs {
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.checkout-payment-redesign .checkout-method-tabs > button {
+  flex: 0 0 auto;
+  min-height: 62px;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.checkout-payment-redesign .checkout-method-tabs .cu-label-primary {
+  align-items: flex-start;
+  font-weight: 400;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.checkout-payment-redesign .checkout-method-tabs p {
+  font-size: 11px;
+  line-height: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
 /* Единые стили форм внутри админки (десктоп UX) */
 .admin-main h1 {
   @apply text-2xl font-semibold tracking-tight text-slate-900;
