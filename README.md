@@ -20,12 +20,18 @@ npm run dev
 
 ### Деплой и миграции Prisma
 
+Текущее размещение — **Amvera, Moscow-0**:
+[прототип](https://split-checkout-golnev.amvera.io/checkout),
+[админка](https://split-checkout-golnev.amvera.io/admin/login).
+Конфигурация, обновление через SSH и восстановление базы описаны в
+**[deploy/amvera.md](deploy/amvera.md)**.
+
 Сборка **`npm run build`** = только **Next.js** (без `prisma migrate deploy`). На этапе билда к базе не подключаемся — деплой не «висит» на БД.
 
 **После каждого релиза, в котором появились новые файлы в `prisma/migrations/`**, нужно **вручную** применить миграции к **той же** базе, которую использует прод (`DATABASE_URL`):
 
 ```bash
-export DATABASE_URL='postgresql://…'   # строка из Vercel / ONREZA / другого хостинга
+export DATABASE_URL='postgresql://…'   # строка подключения из настроек хостинга
 npm run db:migrate:deploy
 ```
 
@@ -33,6 +39,7 @@ npm run db:migrate:deploy
 
 Где выполнять:
 
+- **Amvera:** см. **`deploy/amvera.md`**. База доступна приложению по внутреннему адресу; внешний доступ после переноса выключен.
 - **Vercel:** локально с `DATABASE_URL` из панели, или **GitHub Actions** → workflow **«Migrate database»** (секрет `PRODUCTION_DATABASE_URL` = тот же `DATABASE_URL`, что в Vercel).
 - **ONREZA и аналоги:** см. **`deploy/onreza.md`** (раздел про миграции).
 
