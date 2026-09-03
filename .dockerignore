@@ -19,5 +19,9 @@ coverage
 .DS_Store
 *.log
 .vercel
+.onreza
+onreza.toml
+*.dump
+*.backup
 prisma/dev.db
 prisma/prisma/dev.db

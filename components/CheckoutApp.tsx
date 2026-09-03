@@ -27,6 +27,7 @@ import { parseCheckoutInformer } from "@/lib/parse-checkout-informer";
 import { MapStorePin, type MapStorePinSurface } from "@/components/MapStorePin";
 import { CheckoutBootstrapSkeleton } from "@/components/CartLoadingSkeleton";
 import { YandexCheckoutMap } from "@/components/YandexCheckoutMap";
+import { useYandexMapsAvailable } from "@/lib/yandex-maps-script";
 import {
   trackCheckoutBonus,
   type BonusAvailabilityState,
@@ -1288,7 +1289,7 @@ function PickupStoreSelector({
       }
     : undefined;
 
-  const hasYandexMapsKey = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY);
+  const hasYandexMapsKey = useYandexMapsAvailable();
   const pickupMapOverlayZById = useMemo(() => {
     const orderedOthers = [...filteredStores]
       .filter((s) => s.id !== mapPreviewStoreId)
@@ -2172,7 +2173,7 @@ function PvzPointSelector({
       }
     : undefined;
 
-  const hasYandexMapsKeyPvz = Boolean(process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY);
+  const hasYandexMapsKeyPvz = useYandexMapsAvailable();
   const pvzMapOverlayZById = useMemo(() => {
     const onMap = filteredPoints.filter(
       (p) =>

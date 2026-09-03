@@ -26,7 +26,7 @@ export async function GET() {
     const { code, hint: hintFromDiag } = prismaDiag(e);
     const hint =
       hintFromDiag ??
-      "Полный текст — в логах ONREZA по строке «[health] database check failed». Сверьте DATABASE_URL с панелью Kaiki и доступ compute→БД.";
+      "Полный текст — в логах приложения по строке «[health] database check failed». Сверьте DATABASE_URL и доступ приложения к PostgreSQL.";
     const metaSafe = prismaMetaSafe(e);
     console.error("[health] database check failed", e);
     return NextResponse.json(
