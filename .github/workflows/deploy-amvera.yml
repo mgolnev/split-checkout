@@ -30,4 +30,4 @@ jobs:
       - name: Push main to Amvera
         env:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/amvera_deploy_key -o IdentitiesOnly=yes
-        run: git push --force-with-lease=master git@git.msk0.amvera.ru:golnev/split-checkout HEAD:master
+        run: git push git@git.msk0.amvera.ru:golnev/split-checkout HEAD:master
