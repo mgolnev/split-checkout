@@ -31,11 +31,13 @@ function ProductThumb({ item }: { item: ThankYouItem }) {
 
 function remainingTime(deadline: string | undefined, now: number): string {
   const seconds = Math.max(0, Math.ceil(((deadline ? Date.parse(deadline) : now) - now) / 1000));
-  return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
-function ShipmentCard({ part, orderedAt, now, tracking, onPay, onCancel }: {
-  part: ThankYouPart; orderedAt: string; now: number; tracking: boolean;
+function ShipmentCard({ part, orderedAt, tracking, onPay, onCancel }: {
+  part: ThankYouPart; orderedAt: string; tracking: boolean;
   onPay: () => void; onCancel: () => void;
 }) {
   const waiting = part.actionStatus === "awaiting_payment";
@@ -48,8 +50,8 @@ function ShipmentCard({ part, orderedAt, now, tracking, onPay, onCancel }: {
     <article aria-label={`Заказ ${part.orderNumber}`} className="overflow-hidden rounded-xl bg-white">
       <div className="px-4 pb-4 pt-4">
         <div className="mb-4 flex items-center gap-1 text-[14px] leading-4">
-          <span className="bg-[#f4f4f4] px-2 py-1 text-[#535353]">{cancelled ? "Отменён" : "Создан"}</span>
           {waiting ? <span className="bg-[#ea1d2d] px-2 py-1 text-white">Ожидает оплаты</span> : null}
+          {!waiting ? <span className="bg-[#f4f4f4] px-2 py-1 text-black">{cancelled ? "Отменён" : "В сборке"}</span> : null}
           {paid ? <span className="bg-[#edf5e5] px-2 py-1 text-[#397500]">Оплачен</span> : null}
         </div>
         <h2 className="text-[17px] leading-5 tracking-[-0.17px]">№ {part.orderNumber}</h2>
@@ -71,21 +73,11 @@ function ShipmentCard({ part, orderedAt, now, tracking, onPay, onCancel }: {
           <PaymentMethodIcon method={part.paymentMethod ?? "on_receipt"} />
           <p>{thankYouShortPaymentLabel(part.paymentMethod)}</p>
         </div>
-        {waiting ? <>
-          <div className="mt-4 rounded-lg bg-[#fff0f2] p-4 text-sm leading-4">
-            <div className="mb-2 flex justify-between gap-4 text-[#ea1d2d]">
-              <span>Ожидает оплаты</span>
-              <span role="timer" aria-label="Осталось на оплату" className="tabular-nums">{remainingTime(part.paymentDeadlineIso, now)}</span>
-            </div>
-            <p>Если не оплатить до окончания таймера, заказ будет отменён</p>
-          </div>
-          <button onClick={onPay} className="order-payment-button mt-4">Оплатить</button>
-        </> : null}
+        {waiting ? <button onClick={onPay} className="order-payment-button mt-4">Оплатить</button> : null}
         {receipt ? <div className="mt-4 rounded-lg bg-[#f4f4f4] p-4">
           <p className="text-center text-sm leading-4">Оплатите заказ сейчас и получите<br />скидку 5% <span className="text-[#ea1d2d]">(−{fmt(discount)})</span></p>
-          <button onClick={onPay} className="order-payment-button mt-4">Оплатить сейчас</button>
+          <button onClick={onPay} className="order-payment-button mt-4 gap-2"><span>Оплатить сейчас</span><span>{fmt(shipmentTotal(part) - discount)}</span></button>
         </div> : null}
-        {paid ? <p role="status" className="mt-4 text-sm text-[#397500]">Оплачено {fmt(part.paidAmount ?? shipmentTotal(part))}{(part.onlineDiscount ?? 0) > 0 ? ` · Скидка 5%: −${fmt(part.onlineDiscount!)}` : ""}</p> : null}
         {cancelled ? <p className="mt-4 text-sm leading-4 text-[#535353]">{part.cancellationReason === "payment_expired" ? "Время на оплату истекло. Заказ отменён." : "Заказ отменён."}</p> : null}
         {tracking && !cancelled && !paid ? <button onClick={onCancel} className="mt-4 min-h-10 w-full text-sm underline underline-offset-4">Отменить заказ</button> : null}
       </div>
@@ -173,32 +165,44 @@ export default function OrdersConfirmation({ tracking = false }: { tracking?: bo
   </main>;
 
   const waiting = data.parts.filter((part) => part.actionStatus === "awaiting_payment").length;
-  const paidCount = data.parts.filter((part) => part.actionStatus === "paid_online").length;
-  const allPaid = paidCount === data.parts.length;
   const allCancelled = data.parts.every((part) => part.actionStatus === "cancelled");
-  const receipt = data.parts.some((part) => part.actionStatus === "active");
+  const paymentsResolved = waiting === 0 && !allCancelled;
+  const singleOrder = data.parts.length === 1;
   const payingPart = data.parts.find((part) => part.key === payingKey);
   const subtitle = waiting > 0
-    ? waiting === data.parts.length ? (waiting === 1 ? "Заказ ожидает оплаты" : "Заказы ожидают оплаты") : "Часть заказа ожидает оплаты"
-    : allPaid ? (data.parts.length === 1 ? "Заказ оплачен" : "Все заказы оплачены")
+    ? `${waiting} из ${data.parts.length} ${waiting === 1 ? "ожидает" : "ожидают"} оплаты`
+    : paymentsResolved ? "Спасибо за покупку! Сообщим, когда всё будет готово."
     : allCancelled ? (data.parts.length === 1 ? "Заказ отменён" : "Все заказы отменены")
-    : receipt ? (paidCount > 0 ? "Часть заказов оплачена, остальные — при получении" : "Оплата при получении")
     : "Оплата завершена";
 
   return (
     <main className="checkout-ui mx-auto min-h-screen max-w-md bg-[#f4f4f4] pb-10 text-black">
-      <header className="bg-white px-4 pb-4 pt-3">
+      <header className="bg-white px-4 pb-4 pt-3 text-center">
         <div className="flex justify-end">
           <Link href="/cart" aria-label="Продолжить покупки" className="flex h-10 w-10 items-center justify-center">
             <Image src="/checkout-payment/close.svg" alt="" width={16} height={16} />
           </Link>
         </div>
-        <h1 className="mt-5 text-[26px] leading-7 tracking-[-0.52px]">{tracking ? "Ваши заказы" : "Заказ оформлен"}</h1>
-        <p role="status" className="mt-4 text-sm leading-4 tracking-[-0.14px]">{subtitle}</p>
-        {waiting > 0 && data.parts.length > 1 ? <p className="mt-2 text-sm leading-4 text-[#535353]">Каждый заказ нужно оплатить отдельно.</p> : null}
+        {paymentsResolved ? (
+          <div className="relative mx-auto h-[110px] w-[312px]" aria-hidden>
+            <Image src={singleOrder ? "/thank-you-assets/single-order-bag.png" : "/thank-you-assets/gj-bag.png"} alt="" width={116} height={110} className="absolute left-[98px] top-0 h-[110px] w-[116px] object-cover" />
+            <Image src={singleOrder ? "/thank-you-assets/single-confetti-left.svg" : "/thank-you-assets/confetti-left.svg"} alt="" width={90} height={103} className="absolute left-0 top-[7px] h-[103px] w-[90px] object-contain" />
+            <Image src={singleOrder ? "/thank-you-assets/single-confetti-right.svg" : "/thank-you-assets/confetti-right.svg"} alt="" width={117} height={117} className="absolute right-0 top-[-18px] h-[117px] w-[117px] object-contain" />
+          </div>
+        ) : <Image src="/thank-you-assets/orders-created.svg" alt="" width={60} height={60} className="mx-auto mt-1 h-[60px] w-[60px]" />}
+        <h1 className="mt-4 text-[26px] leading-7 tracking-[-0.52px]">{singleOrder ? "Заказ оформлен" : "Заказы оформлены"}</h1>
+        <p role="status" className="mx-auto mt-3 max-w-[328px] text-sm leading-4 tracking-[-0.14px]">{subtitle}</p>
+        {waiting > 0 ? (
+          <div className="mt-4 flex items-start justify-between gap-4 rounded-lg bg-[rgba(234,29,45,0.08)] p-4 text-left text-sm leading-4">
+            <span>Оплатите до окончания таймера, иначе заказы будут отменены</span>
+            <span role="timer" aria-label="Осталось на оплату" className="shrink-0 tabular-nums text-[#ea1d2d]">
+              {remainingTime(data.parts.find((part) => part.actionStatus === "awaiting_payment")?.paymentDeadlineIso, now)}
+            </span>
+          </div>
+        ) : null}
       </header>
       <div className="flex flex-col gap-2 px-2 pt-2">
-        {data.parts.map((part) => <ShipmentCard key={part.key} part={part} orderedAt={data.orderedAtIso!} now={now} tracking={tracking}
+        {data.parts.map((part) => <ShipmentCard key={part.key} part={part} orderedAt={data.orderedAtIso!} tracking={tracking}
           onPay={() => setPayingKey(part.key)}
           onCancel={() => update((previous) => ({ ...previous, parts: previous.parts.map((item) => item.key === part.key && item.actionStatus !== "paid_online"
             ? { ...item, actionStatus: "cancelled", cancellationReason: "customer" } : item) }))} />)}

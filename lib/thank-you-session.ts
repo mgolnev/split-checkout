@@ -3,7 +3,7 @@ import type { ScenarioPart } from "@/lib/types";
 export type CheckoutPaymentMethod = "sbp" | "card" | "on_receipt";
 export type ShipmentActionStatus = "active" | "awaiting_payment" | "paid_online" | "cancelled";
 
-export const PAYMENT_WINDOW_MS = 10 * 60 * 1000;
+export const PAYMENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const ONLINE_DISCOUNT_RATE = 0.05;
 
 export type ThankYouItem = {

@@ -21,7 +21,7 @@ const COMMON = {
   /** Блок «промокод или бонусы» на чекауте (common.checkoutPromoBonus*) */
   checkoutPromoBonusTitle: "Промокод или бонусы",
   checkoutPromoBonusBody:
-    "В одном заказе можно применить что-то одно: промокод или списание бонусов.",
+    "Можно применить что-то одно: промокод или бонусы",
 };
 
 const SYSTEM = {

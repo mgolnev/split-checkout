@@ -307,8 +307,11 @@ body {
    */
   .checkout-ui input.cu-promo-input {
     appearance: none;
-    font-size: 1rem;
-    @apply placeholder:text-neutral-600;
+    font-size: 13px;
+    line-height: 12px;
+    letter-spacing: 0.65px;
+    text-transform: uppercase;
+    @apply placeholder:text-[#999999];
   }
 
   /**
@@ -335,6 +338,6 @@ body {
   }
   /** Оболочка строки «промокод + кнопка» — тот же визуальный язык */
   .checkout-ui .cu-inline-field-shell {
-    @apply flex w-full min-w-0 items-stretch gap-2 rounded-2xl border border-neutral-200 bg-white p-1.5 pl-4 pr-1.5 sm:pl-5;
+    @apply flex min-h-12 w-full min-w-0 items-stretch gap-2 rounded-lg border-0 bg-[#f4f4f4] px-4 py-1;
   }
 }

@@ -19,8 +19,8 @@ export function ShipmentPaymentOptions({ value, onChange, onlineOnly = false }: 
 }) {
   const id = useId();
   const options: { method: CheckoutPaymentMethod; label: string }[] = [
-    { method: "card", label: "Картой" },
     { method: "sbp", label: "СБП" },
+    { method: "card", label: "Картой" },
     ...(!onlineOnly ? [{ method: "on_receipt" as const, label: "При получении" }] : []),
   ];
   return (
@@ -43,6 +43,20 @@ export function ShipmentPaymentOptions({ value, onChange, onlineOnly = false }: 
           </label>
         ))}
       </div>
+      {value === "on_receipt" ? (
+        <div className="mt-4 flex items-start gap-3 rounded-lg bg-[#f8f7f2] p-4">
+          <Image
+            src="/checkout-payment/pay-now-info.svg"
+            alt=""
+            width={24}
+            height={24}
+            className="h-6 w-6 shrink-0 object-contain"
+          />
+          <p className="text-sm font-normal leading-4 tracking-[-0.14px] text-black">
+            Оплатите сразу — останется только забрать товары. Если что-то не подойдёт, вернём деньги.
+          </p>
+        </div>
+      ) : null}
     </fieldset>
   );
 }

@@ -185,6 +185,8 @@ type SplitModalState = {
   mode: "add" | "edit";
   editIndex: number | null;
   resolution: RemainderResolution;
+  /** Модалка открыта сразу после частичного выбора основного способа получения. */
+  automaticContinuation?: boolean;
 };
 
 type CourierAddressModalTarget =
@@ -326,7 +328,7 @@ function CheckoutBackChevronIcon({ className = "" }: { className?: string }) {
 function GjMark({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center rounded-md bg-neutral-900 font-bold leading-none text-white ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-[3px] bg-[#866c54] font-bold leading-none text-white ${className}`}
     >
       GJ
     </span>
@@ -358,12 +360,12 @@ function BonusPointsControl({
 }: BonusPointsControlProps) {
   return (
     <div className="flex w-full flex-col gap-0.5">
-      <div className="flex w-full items-start gap-3">
-        <GjMark className="mt-0.5 h-8 min-w-[2.25rem] shrink-0 px-1 text-[10px]" />
+      <div className="flex min-h-8 w-full items-center gap-3">
+        <GjMark className="h-6 w-8 shrink-0 text-[8px]" />
         <div className={`min-w-0 flex-1 ${labelsMuted ? "text-neutral-500" : "text-neutral-900"}`}>
-          <span className="block min-w-0 text-sm font-medium leading-snug">{mainText}</span>
+          <span className="block min-w-0 text-sm font-normal leading-4 tracking-[-0.14px]">{mainText}</span>
           {subText ? (
-            <span className="mt-0.5 block text-xs font-normal leading-snug text-neutral-500">{subText}</span>
+            <span className="mt-1 block text-[11px] font-normal leading-3 tracking-[-0.11px] text-[#535353]">{subText}</span>
           ) : null}
         </div>
         {showSwitch ? (
@@ -381,14 +383,14 @@ function BonusPointsControl({
               onToggle(next);
               onEnabledToggle(next);
             }}
-            className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
+            className={`relative h-[26px] w-[52px] shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 ${
               switchDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
             } ${bonusOn && !switchDisabled ? "bg-neutral-900" : "bg-neutral-300"}`}
           >
             <span className="sr-only">Списать бонусы с карты GJ</span>
             <span
-              className={`pointer-events-none block h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
-                bonusOn && !switchDisabled ? "translate-x-5" : "translate-x-0"
+              className={`pointer-events-none block h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+                bonusOn && !switchDisabled ? "translate-x-[26px]" : "translate-x-0"
               }`}
             />
           </button>
@@ -1673,7 +1675,7 @@ function PickupStoreSelector({
                     onClick={() => onSelect(sheetStore.id)}
                     className="w-full rounded-lg bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
                   >
-                    Выбрать
+                    Заберу в магазине
                   </button>
                 </div>
               ) : null}
@@ -1719,7 +1721,7 @@ function PickupStoreSelector({
                               className="shrink-0 rounded-lg bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
                               aria-pressed={selected}
                             >
-                              Выбрать
+                              Заберу в магазине
                             </button>
                           ) : null}
                         </div>
@@ -2983,28 +2985,32 @@ function CourierAddressModal({
 function RemainderLinesThumbStrip({
   lines,
   productsById,
+  appearance = "compact",
 }: {
   lines: RemainderLine[];
   productsById: Record<string, Bootstrap["products"][number]>;
+  appearance?: "compact" | "checkout";
 }) {
   if (lines.length === 0) return null;
   return (
-    <div className="flex gap-3 overflow-x-auto pb-1">
+    <div className={`flex overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${appearance === "checkout" ? "gap-1" : "gap-3"}`}>
       {lines.map((line, lineIx) => {
         const sizeLabel = productsById[line.productId]?.sizeLabel?.trim();
         return (
-          <div key={`${line.productId}-${lineIx}`} className="flex w-12 shrink-0 flex-col items-center gap-0.5">
-            <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-neutral-100">
+          <div key={`${line.productId}-${lineIx}`} className={`flex shrink-0 flex-col items-center ${appearance === "checkout" ? "w-[55px] gap-1" : "w-12 gap-0.5"}`}>
+            <div className={`relative w-full overflow-hidden rounded-[4px] bg-neutral-100 ${appearance === "checkout" ? "h-[70px]" : "aspect-[3/4]"}`}>
               <SafeProductImage
                 src={productsById[line.productId]?.image ?? ""}
                 alt=""
                 fill
                 className="object-cover"
-                sizes="48px"
+                sizes={appearance === "checkout" ? "55px" : "48px"}
               />
               {line.quantity >= 2 ? (
                 <span
-                  className="cu-text-counter absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-white ring-1 ring-white/35"
+                  className={appearance === "checkout"
+                    ? "absolute bottom-0 right-0 flex h-[18px] min-w-[15px] items-center justify-center rounded-br-[4px] rounded-tl-[4px] bg-white px-1 text-[10px] leading-[11px] text-black"
+                    : "cu-text-counter absolute right-0.5 top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-white ring-1 ring-white/35"}
                   aria-label={`${line.quantity} шт.`}
                 >
                   {line.quantity}
@@ -3012,7 +3018,9 @@ function RemainderLinesThumbStrip({
               ) : null}
             </div>
             {sizeLabel ? (
-              <span className="cu-text-caption-medium w-full text-center leading-none">
+              <span className={appearance === "checkout"
+                ? "w-full text-center text-[10px] leading-[11px] tracking-[-0.1px] text-[#535353]"
+                : "cu-text-caption-medium w-full text-center leading-none"}>
                 {sizeLabel}
               </span>
             ) : null}
@@ -3099,7 +3107,7 @@ function SecondarySelectionCard({
             <button
               type="button"
               onClick={onEdit}
-              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
+              className="min-h-8 shrink-0 rounded-[4px] border border-[#e6e6e6] bg-white px-2 text-sm font-normal text-neutral-900"
             >
               Изменить
             </button>
@@ -3113,7 +3121,7 @@ function SecondarySelectionCard({
             <button
               type="button"
               onClick={onEdit}
-              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
+              className="min-h-8 shrink-0 rounded-[4px] border border-[#e6e6e6] bg-white px-2 text-sm font-normal text-neutral-900"
             >
               Изменить
             </button>
@@ -3128,7 +3136,7 @@ function SecondarySelectionCard({
             <button
               type="button"
               onClick={onEdit}
-              className="shrink-0 rounded-lg border border-neutral-900 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900"
+              className="min-h-8 shrink-0 rounded-[4px] border border-[#e6e6e6] bg-white px-2 text-sm font-normal text-neutral-900"
             >
               Изменить
             </button>
@@ -3190,6 +3198,7 @@ function SplitSelectionModal({
   lastChosenPickupStoreId,
   lastChosenPvzPointId,
   methodTabNames,
+  automaticContinuation = false,
 }: {
   resolution: RemainderResolution;
   productsById: Record<string, Bootstrap["products"][number]>;
@@ -3216,6 +3225,7 @@ function SplitSelectionModal({
   lastChosenPvzPointId?: string | null;
   /** Подписи вкладок как на основном чекауте (`Магазины` для самовывоза, имена методов из bootstrap). */
   methodTabNames?: Partial<Record<DeliveryMethodCode, string>>;
+  automaticContinuation?: boolean;
 }) {
   const labelCourier = methodTabNames?.courier ?? "Курьер";
   const labelPickup = methodTabNames?.pickup ?? "Магазины";
@@ -3294,6 +3304,14 @@ function SplitSelectionModal({
     !selectedOption ||
     (selectedMethod === "courier" && !courierAddress.trim()) ||
     (selectedMethod === "pvz" && !selectedPvzPoint);
+  const confirmLabel =
+    selectedMethod === "pickup"
+      ? "Заберу из магазина"
+      : selectedMethod === "courier"
+        ? "Получу курьером"
+        : selectedMethod === "pvz"
+          ? "Получу в ПВЗ"
+          : "Выберите способ получения";
 
   const handleMethodSelect = (methodCode: DeliveryMethodCode) => {
     if (methodCode === "courier") {
@@ -3326,6 +3344,16 @@ function SplitSelectionModal({
         <CheckoutSheetStickyHeader title="Выберите способ получения" onClose={onClose} />
 
         <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain px-5 pb-4 pt-4">
+        {automaticContinuation ? (
+          <div className="mb-4 rounded-lg bg-[#f2ece2] p-4">
+            <p className="text-[17px] leading-5 tracking-[-0.17px] text-black">
+              Для второго заказа выберите способ получения
+            </p>
+            <p className="mt-2 text-sm leading-4 tracking-[-0.14px] text-[#535353]">
+              Выбранный способ подходит не для всех товаров. Оставшиеся товары оформим отдельным заказом.
+            </p>
+          </div>
+        ) : null}
         <div className="rounded-xl bg-neutral-50/70 p-3.5 sm:p-4">
           <RemainderLinesThumbStrip lines={resolution.lines} productsById={productsById} />
         </div>
@@ -3524,7 +3552,7 @@ function SplitSelectionModal({
             disabled={confirmDisabled}
             className="w-full rounded-lg bg-black py-4 text-sm font-semibold text-white transition hover:bg-neutral-900 disabled:pointer-events-none disabled:opacity-40"
           >
-            {saving ? "Подтверждаем…" : "Выбрать этот вариант"}
+            {saving ? "Подтверждаем…" : confirmLabel}
           </button>
         </div>
       </div>
@@ -3581,7 +3609,6 @@ function PartCard({
   paymentMethod,
   onPaymentChange,
   bonusUsed = 0,
-  showOrderSummary = false,
 }: {
   part: ScenarioPart;
   included: boolean;
@@ -3602,7 +3629,6 @@ function PartCard({
   paymentMethod?: CheckoutPaymentMethod;
   onPaymentChange?: (method: CheckoutPaymentMethod) => void;
   bonusUsed?: number;
-  showOrderSummary?: boolean;
 }) {
   const visible = part.items.slice(0, 5);
   const extra = part.items.reduce((s, i) => s + i.quantity, 0) - visible.reduce((s, i) => s + i.quantity, 0);
@@ -3815,19 +3841,6 @@ function PartCard({
       {included && paymentMethod && onPaymentChange ? (
         <div className="mt-6 border-t border-neutral-100 pt-6">
           <ShipmentPaymentOptions value={paymentMethod} onChange={onPaymentChange} />
-          {showOrderSummary ? (
-            <details className="mt-6 border-t border-neutral-100 pt-6">
-              <summary className="flex cursor-pointer items-center justify-between gap-3 text-[17px] leading-5">
-                <span>Сумма заказа</span><span className="tabular-nums">{fmt(lineTotal)} <span className="text-neutral-400">⌄</span></span>
-              </summary>
-              <dl className="mt-5 space-y-3 text-sm">
-                <div className="flex justify-between"><dt className="text-neutral-500">{part.items.reduce((sum, item) => sum + item.quantity, 0)} {pluralizeProducts(part.items.reduce((sum, item) => sum + item.quantity, 0))}</dt><dd>{fmt(part.subtotal)}</dd></div>
-                <div className="flex justify-between"><dt className="text-neutral-500">Доставка</dt><dd>{ship > 0 ? fmt(ship) : "Бесплатно"}</dd></div>
-                {promoFactor < 1 ? <div className="flex justify-between"><dt className="text-neutral-500">Промокод</dt><dd className="text-[#ea1d2d]">− {fmt(part.subtotal - merchWithPromo)}</dd></div> : null}
-                {bonusUsed > 0 ? <div className="flex justify-between"><dt className="text-neutral-500">Бонусы</dt><dd className="text-[#ea1d2d]">− {fmt(bonusUsed)}</dd></div> : null}
-              </dl>
-            </details>
-          ) : null}
         </div>
       ) : null}
     </div>
@@ -3960,6 +3973,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [unifiedRemainderFetchPending, setUnifiedRemainderFetchPending] = useState(false);
   const [secondarySelections, setSecondarySelections] = useState<SecondarySelection[]>([]);
   const [splitModalState, setSplitModalState] = useState<SplitModalState | null>(null);
+  const [continueSplitAfterPrimaryChoice, setContinueSplitAfterPrimaryChoice] = useState(false);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
   const [selectionSeq, setSelectionSeq] = useState(0);
   const [included, setIncluded] = useState<Record<string, boolean>>({});
@@ -3976,6 +3990,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const [smsCodeDraft, setSmsCodeDraft] = useState("");
   /** Откуда открыли шит телефона: оформление заказа — после ввода уходим на thank-you; бонусы — только сохраняем номер. */
   const [phoneGateReason, setPhoneGateReason] = useState<"submit" | "recipient" | "bonus" | null>(null);
+  const [singleReceiptOfferOpen, setSingleReceiptOfferOpen] = useState(false);
   const phoneGatePhoneInputRef = useRef<HTMLInputElement | null>(null);
   const phoneGateCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [courierAddress, setCourierAddress] = useState("");
@@ -4468,6 +4483,22 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   useLayoutEffect(() => {
     void refreshScenario();
   }, [refreshScenario]);
+
+  /**
+   * Если основной способ покрывает не всю корзину, не возвращаем пользователя на чекаут:
+   * сразу продолжаем выбором способа получения для второго заказа.
+   */
+  useEffect(() => {
+    if (!continueSplitAfterPrimaryChoice || loading || !scenario) return;
+    setContinueSplitAfterPrimaryChoice(false);
+    if (!remainderResolution?.lines.length) return;
+    setSplitModalState({
+      mode: "add",
+      editIndex: null,
+      resolution: remainderResolution,
+      automaticContinuation: true,
+    });
+  }, [continueSplitAfterPrimaryChoice, loading, scenario, remainderResolution]);
 
   const availableMethods = useMemo(() => {
     if (!boot || !cityId) return boot?.deliveryMethods ?? [];
@@ -5109,6 +5140,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   const selectPrimaryMethod = (nextMethod: DeliveryMethodCode) => {
     if (nextMethod === "courier") {
       if (courierAddress.trim()) {
+        setContinueSplitAfterPrimaryChoice(true);
         setMethod("courier");
       } else {
         setCourierAddressModalTarget({ kind: "primary" });
@@ -5259,6 +5291,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     setCourierAddress(address);
     setCourierAddressModalTarget(null);
     if (target.kind === "primary") {
+      setContinueSplitAfterPrimaryChoice(true);
       setMethod("courier");
       return;
     }
@@ -5281,9 +5314,18 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     [unresolvedLines, productsById],
   );
 
-  const completeCheckoutSubmit = (recOverride?: CheckoutRecipientPayload | null) => {
+  const completeCheckoutSubmit = (
+    recOverride?: CheckoutRecipientPayload | null,
+    options?: { skipReceiptOffer?: boolean; paymentMethod?: CheckoutPaymentMethod },
+  ) => {
     const rec = recOverride ?? recipient;
     if (!boot || !scenario || !cartDetail || !method || !rec) return;
+    const singlePart = includedParts.length === 1 ? includedParts[0] : null;
+    const selectedPaymentMethod = singlePart ? (partPaymentMethods[singlePart.key] ?? "card") : null;
+    if (singlePart && selectedPaymentMethod === "on_receipt" && !options?.skipReceiptOffer) {
+      setSingleReceiptOfferOpen(true);
+      return;
+    }
     const finalRemainderLines = [...manualExcludedLines];
     for (const line of currentRemainderLines) {
       const existing = finalRemainderLines.find((item) => item.productId === line.productId);
@@ -5311,7 +5353,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           deliveryPrice: p.deliveryPrice,
           promoDiscount: shipmentDiscounts[p.key]?.promoDiscount ?? 0,
           bonusUsed: shipmentDiscounts[p.key]?.bonusUsed ?? 0,
-          paymentMethod: partPaymentMethods[p.key] ?? "card",
+          paymentMethod: options?.paymentMethod ?? partPaymentMethods[p.key] ?? "card",
           holdNotice: formatHoldNoticeForPart(p.mode, p.holdDays, new Date()) ?? undefined,
           selectedDate:
             p.mode === "courier"
@@ -5453,12 +5495,21 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
     (method !== "pvz" || pvzId.trim().length > 0);
   const showScenarioSkeleton = loading && awaitingScenario;
 
+  const splitDeliveryComplete =
+    secondarySelections.length > 0 && mergedCheckoutRemainderLines.length === 0;
   const primarySplitContextBarVisible =
-    !showScenarioSkeleton && !!scenario && scenarioInformersForBanner.length > 0;
+    !showScenarioSkeleton && !!scenario && (scenarioInformersForBanner.length > 0 || splitDeliveryComplete);
 
   const renderPrimarySplitContextBar = (variant: "unified" | "stacked" | "stacked-inline") => {
     if (!primarySplitContextBarVisible) return null;
-    const parsed = scenarioInformersForBanner.map(parseCheckoutInformer).filter((x) => x.title || x.body);
+    const parsed = splitDeliveryComplete
+      ? [
+          {
+            title: "Всё выбрано",
+            body: "Доставим товары несколькими отправлениями. Для каждой уже выбран свой способ получения.",
+          },
+        ]
+      : scenarioInformersForBanner.map(parseCheckoutInformer).filter((x) => x.title || x.body);
     if (!parsed.length) return null;
     const primary = parsed[0]!;
     const extra = parsed.slice(1);
@@ -5476,7 +5527,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           : "mb-5 w-full rounded-2xl bg-white px-5 py-5";
     return (
       <div className={wrapClass}>
-        <div className="min-w-0 rounded-lg bg-[#f2ece2] p-4">
+        <div className={`min-w-0 rounded-lg p-4 ${splitDeliveryComplete ? "bg-[#eef5e8]" : "bg-[#f2ece2]"}`}>
           {primary.title ? <p className="cu-page-title text-neutral-900">{primary.title}</p> : null}
           {bodyLines.length > 0 ? (
             <div className="mt-2 space-y-1.5 text-sm leading-4 text-[#535353]">
@@ -5619,9 +5670,18 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             })}
           />
           {deliveryOptions.length > 0 && !method ? (
-            <p className="cu-muted mx-auto mt-3 max-w-[17rem] text-center">
-              Выберите способ получения.
-            </p>
+            <div className="mt-6">
+              <p className="text-sm leading-4 tracking-[-0.14px] text-black">Выберите способ получения</p>
+              <div className="mt-4">
+                <RemainderLinesThumbStrip
+                  lines={(cartDetail?.lines ?? [])
+                    .filter((line) => line.selected !== false && line.quantity > 0)
+                    .map((line) => ({ productId: line.productId, quantity: line.quantity }))}
+                  productsById={productsById}
+                  appearance="checkout"
+                />
+              </div>
+            </div>
           ) : null}
           {deliveryOptions.length === 0 ? (
             <p className="mt-2 text-xs text-neutral-500">
@@ -5743,7 +5803,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                       paymentMethod={partPaymentMethods[p.key] ?? "card"}
                       onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [p.key]: payment }))}
                       bonusUsed={shipmentDiscounts[p.key]?.bonusUsed ?? 0}
-                      showOrderSummary={includedParts.length > 1}
                       included={included[p.key] !== false}
                       onToggle={() =>
                         setIncluded((prev) => {
@@ -5789,7 +5848,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                       paymentMethod={partPaymentMethods[p.key] ?? "card"}
                       onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [p.key]: payment }))}
                       bonusUsed={shipmentDiscounts[p.key]?.bonusUsed ?? 0}
-                      showOrderSummary={includedParts.length > 1}
                       included={included[p.key] !== false}
                       onToggle={() =>
                         setIncluded((prev) => {
@@ -5838,7 +5896,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               courierDateLabels={courierDateLabels} promoFactor={promoFactor}
               paymentMethod={partPaymentMethods[part.key] ?? "card"}
               onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [part.key]: payment }))}
-              bonusUsed={shipmentDiscounts[part.key]?.bonusUsed ?? 0} showOrderSummary={includedParts.length > 1}
+              bonusUsed={shipmentDiscounts[part.key]?.bonusUsed ?? 0}
             />
           </section>
         ))}
@@ -5866,7 +5924,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                       paymentMethod={partPaymentMethods[part.key] ?? "card"}
                       onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [part.key]: payment }))}
                       bonusUsed={shipmentDiscounts[part.key]?.bonusUsed ?? 0}
-                      showOrderSummary={includedParts.length > 1}
                 included={included[part.key] !== false}
                 onToggle={() =>
                   setIncluded((prev) => {
@@ -5943,11 +6000,11 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         </section>
 
         <section>
-          <div className="cu-checkout-block space-y-3">
+          <div className="cu-checkout-block space-y-6">
             <div>
               <p className="cu-page-title text-neutral-900">Промокод или бонусы</p>
               <div className="mt-2 text-sm leading-4 text-[#535353]">
-                <p>{recipient ? checkoutBonusUi.disclaimer : checkoutCopyResolved.promoBonusBody}</p>
+                <p>{checkoutCopyResolved.promoBonusBody}</p>
               </div>
             </div>
           <div className="cu-inline-field-shell">
@@ -5958,8 +6015,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 autoComplete="off"
                 enterKeyHint="done"
                 aria-label="Промокод"
-                className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2.5 text-base text-neutral-900 outline-none ring-0"
-                placeholder="Промокод"
+                className="cu-promo-input min-w-0 flex-1 border-0 bg-transparent py-2.5 text-neutral-900 outline-none ring-0"
+                placeholder="ПРОМОКОД"
                 value={promo}
                 onChange={(e) => {
                   const next = e.target.value;
@@ -6110,7 +6167,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         ) : null}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-neutral-200 bg-white p-4 [padding-bottom:max(1rem,env(safe-area-inset-bottom,0px))]">
+      <div className="fixed bottom-0 left-0 right-0 bg-white px-4 pb-[max(8px,env(safe-area-inset-bottom,0px))] pt-2">
         <div className="mx-auto max-w-md">
           <button
             type="button"
@@ -6154,6 +6211,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           productsById={productsById}
           copy={selectorUiCopy.pickup}
           onSelectStore={(nextStoreId) => {
+            setContinueSplitAfterPrimaryChoice(true);
             setStoreId(nextStoreId);
             setPickupSelectorOpen(false);
           }}
@@ -6172,6 +6230,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           productsById={productsById}
           copy={selectorUiCopy.pvz}
           onSelectPoint={(nextPointId) => {
+            setContinueSplitAfterPrimaryChoice(true);
             setPvzId(nextPointId);
             setPvzSelectorOpen(false);
           }}
@@ -6199,6 +6258,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           lastChosenPvzPointId={lastPvzMemoryId}
           selectorCopy={selectorUiCopy}
           methodTabNames={splitModalMethodTabNames}
+          automaticContinuation={splitModalState.automaticContinuation}
         />
       ) : null}
       {courierAddressModalTarget ? (
@@ -6208,6 +6268,49 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           onClose={() => setCourierAddressModalTarget(null)}
           onSave={handleCourierAddressSave}
         />
+      ) : null}
+      {singleReceiptOfferOpen ? (
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/55">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="single-receipt-offer-title"
+            className="w-full max-w-md rounded-t-xl bg-white px-4 pb-[max(28px,env(safe-area-inset-bottom,0px))] pt-14 text-center"
+          >
+            <h2 id="single-receipt-offer-title" className="text-[26px] leading-7 tracking-[-0.52px]">
+              Оплатите онлайн<br />и экономьте
+            </h2>
+            <p className="mt-5 text-sm leading-4 tracking-[-0.14px]">
+              Оплатите заказ сейчас<br />
+              и получите скидку 5% <span className="text-[#ea1d2d]">(−{fmt(Math.round(Math.max(
+                0,
+                (includedParts[0]?.subtotal ?? 0)
+                  - (shipmentDiscounts[includedParts[0]?.key ?? ""]?.promoDiscount ?? 0)
+                  - (shipmentDiscounts[includedParts[0]?.key ?? ""]?.bonusUsed ?? 0),
+              ) * 0.05))})</span>
+            </p>
+            <button
+              type="button"
+              className="order-payment-button mt-10"
+              onClick={() => {
+                setSingleReceiptOfferOpen(false);
+                completeCheckoutSubmit(undefined, { skipReceiptOffer: true, paymentMethod: "sbp" });
+              }}
+            >
+              Получить скидку
+            </button>
+            <button
+              type="button"
+              className="mt-3 min-h-10 w-full text-sm leading-4"
+              onClick={() => {
+                setSingleReceiptOfferOpen(false);
+                completeCheckoutSubmit(undefined, { skipReceiptOffer: true, paymentMethod: "on_receipt" });
+              }}
+            >
+              Оплатить при получении
+            </button>
+          </div>
+        </div>
       ) : null}
       {phoneGateOpen ? (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
