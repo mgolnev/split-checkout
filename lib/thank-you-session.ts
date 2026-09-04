@@ -1,7 +1,7 @@
 import type { ScenarioPart } from "@/lib/types";
 
 export type CheckoutPaymentMethod = "sbp" | "card" | "on_receipt";
-export type ShipmentActionStatus = "active" | "awaiting_payment" | "paid_online" | "cancelled";
+export type ShipmentActionStatus = "active" | "awaiting_payment" | "payment_failed" | "paid_online" | "cancelled";
 
 export const PAYMENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const ONLINE_DISCOUNT_RATE = 0.05;
@@ -113,12 +113,12 @@ export function normalizeThankYouData(raw: ThankYouPayload, now = Date.now()): T
     orderedAtIso,
     orderNumber,
     parts: raw.parts.map((part, index) => {
-      const paymentMethod = part.paymentMethod ?? raw.paymentMethod ?? "on_receipt";
+      const paymentMethod = part.paymentMethod ?? raw.paymentMethod ?? "sbp";
       const status = deriveShipmentStatus(paymentMethod, part.actionStatus);
       const paymentDeadlineIso = part.paymentDeadlineIso ?? (status === "awaiting_payment"
         ? new Date(Date.parse(orderedAtIso) + PAYMENT_WINDOW_MS).toISOString()
         : undefined);
-      const expired = status === "awaiting_payment" && !!paymentDeadlineIso && now >= Date.parse(paymentDeadlineIso);
+      const expired = (status === "awaiting_payment" || status === "payment_failed") && !!paymentDeadlineIso && now >= Date.parse(paymentDeadlineIso);
       return {
         ...part,
         orderNumber: part.orderNumber ?? (raw.parts.length > 1 ? `${orderNumber}-${index + 1}` : orderNumber),
@@ -142,7 +142,7 @@ export function completeShipmentPayment(
 ): ThankYouPayload {
   const normalized = normalizeThankYouData(data, now);
   const parts = normalized.parts.map((part) => {
-    if (part.key !== key || (part.actionStatus !== "active" && part.actionStatus !== "awaiting_payment")) return part;
+    if (part.key !== key || (part.actionStatus !== "active" && part.actionStatus !== "awaiting_payment" && part.actionStatus !== "payment_failed")) return part;
     const onlineDiscount = shipmentOnlineDiscount(part);
     return {
       ...part,
@@ -153,6 +153,19 @@ export function completeShipmentPayment(
     };
   });
   return { ...normalized, parts, total: parts.reduce((sum, part) => sum + shipmentTotal(part), 0) };
+}
+
+/** Persist an actual rejected payment attempt so the red failure state appears only afterwards. */
+export function failShipmentPayment(data: ThankYouPayload, key: string, now = Date.now()): ThankYouPayload {
+  const normalized = normalizeThankYouData(data, now);
+  return {
+    ...normalized,
+    parts: normalized.parts.map((part) =>
+      part.key === key && part.actionStatus === "awaiting_payment"
+        ? { ...part, actionStatus: "payment_failed" as const }
+        : part,
+    ),
+  };
 }
 
 /** `Оформлен 24 апреля 2026 в 13:13` */

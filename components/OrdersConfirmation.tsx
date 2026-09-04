@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { PaymentMethodIcon, ShipmentPaymentOptions } from "@/components/ShipmentPaymentOptions";
 import { thankYouPartCardPreview } from "@/lib/thank-you-part-preview";
 import {
-  completeShipmentPayment, normalizeThankYouData, readThankYouPayload,
+  completeShipmentPayment, failShipmentPayment, normalizeThankYouData, readThankYouPayload,
   shipmentOnlineDiscount, shipmentTotal, thankYouShortPaymentLabel, writeThankYouPayload,
   type CheckoutPaymentMethod, type ThankYouItem, type ThankYouPart, type ThankYouPayload,
 } from "@/lib/thank-you-session";
@@ -41,6 +41,8 @@ function ShipmentCard({ part, orderedAt, tracking, onPay, onCancel }: {
   onPay: () => void; onCancel: () => void;
 }) {
   const waiting = part.actionStatus === "awaiting_payment";
+  const paymentFailed = part.actionStatus === "payment_failed";
+  const payable = waiting || paymentFailed;
   const paid = part.actionStatus === "paid_online";
   const cancelled = part.actionStatus === "cancelled";
   const receipt = part.actionStatus === "active" && part.paymentMethod === "on_receipt";
@@ -50,8 +52,9 @@ function ShipmentCard({ part, orderedAt, tracking, onPay, onCancel }: {
     <article aria-label={`Заказ ${part.orderNumber}`} className="overflow-hidden rounded-xl bg-white">
       <div className="px-4 pb-4 pt-4">
         <div className="mb-4 flex items-center gap-1 text-[14px] leading-4">
-          {waiting ? <span className="bg-[#ea1d2d] px-2 py-1 text-white">Ожидает оплаты</span> : null}
-          {!waiting ? <span className="bg-[#f4f4f4] px-2 py-1 text-black">{cancelled ? "Отменён" : "В сборке"}</span> : null}
+          {waiting ? <span className="bg-[#f4f4f4] px-2 py-1 text-black">Ожидает оплаты</span> : null}
+          {paymentFailed ? <span className="bg-[#ea1d2d] px-2 py-1 text-white">Оплата не прошла</span> : null}
+          {!payable ? <span className="bg-[#f4f4f4] px-2 py-1 text-black">{cancelled ? "Отменён" : "В сборке"}</span> : null}
           {paid ? <span className="bg-[#edf5e5] px-2 py-1 text-[#397500]">Оплачен</span> : null}
         </div>
         <h2 className="text-[17px] leading-5 tracking-[-0.17px]">№ {part.orderNumber}</h2>
@@ -69,11 +72,11 @@ function ShipmentCard({ part, orderedAt, tracking, onPay, onCancel }: {
         {tracking && part.holdNotice ? <p className="mt-3 text-[11px] leading-4 text-[#535353]">{part.holdNotice}</p> : null}
       </div>
       <div className="border-t border-[#f4f4f4] px-4 pb-4 pt-4">
-        <div className="flex items-center gap-3 text-sm leading-4">
-          <PaymentMethodIcon method={part.paymentMethod ?? "on_receipt"} />
+        {!payable ? <div className="flex items-center gap-3 text-sm leading-4">
+          <PaymentMethodIcon method={part.paymentMethod ?? "sbp"} />
           <p>{thankYouShortPaymentLabel(part.paymentMethod)}</p>
-        </div>
-        {waiting ? <button onClick={onPay} className="order-payment-button mt-4">Оплатить</button> : null}
+        </div> : null}
+        {payable ? <button onClick={onPay} className="order-payment-button">{paymentFailed ? "Повторить оплату" : "Оплатить"}</button> : null}
         {receipt ? <div className="mt-4 rounded-lg bg-[#f4f4f4] p-4">
           <p className="text-center text-sm leading-4">Оплатите заказ сейчас и получите<br />скидку 5% <span className="text-[#ea1d2d]">(−{fmt(discount)})</span></p>
           <button onClick={onPay} className="order-payment-button mt-4 gap-2"><span>Оплатить сейчас</span><span>{fmt(shipmentTotal(part) - discount)}</span></button>
@@ -85,13 +88,13 @@ function ShipmentCard({ part, orderedAt, tracking, onPay, onCancel }: {
   );
 }
 
-function PaymentDialog({ part, onClose, onSuccess }: {
+function PaymentDialog({ part, onClose, onSuccess, onFailure }: {
   part: ThankYouPart; onClose: () => void;
   onSuccess: (method: Exclude<CheckoutPaymentMethod, "on_receipt">) => void;
+  onFailure: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [method, setMethod] = useState<CheckoutPaymentMethod>(part.paymentMethod === "sbp" ? "sbp" : "card");
-  const [failed, setFailed] = useState(false);
+  const [method, setMethod] = useState<CheckoutPaymentMethod>("sbp");
   const discount = shipmentOnlineDiscount(part);
   useEffect(() => {
     const element = dialog.current;
@@ -114,10 +117,9 @@ function PaymentDialog({ part, onClose, onSuccess }: {
       {discount > 0 ? <p className="mb-6 text-sm text-[#ea1d2d]">Скидка 5% на товары: −{fmt(discount)}</p> : null}
       <ShipmentPaymentOptions value={method} onChange={setMethod} onlineOnly />
       <p className="mt-5 text-xs leading-4 text-[#535353]">Демонстрационная оплата. Деньги не списываются.</p>
-      {failed ? <p role="alert" className="mt-4 text-sm text-[#ea1d2d]">Оплата не прошла. Попробуйте ещё раз или выберите другой способ.</p> : null}
       {part.actionStatus === "cancelled" ? <p role="alert" className="mt-4 text-sm text-[#ea1d2d]">Время оплаты истекло. Заказ отменён.</p> : <>
-        <button onClick={() => { if (method !== "on_receipt") onSuccess(method); }} className="order-payment-button mt-5">{failed ? "Повторить оплату" : "Подтвердить демооплату"}</button>
-        <button onClick={() => setFailed(true)} className="mt-3 min-h-10 w-full text-sm text-[#535353] underline underline-offset-4">Проверить неуспешную оплату</button>
+        <button onClick={() => { if (method !== "on_receipt") onSuccess(method); }} className="order-payment-button mt-5">Подтвердить демооплату</button>
+        <button onClick={onFailure} className="mt-3 min-h-10 w-full text-sm text-[#535353] underline underline-offset-4">Проверить неуспешную оплату</button>
       </>}
     </dialog>
   );
@@ -133,6 +135,10 @@ export default function OrdersConfirmation({ tracking = false }: { tracking?: bo
     const raw = readThankYouPayload();
     if (raw) writeThankYouPayload(raw);
     setData(raw);
+    if (raw && sessionStorage.getItem("thankyou:auto-pay") === "1") {
+      sessionStorage.removeItem("thankyou:auto-pay");
+      setPayingKey(raw.parts.find((part) => part.actionStatus === "awaiting_payment")?.key ?? null);
+    }
     setNow(Date.now());
     const tick = () => {
       const time = Date.now();
@@ -164,7 +170,8 @@ export default function OrdersConfirmation({ tracking = false }: { tracking?: bo
     <p>Нет данных заказа.</p><Link href="/checkout" className="order-payment-button mt-6">Перейти к оформлению</Link>
   </main>;
 
-  const waiting = data.parts.filter((part) => part.actionStatus === "awaiting_payment").length;
+  const waiting = data.parts.filter((part) => part.actionStatus === "awaiting_payment" || part.actionStatus === "payment_failed").length;
+  const failedPayments = data.parts.filter((part) => part.actionStatus === "payment_failed");
   const allCancelled = data.parts.every((part) => part.actionStatus === "cancelled");
   const paymentsResolved = waiting === 0 && !allCancelled;
   const singleOrder = data.parts.length === 1;
@@ -192,11 +199,11 @@ export default function OrdersConfirmation({ tracking = false }: { tracking?: bo
         ) : <Image src="/thank-you-assets/orders-created.svg" alt="" width={60} height={60} className="mx-auto mt-1 h-[60px] w-[60px]" />}
         <h1 className="mt-4 text-[26px] leading-7 tracking-[-0.52px]">{singleOrder ? "Заказ оформлен" : "Заказы оформлены"}</h1>
         <p role="status" className="mx-auto mt-3 max-w-[328px] text-sm leading-4 tracking-[-0.14px]">{subtitle}</p>
-        {waiting > 0 ? (
+        {failedPayments.length > 0 ? (
           <div className="mt-4 flex items-start justify-between gap-4 rounded-lg bg-[rgba(234,29,45,0.08)] p-4 text-left text-sm leading-4">
             <span>Оплатите до окончания таймера, иначе заказы будут отменены</span>
             <span role="timer" aria-label="Осталось на оплату" className="shrink-0 tabular-nums text-[#ea1d2d]">
-              {remainingTime(data.parts.find((part) => part.actionStatus === "awaiting_payment")?.paymentDeadlineIso, now)}
+              {remainingTime(failedPayments[0]?.paymentDeadlineIso, now)}
             </span>
           </div>
         ) : null}
@@ -212,9 +219,14 @@ export default function OrdersConfirmation({ tracking = false }: { tracking?: bo
         <Link href="/cart" className="min-h-10 content-center text-[#535353] underline underline-offset-4">Продолжить покупки</Link>
       </nav>
       {payingPart ? <PaymentDialog key={payingPart.key} part={payingPart} onClose={() => setPayingKey(null)}
-        onSuccess={(method) => {
-          update((previous) => completeShipmentPayment(previous, payingPart.key, method));
+        onFailure={() => {
+          update((previous) => failShipmentPayment(previous, payingPart.key));
           setPayingKey(null);
+        }}
+        onSuccess={(method) => {
+          const nextPaymentKey = data.parts.find((part) => part.key !== payingPart.key && (part.actionStatus === "awaiting_payment" || part.actionStatus === "payment_failed"))?.key ?? null;
+          update((previous) => completeShipmentPayment(previous, payingPart.key, method));
+          setPayingKey(nextPaymentKey);
         }} /> : null}
     </main>
   );

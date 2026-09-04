@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  allocateDiscount, completeShipmentPayment, deriveShipmentStatus, normalizeThankYouData,
+  allocateDiscount, completeShipmentPayment, deriveShipmentStatus, failShipmentPayment, normalizeThankYouData,
   PAYMENT_WINDOW_MS, shipmentOnlineDiscount, shipmentTotal, type ThankYouPart, type ThankYouPayload,
 } from "../lib/thank-you-session";
 import { computeScenario, scenarioFromOverride } from "../lib/split-engine";
@@ -30,6 +30,10 @@ assert.deepEqual(paidFirst.parts.map((p) => p.actionStatus), ["paid_online", "aw
 assert.equal(paidFirst.parts[0].paidAmount, 2186);
 assert.equal(paidFirst.parts[0].onlineDiscount, 0);
 assert.deepEqual(completeShipmentPayment(paidFirst, "card", "sbp", now + 2000), paidFirst);
+
+const failedSecond = failShipmentPayment(paidFirst, "sbp", now + 2000);
+assert.equal(failedSecond.parts[1].actionStatus, "payment_failed");
+assert.equal(completeShipmentPayment(failedSecond, "sbp", "sbp", now + 3000).parts[1].actionStatus, "paid_online");
 
 assert.equal(shipmentOnlineDiscount(order.parts[2]), 94); // 5% of 1887 goods; shipping excluded.
 const paidReceipt = completeShipmentPayment(paidFirst, "receipt", "sbp", now + 3000);

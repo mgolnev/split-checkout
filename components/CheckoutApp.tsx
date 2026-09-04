@@ -1056,31 +1056,26 @@ function PickupStoreFulfillmentBlock({
   productsById: Record<string, SheetProductRef>;
 }) {
   if (items.length === 0) return null;
-  const compactTitle =
-    title === "Привезём в магазин" && leadText?.startsWith("Доставим в магазин ")
-      ? `Привезём в магазин ${leadText.replace("Доставим в магазин ", "")}`
-      : leadText
-        ? `${title} · ${leadText}`
-        : title;
+  const compactTitle = leadText?.replace("Доставим в магазин ", "Доставим ") ?? title;
   return (
-    <div className="border-t border-neutral-100 pt-3 first:border-t-0 first:pt-0">
-      <p className="text-sm font-semibold leading-snug text-neutral-700">{compactTitle}</p>
-      {benefitText ? <p className="cu-benefit mt-1 inline-flex">{benefitText}</p> : null}
-      <div className="mt-2 flex flex-wrap gap-2.5">
+    <div className="border-t border-[#f4f4f4] pt-4 first:border-t-0 first:pt-0">
+      <p className="text-[17px] leading-5 tracking-[-0.17px] text-black">{compactTitle}</p>
+      {benefitText ? <p className="mt-2 text-sm leading-4 tracking-[-0.14px] text-[#535353]">{benefitText}</p> : null}
+      <div className="mt-3 flex flex-wrap gap-1">
         {items.map((it, ix) => (
           <div
             key={`${title}-${it.productId}-${ix}`}
-            className="relative h-14 w-11 shrink-0 overflow-hidden rounded-lg bg-neutral-100 ring-1 ring-neutral-100"
+            className="relative h-[55px] w-[43px] shrink-0 overflow-hidden rounded-[4px] bg-[#f4f4f4]"
           >
             <SafeProductImage
               src={productsById[it.productId]?.image ?? ""}
               alt={productsById[it.productId]?.name ?? ""}
               fill
               className="object-cover"
-              sizes="48px"
+              sizes="43px"
             />
             {it.quantity >= 2 ? (
-              <span className="cu-text-counter absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-900/90 px-[3px] text-white ring-1 ring-white/30">
+              <span className="absolute bottom-0 right-0 flex h-[15px] min-w-[15px] items-center justify-center rounded-tl bg-white px-1 text-[10px] leading-3 text-black">
                 {it.quantity}
               </span>
             ) : null}
@@ -1159,10 +1154,10 @@ function PickupStoreSelector({
   onSelect: (storeId: string) => void;
   onClose: () => void;
 }) {
+  const [selectorView, setSelectorView] = useState<"map" | "list">("map");
   const [storeSearch, setStoreSearch] = useState("");
   const [listFilter, setListFilter] = useState<PickupStoreListFilter>("all");
   const [searchActive, setSearchActive] = useState(false);
-  const [expandedStoreIds, setExpandedStoreIds] = useState<Record<string, boolean>>({});
   const [mapPreviewStoreId, setMapPreviewStoreId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<PickupBottomSheetMode>("collapsed");
   const sheetDragRef = useRef<{ startY: number } | null>(null);
@@ -1219,10 +1214,6 @@ function PickupStoreSelector({
     }
   }, [todayAllAvailable, todayLaterAvailable, listFilter]);
 
-  const toggleExpandedStore = (id: string) => {
-    setExpandedStoreIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
   const mapPreviewStore = useMemo(
     () => (mapPreviewStoreId ? filteredStores.find((s) => s.id === mapPreviewStoreId) ?? null : null),
     [filteredStores, mapPreviewStoreId],
@@ -1251,16 +1242,17 @@ function PickupStoreSelector({
 
   const mapStores = filteredStores;
   const sheetStore = mapPreviewStore ?? recommendedStore ?? filteredStores[0] ?? null;
-  const sheetScenarioLine = sheetStore ? pickupStoreCompactScenarioLine(sheetStore.summary) : "";
-  const sheetExpanded = sheetMode === "expanded";
-  const showPreview = sheetMode === "preview" && !!sheetStore;
+  const sheetExpanded = selectorView === "list" || sheetMode === "expanded";
+  const showPreview = selectorView === "map" && sheetMode === "preview" && !!sheetStore;
   /** Без vv: как после свайпа. С vv (фокус поиска + клавиатура iOS): высота/позиция задаются инлайном от visualViewport. */
-  const sheetClass = vvSheet
+  const sheetClass = selectorView === "list"
+    ? "h-[calc(100dvh-9.75rem)] max-h-none rounded-none border-0 shadow-none"
+    : vvSheet
     ? "max-h-none"
     : sheetMode === "expanded" || searchActive
       ? "max-h-[78dvh]"
       : showPreview
-        ? "max-h-[calc(100dvh-7rem)]"
+        ? "max-h-[calc(100dvh-13.5rem)]"
         : "max-h-[34dvh]";
   const sheetScrollClass = showPreview
     ? "max-h-[calc(100dvh-12rem)]"
@@ -1433,17 +1425,19 @@ function PickupStoreSelector({
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden isolate">
-      <CheckoutCloseCrossButton
-        variant="back"
-        ariaLabel="Назад к оформлению заказа"
-        onClick={onClose}
-        className={
-          vvSheet ? "fixed left-4 z-30" : "fixed left-4 top-[max(1rem,env(safe-area-inset-top))] z-30"
-        }
-        style={vvSheet ? { top: Math.max(16, vvSheet.top + 4) } : undefined}
-      />
+      <header className="fixed inset-x-0 top-0 z-50 bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
+        <div className="relative flex min-h-16 items-center justify-center">
+          <button type="button" onClick={onClose} aria-label="Назад к оформлению заказа" className="absolute left-0 flex h-10 w-10 items-center justify-start">
+            <CheckoutBackChevronIcon className="h-6 w-6" />
+          </button>
+          <div className="text-center"><h2 className="text-[17px] leading-5">Выберите магазин</h2><p className="mt-0.5 text-sm leading-4 text-[#535353]">Москва</p></div>
+        </div>
+        <div className="flex h-10 rounded bg-[#f4f4f4] p-0.5 text-sm">
+          {(["map", "list"] as const).map((view) => <button key={view} type="button" onClick={() => { setSelectorView(view); setMapPreviewStoreId(null); setSheetMode(view === "list" ? "expanded" : "collapsed"); }} className={`flex-1 rounded ${selectorView === view ? "bg-white" : "text-[#535353]"}`}>{view === "map" ? "Карта" : "Список"}</button>)}
+        </div>
+      </header>
       <div
-        className={`overflow-hidden [backface-visibility:hidden] ${vvSheet ? "fixed z-[1]" : "fixed inset-0 z-[1]"}`}
+        className={`overflow-hidden pt-[156px] [backface-visibility:hidden] ${selectorView === "list" ? "hidden" : ""} ${vvSheet ? "fixed z-[1]" : "fixed inset-0 z-[1]"}`}
         style={mapFixedStyle}
       >
         {showYandexPickupMap ? (
@@ -1535,7 +1529,7 @@ function PickupStoreSelector({
         className={`z-40 flex min-h-0 flex-col overflow-hidden rounded-t-2xl border border-neutral-200/80 bg-white shadow-[0_-12px_40px_rgba(0,0,0,0.14)] ${sheetTransitionClass} ${sheetClass} ${vvSheet ? "fixed" : sheetPositionClass}`}
         style={sheetFixedStyle}
       >
-        <div
+        {selectorView === "map" ? <div
           className="flex min-h-11 shrink-0 cursor-grab items-center justify-center px-4 pb-3 pt-4 active:cursor-grabbing"
           aria-label="Потяните шторку вверх или вниз"
           onPointerDown={(event) => {
@@ -1558,12 +1552,10 @@ function PickupStoreSelector({
           >
             <span className="mx-auto block h-1 w-10 rounded-full bg-neutral-200" aria-hidden />
           </button>
-        </div>
+        </div> : null}
         {showPreview ? (
-          <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-2">
-            <p className="cu-text-display min-w-0 flex-1 break-words text-left line-clamp-2">
-              {sheetStore?.name}
-            </p>
+          <div className="flex shrink-0 items-start justify-between gap-3 px-4 pb-3 pt-1">
+            <div className="min-w-0 flex-1 text-left"><p className="text-[17px] leading-5 line-clamp-2">{sheetStore?.name}</p><p className="mt-2 text-sm leading-4">Магазин GJ</p><p className="mt-2 text-sm leading-4">Ежедневно с 10:00 до 22:00</p></div>
             <CheckoutCloseCrossButton
               ariaLabel="Закрыть карточку магазина"
               onClick={() => {
@@ -1627,8 +1619,8 @@ function PickupStoreSelector({
             {showPickupFilterChips ? (
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {filterChip("all", "Все магазины")}
-                {filterChip("today_all", "Забрать всё сегодня")}
-                {filterChip("today_later", "Сегодня + позже")}
+                {filterChip("today_all", "Забрать сегодня")}
+                {filterChip("today_later", "Забрать позже")}
               </div>
             ) : null}
             {pickupFilterDisclaimer ? (
@@ -1644,10 +1636,15 @@ function PickupStoreSelector({
         >
           {showPreview && sheetStore && !sheetExpanded ? (
             <div className="pb-1">
-              <div className="space-y-3">
-                <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
-                  {sheetScenarioLine}
-                </p>
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-1">
+                  <p className={`inline-flex rounded px-2 py-1 text-[11px] leading-3 ${sheetStore.summary?.hasFullCoverage ? "bg-[#d9f2d3]" : "bg-[#ffe7cc]"}`}>
+                    Доступно {sheetStore.summary?.availableUnits ?? 0} из {sheetStore.summary?.totalUnits ?? 0} товаров
+                  </p>
+                  <p className="inline-flex rounded bg-[#f8f7f2] px-2 py-1 text-[11px] leading-3">
+                    {sheetStore.summary?.reserveUnits ?? 0} сегодня{(sheetStore.summary?.collectUnits ?? 0) > 0 ? ` · ${sheetStore.summary?.collectUnits} позже` : ""}
+                  </p>
+                </div>
                 {lastChosenStoreId === sheetStore.id ? (
                   <p className="cu-text-caption-medium text-neutral-500">
                     Выбирали в прошлый раз
@@ -1656,24 +1653,24 @@ function PickupStoreSelector({
                 <PickupStoreFulfillmentBlock
                   title="Сразу в магазине"
                   leadText={sheetStore.summary?.reserveThumb?.leadText}
-                  benefitText="Бесплатно · примерка"
+                  benefitText="Бесплатная доставка · Примерка"
                   items={sheetStore.summary?.immediateLines ?? []}
                   productsById={productsById}
                 />
                 <PickupStoreFulfillmentBlock
                   title="Привезём в магазин"
                   leadText={sheetStore.summary?.collectThumb?.leadText}
-                  benefitText="Бесплатно"
+                  benefitText="Бесплатная доставка · Примерка"
                   items={sheetStore.summary?.laterLines ?? []}
                   productsById={productsById}
                 />
               </div>
               {pickupStoreCanSelect(sheetStore.summary) ? (
-                <div className="mt-3">
+                <div className="sticky bottom-0 mt-4 bg-white pt-2">
                   <button
                     type="button"
                     onClick={() => onSelect(sheetStore.id)}
-                    className="w-full rounded-lg bg-black py-3 text-sm font-semibold text-white transition hover:bg-neutral-900"
+                    className="w-full rounded-[4px] bg-black py-3 text-[13px] uppercase leading-4 tracking-[0.65px] text-white transition hover:bg-neutral-900"
                   >
                     Заберу в магазине
                   </button>
@@ -1700,33 +1697,22 @@ function PickupStoreSelector({
                     const selected = selectedStoreId === store.id;
                     const wasLastChoice = lastChosenStoreId === store.id;
                     const scenarioLine = pickupStoreCompactScenarioLine(store.summary);
-                    const detailsOpen = !!expandedStoreIds[store.id];
-                    const hasDetails =
-                      !!store.summary?.immediateLines?.length ||
-                      !!store.summary?.laterLines?.length;
-                    const canSelectStore = pickupStoreCanSelect(store.summary);
                     return (
-                      <div
+                      <button
+                        type="button"
+                        onClick={() => setMapPreviewStoreId(store.id)}
                         key={store.id}
-                        className={`rounded-2xl border bg-white p-3 transition sm:p-4 ${selected ? "border-black" : "border-neutral-200"}`}
+                        className={`w-full border-b bg-white py-4 text-left transition ${selected ? "border-black" : "border-neutral-100"}`}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <p className="cu-text-headline min-w-0 flex-1 leading-tight">
+                          <p className="text-[17px] leading-5">
                             {store.name}
                           </p>
-                          {canSelectStore ? (
-                            <button
-                              type="button"
-                              onClick={() => onSelect(store.id)}
-                              className="shrink-0 rounded-lg bg-black px-4 py-2 text-xs font-semibold text-white transition hover:bg-neutral-900"
-                              aria-pressed={selected}
-                            >
-                              Заберу в магазине
-                            </button>
-                          ) : null}
                         </div>
+                        <p className="mt-2 text-sm leading-4">Магазин GJ</p>
+                        <p className="mt-2 text-sm leading-4">Ежедневно с 10:00 до 22:00</p>
                         <div className="mt-3 space-y-3">
-                          <p className="inline-flex max-w-full rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold leading-snug text-neutral-800">
+                          <p className={`inline-flex max-w-full rounded px-2 py-1 text-[11px] leading-3 ${store.summary?.hasFullCoverage ? "bg-[#d9f2d3]" : "bg-[#ffe7cc]"}`}>
                             {scenarioLine}
                           </p>
                           {wasLastChoice ? (
@@ -1734,39 +1720,8 @@ function PickupStoreSelector({
                               Выбирали в прошлый раз
                             </p>
                           ) : null}
-                          {hasDetails ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleExpandedStore(store.id)}
-                              className="flex w-fit items-center gap-1 text-xs font-semibold text-neutral-700 transition hover:text-neutral-950"
-                              aria-expanded={detailsOpen}
-                            >
-                              <span>{detailsOpen ? "Свернуть" : "Подробнее"}</span>
-                              <CheckoutChevronDownIcon
-                                className={`mt-px h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
-                              />
-                            </button>
-                          ) : null}
-                          {detailsOpen ? (
-                            <div className="space-y-3 border-t border-neutral-100 pt-3">
-                              <PickupStoreFulfillmentBlock
-                                title="Сразу в магазине"
-                                leadText={store.summary?.reserveThumb?.leadText}
-                                benefitText="Бесплатно · примерка"
-                                items={store.summary?.immediateLines ?? []}
-                                productsById={productsById}
-                              />
-                              <PickupStoreFulfillmentBlock
-                                title="Привезём в магазин"
-                                leadText={store.summary?.collectThumb?.leadText}
-                                benefitText="Бесплатно"
-                                items={store.summary?.laterLines ?? []}
-                                productsById={productsById}
-                              />
-                            </div>
-                          ) : null}
                         </div>
-                      </div>
+                      </button>
                     );
                   })
                 )}
@@ -1775,6 +1730,21 @@ function PickupStoreSelector({
           ) : null}
         </div>
       </div>
+      {selectorView === "list" && mapPreviewStore ? (
+        <div className="fixed inset-x-0 bottom-0 top-[156px] z-[70] flex items-end bg-black/55" onClick={() => setMapPreviewStoreId(null)}>
+          <div className="w-full rounded-t-xl bg-white pb-[max(16px,env(safe-area-inset-bottom))]" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 px-4 pb-4 pt-6">
+              <div className="min-w-0 flex-1"><p className="text-[17px] leading-5">{mapPreviewStore.name}</p><p className="mt-2 text-sm leading-4">Магазин GJ</p><p className="mt-2 text-sm leading-4">Ежедневно с 10:00 до 22:00</p><p className={`mt-4 inline-flex rounded px-2 py-1 text-[11px] leading-3 ${mapPreviewStore.summary?.hasFullCoverage ? "bg-[#d9f2d3]" : "bg-[#ffe7cc]"}`}>{pickupStoreCompactScenarioLine(mapPreviewStore.summary)}</p></div>
+              <CheckoutCloseCrossButton ariaLabel="Закрыть карточку магазина" onClick={() => setMapPreviewStoreId(null)} />
+            </div>
+            <div className="space-y-4 border-t border-[#f4f4f4] px-4 py-4">
+              <PickupStoreFulfillmentBlock title="Сразу в магазине" leadText={mapPreviewStore.summary?.reserveThumb?.leadText} benefitText="Бесплатная доставка · Примерка" items={mapPreviewStore.summary?.immediateLines ?? []} productsById={productsById} />
+              <PickupStoreFulfillmentBlock title="Привезём в магазин" leadText={mapPreviewStore.summary?.collectThumb?.leadText} benefitText="Бесплатная доставка · Примерка" items={mapPreviewStore.summary?.laterLines ?? []} productsById={productsById} />
+            </div>
+            {pickupStoreCanSelect(mapPreviewStore.summary) ? <div className="px-4 pt-3"><button type="button" onClick={() => onSelect(mapPreviewStore.id)} className="w-full rounded bg-black py-3 text-[13px] uppercase tracking-[0.65px] text-white">Заберу в магазине</button></div> : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3308,7 +3278,7 @@ function SplitSelectionModal({
     selectedMethod === "pickup"
       ? "Заберу из магазина"
       : selectedMethod === "courier"
-        ? "Получу курьером"
+        ? "Доставить курьером"
         : selectedMethod === "pvz"
           ? "Получу в ПВЗ"
           : "Выберите способ получения";
@@ -3565,8 +3535,12 @@ function SplitSelectionModal({
         productsById={productsById}
         copy={selectorUiCopy?.pickup}
         onSelectStore={(nextStoreId) => {
+          const nextOption = pickupOptions.find((option) => option.storeId === nextStoreId);
           setSelectedPickupStoreId(nextStoreId);
           setPickupSelectorOpen(false);
+          if (nextOption) {
+            onConfirm(nextOption);
+          }
         }}
         zOverlayClass="z-[110]"
       />
@@ -3584,6 +3558,9 @@ function SplitSelectionModal({
         onSelectPoint={(nextPointId) => {
           onSelectPvz(nextPointId);
           setPvzSelectorOpen(false);
+          if (pvzOption) {
+            onConfirm(pvzOption);
+          }
         }}
         zOverlayClass="z-[110]"
       />
@@ -3991,6 +3968,8 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   /** Откуда открыли шит телефона: оформление заказа — после ввода уходим на thank-you; бонусы — только сохраняем номер. */
   const [phoneGateReason, setPhoneGateReason] = useState<"submit" | "recipient" | "bonus" | null>(null);
   const [singleReceiptOfferOpen, setSingleReceiptOfferOpen] = useState(false);
+  const [onlinePaymentIntroOpen, setOnlinePaymentIntroOpen] = useState(false);
+  const [onlinePaymentIntroOverride, setOnlinePaymentIntroOverride] = useState<CheckoutPaymentMethod | null>(null);
   const phoneGatePhoneInputRef = useRef<HTMLInputElement | null>(null);
   const phoneGateCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [courierAddress, setCourierAddress] = useState("");
@@ -5316,14 +5295,28 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
 
   const completeCheckoutSubmit = (
     recOverride?: CheckoutRecipientPayload | null,
-    options?: { skipReceiptOffer?: boolean; paymentMethod?: CheckoutPaymentMethod },
+    options?: {
+      skipReceiptOffer?: boolean;
+      skipOnlinePaymentIntro?: boolean;
+      paymentMethod?: CheckoutPaymentMethod;
+      startPaymentFlow?: boolean;
+    },
   ) => {
     const rec = recOverride ?? recipient;
     if (!boot || !scenario || !cartDetail || !method || !rec) return;
     const singlePart = includedParts.length === 1 ? includedParts[0] : null;
-    const selectedPaymentMethod = singlePart ? (partPaymentMethods[singlePart.key] ?? "card") : null;
+    const selectedPaymentMethod = singlePart ? (partPaymentMethods[singlePart.key] ?? "sbp") : null;
     if (singlePart && selectedPaymentMethod === "on_receipt" && !options?.skipReceiptOffer) {
       setSingleReceiptOfferOpen(true);
+      return;
+    }
+    const hasOnlinePayment = includedParts.some((part) => {
+      const partMethod = options?.paymentMethod ?? partPaymentMethods[part.key] ?? "sbp";
+      return partMethod !== "on_receipt";
+    });
+    if (hasOnlinePayment && !options?.skipOnlinePaymentIntro) {
+      setOnlinePaymentIntroOverride(options?.paymentMethod ?? null);
+      setOnlinePaymentIntroOpen(true);
       return;
     }
     const finalRemainderLines = [...manualExcludedLines];
@@ -5353,7 +5346,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
           deliveryPrice: p.deliveryPrice,
           promoDiscount: shipmentDiscounts[p.key]?.promoDiscount ?? 0,
           bonusUsed: shipmentDiscounts[p.key]?.bonusUsed ?? 0,
-          paymentMethod: options?.paymentMethod ?? partPaymentMethods[p.key] ?? "card",
+          paymentMethod: options?.paymentMethod ?? partPaymentMethods[p.key] ?? "sbp",
           holdNotice: formatHoldNoticeForPart(p.mode, p.holdDays, new Date()) ?? undefined,
           selectedDate:
             p.mode === "courier"
@@ -5380,6 +5373,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       recipientName: toRecipientName(rec.fullName),
     };
     writeThankYouPayload(normalizeThankYouData(payload));
+    if (options?.startPaymentFlow) sessionStorage.setItem("thankyou:auto-pay", "1");
     router.push("/thank-you");
   };
 
@@ -5800,7 +5794,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                     <PartCard
                       inGroup
                       part={p}
-                      paymentMethod={partPaymentMethods[p.key] ?? "card"}
+                      paymentMethod={partPaymentMethods[p.key] ?? "sbp"}
                       onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [p.key]: payment }))}
                       bonusUsed={shipmentDiscounts[p.key]?.bonusUsed ?? 0}
                       included={included[p.key] !== false}
@@ -5845,7 +5839,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                       key={p.key}
                       courierDateLabels={courierDateLabels}
                       part={p}
-                      paymentMethod={partPaymentMethods[p.key] ?? "card"}
+                      paymentMethod={partPaymentMethods[p.key] ?? "sbp"}
                       onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [p.key]: payment }))}
                       bonusUsed={shipmentDiscounts[p.key]?.bonusUsed ?? 0}
                       included={included[p.key] !== false}
@@ -5894,7 +5888,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
               onDateChange={(dateIx) => setPartSchedules((prev) => ({ ...prev, [part.key]: { dateIx, slotIx: prev[part.key]?.slotIx ?? 0 } }))}
               onSlotChange={(slotIx) => setPartSchedules((prev) => ({ ...prev, [part.key]: { dateIx: prev[part.key]?.dateIx ?? 0, slotIx } }))}
               courierDateLabels={courierDateLabels} promoFactor={promoFactor}
-              paymentMethod={partPaymentMethods[part.key] ?? "card"}
+              paymentMethod={partPaymentMethods[part.key] ?? "sbp"}
               onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [part.key]: payment }))}
               bonusUsed={shipmentDiscounts[part.key]?.bonusUsed ?? 0}
             />
@@ -5921,7 +5915,7 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                 key={part.key}
                 inGroup
                 part={part}
-                      paymentMethod={partPaymentMethods[part.key] ?? "card"}
+                      paymentMethod={partPaymentMethods[part.key] ?? "sbp"}
                       onPaymentChange={(payment) => setPartPaymentMethods((prev) => ({ ...prev, [part.key]: payment }))}
                       bonusUsed={shipmentDiscounts[part.key]?.bonusUsed ?? 0}
                 included={included[part.key] !== false}
@@ -6309,6 +6303,27 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
             >
               Оплатить при получении
             </button>
+          </div>
+        </div>
+      ) : null}
+      {onlinePaymentIntroOpen ? (
+        <div className="fixed inset-0 z-[115] flex items-end justify-center bg-black/45 sm:items-center sm:p-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="online-payment-intro-title" className="w-full max-w-md rounded-t-xl bg-white pb-[max(16px,env(safe-area-inset-bottom,0px))] sm:rounded-xl">
+            <div className="flex items-center justify-between border-b border-[#e6e6e6] px-5 py-5">
+              <h2 id="online-payment-intro-title" className="text-[20px] leading-6">{includedParts.every((part) => (onlinePaymentIntroOverride ?? partPaymentMethods[part.key] ?? "sbp") === "sbp") ? "СБП" : "Онлайн-оплата"}</h2>
+              <CheckoutCloseCrossButton ariaLabel="Закрыть" onClick={() => setOnlinePaymentIntroOpen(false)} />
+            </div>
+            <div className="min-h-[260px] px-5 py-6">
+              <div className="flex items-center justify-between text-[17px] leading-5"><span>Оплата</span><span className="tabular-nums">{fmt(payFinal)}</span></div>
+              <div className="mt-7 flex items-center gap-4">
+                <Image src="/checkout-payment/sbp.svg" alt="" width={32} height={32} className="h-8 w-8 object-contain" />
+                <p className="text-sm leading-4">Сейчас начнётся оплата. Сначала оплатим один заказ, затем сразу перейдём к следующему.</p>
+              </div>
+            </div>
+            <div className="border-t border-[#f4f4f4] px-5 pt-4">
+              <button type="button" className="order-payment-button" onClick={() => { setOnlinePaymentIntroOpen(false); completeCheckoutSubmit(undefined, { skipReceiptOffer: true, skipOnlinePaymentIntro: true, paymentMethod: onlinePaymentIntroOverride ?? undefined, startPaymentFlow: true }); }}>Продолжить</button>
+              <button type="button" className="mt-2 min-h-10 w-full text-sm underline underline-offset-4" onClick={() => setOnlinePaymentIntroOpen(false)}>Изменить способ оплаты</button>
+            </div>
           </div>
         </div>
       ) : null}
