@@ -23,7 +23,7 @@ jobs:
           AMVERA_SSH_PRIVATE_KEY: ${{ secrets.AMVERA_SSH_PRIVATE_KEY }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$AMVERA_SSH_PRIVATE_KEY" > ~/.ssh/amvera_deploy_key
+          printf '%s' "$AMVERA_SSH_PRIVATE_KEY" | base64 --decode > ~/.ssh/amvera_deploy_key
           chmod 600 ~/.ssh/amvera_deploy_key
           ssh-keyscan -H git.msk0.amvera.ru >> ~/.ssh/known_hosts
 
