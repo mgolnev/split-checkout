@@ -1,0 +1,33 @@
+name: Deploy to Amvera
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-amvera-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Amvera SSH access
+        env:
+          AMVERA_SSH_PRIVATE_KEY: ${{ secrets.AMVERA_SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$AMVERA_SSH_PRIVATE_KEY" > ~/.ssh/amvera_deploy_key
+          chmod 600 ~/.ssh/amvera_deploy_key
+          ssh-keyscan -H git.msk0.amvera.ru >> ~/.ssh/known_hosts
+
+      - name: Push main to Amvera
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/amvera_deploy_key -o IdentitiesOnly=yes
+        run: git push --force-with-lease=master git@git.msk0.amvera.ru:golnev/split-checkout HEAD:master
