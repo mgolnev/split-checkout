@@ -405,7 +405,6 @@ function courierScenarioByRuleSteps(ctx: EngineInput): ScenarioResult {
 
   if (parts.length > 1) {
     informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-    informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
   } else if (parts.length === 1 && remainder.length > 0) {
     informers.push(commonDisclaimer("oneShipmentPartial", ctx.disclaimers));
   }
@@ -596,7 +595,6 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
 
       if (parts.length > 1) {
         informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-        informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
       }
       if (remainder.length > 0) {
         informers.push(commonDisclaimer("remainderUnavailable", ctx.disclaimers));
@@ -646,7 +644,6 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
 
     if (parts.length > 1) {
       informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-      informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
     }
     if (remainder.length > 0) {
       informers.push(commonDisclaimer("remainderUnavailable", ctx.disclaimers));
@@ -692,7 +689,6 @@ function courierScenario(ctx: EngineInput): ScenarioResult {
 
     if (parts.length > 1) {
       informers.push(commonDisclaimer("splitApplied", ctx.disclaimers));
-      informers.push(commonDisclaimer("separatePayment", ctx.disclaimers));
     } else {
       informers.push(commonDisclaimer("oneShipmentPartial", ctx.disclaimers));
     }
@@ -830,13 +826,7 @@ function pickupScenario(ctx: EngineInput): ScenarioResult {
   return {
     parts,
     remainder,
-    informers:
-      parts.length > 1
-        ? [
-            ...informers,
-            methodDisclaimer("pickup", "separatePaymentSplitPickup", ctx.disclaimers),
-          ]
-        : informers,
+    informers,
     payOnDeliveryOnly: false,
     fromOverride: false,
     deliveryMethodCode: "pickup",
@@ -958,8 +948,20 @@ export function scenarioFromOverride(
   disclaimers?: DisclaimerTextMap,
 ): ScenarioResult {
   const parts: ScenarioPart[] = [];
+  const excludedOverrideItems: CartLine[] = [];
 
   for (const op of payload.parts) {
+    const modeMatchesMethod = deliveryMethodCode === "courier"
+      ? op.mode === "courier"
+      : deliveryMethodCode === "pvz"
+        ? op.mode === "pvz"
+        : deliveryMethodCode === "pickup"
+          ? op.mode === "click_reserve" || op.mode === "click_collect"
+          : false;
+    if (!modeMatchesMethod) {
+      excludedOverrideItems.push(...cloneLines(op.items));
+      continue;
+    }
     const sourceStub: SourceRow = {
       id: op.sourceId,
       name: op.sourceId,
@@ -982,19 +984,27 @@ export function scenarioFromOverride(
     }
   }
 
+  const remainderByProduct = new Map<string, CartLine>();
+  for (const line of [...cloneLines(payload.remainder), ...excludedOverrideItems]) {
+    const existing = remainderByProduct.get(line.productId);
+    if (existing) existing.quantity += line.quantity;
+    else remainderByProduct.set(line.productId, { ...line });
+  }
+  const remainder = [...remainderByProduct.values()];
+  const overrideInformers = payload.informers?.length
+    ? [...payload.informers]
+    : ["Активен ручной сценарий (override) для UX-теста."];
+  if (excludedOverrideItems.length > 0) {
+    overrideInformers.push(
+      commonDisclaimer("remainderUnavailable", disclaimers),
+      commonDisclaimer("remainderKeep", disclaimers),
+    );
+  }
+
   return {
     parts,
-    remainder: cloneLines(payload.remainder),
-    informers: compactDisclaimers(
-      payload.informers?.length
-        ? payload.informers!
-        : [
-            "Активен ручной сценарий (override) для UX-теста.",
-            ...(parts.length > 1
-              ? [commonDisclaimer("separatePayment", disclaimers)]
-              : []),
-          ],
-    ),
+    remainder,
+    informers: compactDisclaimers(overrideInformers),
     payOnDeliveryOnly: false,
     fromOverride: true,
     deliveryMethodCode,

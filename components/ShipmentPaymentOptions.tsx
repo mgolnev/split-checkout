@@ -11,7 +11,7 @@ export function PaymentMethodIcon({ method, selected = false }: { method: Checko
     className={`h-6 w-6 shrink-0 object-contain ${selected && method !== "sbp" ? "invert" : ""}`} />;
 }
 
-/** Independent payment choice for a single shipment. */
+/** One payment method shared by every shipment in the order. */
 export function ShipmentPaymentOptions({ value, onChange, onlineOnly = false }: {
   value: CheckoutPaymentMethod;
   onChange: (method: CheckoutPaymentMethod) => void;

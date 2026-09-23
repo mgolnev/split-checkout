@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  allocateDiscount, completeShipmentPayment, deriveShipmentStatus, failShipmentPayment, normalizeThankYouData,
-  PAYMENT_WINDOW_MS, shipmentOnlineDiscount, shipmentTotal, type ThankYouPart, type ThankYouPayload,
+  allocateDiscount, cancelOrder, completeOrderPayment, deriveShipmentStatus, failOrderPayment, normalizeThankYouData,
+  orderOnlineDiscount, PAYMENT_WINDOW_MS, shipmentOnlineDiscount, shipmentTotal, type ThankYouPart, type ThankYouPayload,
 } from "../lib/thank-you-session";
 import { computeScenario, scenarioFromOverride } from "../lib/split-engine";
 
@@ -19,36 +19,36 @@ const raw: ThankYouPayload = {
 const order = normalizeThankYouData(raw, now);
 assert.equal(deriveShipmentStatus("card"), "awaiting_payment");
 assert.equal(deriveShipmentStatus("sbp"), "awaiting_payment");
-assert.deepEqual(order.parts.map((p) => p.actionStatus), ["awaiting_payment", "awaiting_payment", "active"]);
+assert.equal(order.orderPaymentStatus, "awaiting_payment");
+assert.deepEqual(order.parts.map((p) => p.actionStatus), ["awaiting_payment", "awaiting_payment", "awaiting_payment"]);
 assert.equal(new Set(order.parts.map((p) => p.orderNumber)).size, 3);
 assert.equal(order.parts[0].paymentDeadlineIso, new Date(now + PAYMENT_WINDOW_MS).toISOString());
-assert.equal(order.parts[2].paymentDeadlineIso, undefined);
+assert.equal(order.parts[2].paymentDeadlineIso, order.parts[0].paymentDeadlineIso);
 assert.equal(order.parts.reduce((sum, p) => sum + shipmentTotal(p), 0), raw.total);
 
-const paidFirst = completeShipmentPayment(order, "card", "card", now + 1000);
-assert.deepEqual(paidFirst.parts.map((p) => p.actionStatus), ["paid_online", "awaiting_payment", "active"]);
-assert.equal(paidFirst.parts[0].paidAmount, 2186);
-assert.equal(paidFirst.parts[0].onlineDiscount, 0);
-assert.deepEqual(completeShipmentPayment(paidFirst, "card", "sbp", now + 2000), paidFirst);
+const failed = failOrderPayment(order, now + 1000);
+assert.equal(failed.orderPaymentStatus, "payment_failed");
+assert.deepEqual(failed.parts.map((p) => p.actionStatus), ["payment_failed", "payment_failed", "payment_failed"]);
+assert.deepEqual(completeOrderPayment(failed, "card", now + 2000).parts.map((p) => p.actionStatus), ["paid_online", "paid_online", "paid_online"]);
+assert.equal(completeOrderPayment(order, "sbp", now + 1000).total, raw.total);
 
-const failedSecond = failShipmentPayment(paidFirst, "sbp", now + 2000);
-assert.equal(failedSecond.parts[1].actionStatus, "payment_failed");
-assert.equal(completeShipmentPayment(failedSecond, "sbp", "sbp", now + 3000).parts[1].actionStatus, "paid_online");
+const receiptOrder = normalizeThankYouData({
+  ...raw, paymentMethod: "on_receipt", parts: raw.parts.map((p) => ({ ...p, paymentMethod: "on_receipt" })),
+}, now);
+assert.equal(receiptOrder.orderPaymentStatus, "active");
+assert.equal(shipmentOnlineDiscount(receiptOrder.parts[2]), 94); // 5% of 1887 goods; shipping excluded.
+assert.equal(orderOnlineDiscount(receiptOrder.parts), 283);
+const paidReceipt = completeOrderPayment(receiptOrder, "sbp", now + 3000);
+assert.deepEqual(paidReceipt.parts.map((p) => p.actionStatus), ["paid_online", "paid_online", "paid_online"]);
+assert.equal(paidReceipt.total, 6275);
+assert.equal(paidReceipt.orderPaidAmount, 6275);
 
-assert.equal(shipmentOnlineDiscount(order.parts[2]), 94); // 5% of 1887 goods; shipping excluded.
-const paidReceipt = completeShipmentPayment(paidFirst, "receipt", "sbp", now + 3000);
-assert.equal(paidReceipt.parts[2].paymentMethod, "sbp");
-assert.equal(paidReceipt.parts[2].paidAmount, 2092);
-assert.equal(paidReceipt.parts[2].onlineDiscount, 94);
-assert.equal(paidReceipt.total, 6464);
-assert.deepEqual(completeShipmentPayment(paidReceipt, "receipt", "card", now + 4000), paidReceipt);
-
-const reopened = normalizeThankYouData(JSON.parse(JSON.stringify(paidFirst)), now + PAYMENT_WINDOW_MS);
-assert.deepEqual(reopened.parts.map((p) => p.actionStatus), ["paid_online", "cancelled", "active"]);
+const reopened = normalizeThankYouData(JSON.parse(JSON.stringify(order)), now + PAYMENT_WINDOW_MS);
+assert.equal(reopened.orderPaymentStatus, "cancelled");
+assert.deepEqual(reopened.parts.map((p) => p.actionStatus), ["cancelled", "cancelled", "cancelled"]);
 assert.equal(reopened.parts[1].cancellationReason, "payment_expired");
-assert.equal(reopened.parts[0].paymentDeadlineIso, order.parts[0].paymentDeadlineIso);
-assert.equal(shipmentOnlineDiscount(reopened.parts[2]), 94);
-assert.equal(completeShipmentPayment(order, "sbp", "sbp", now + PAYMENT_WINDOW_MS).parts[1].actionStatus, "cancelled");
+assert.equal(completeOrderPayment(reopened, "sbp", now + PAYMENT_WINDOW_MS).orderPaymentStatus, "cancelled");
+assert.equal(cancelOrder(order).parts.every((p) => p.actionStatus === "cancelled"), true);
 
 const single = normalizeThankYouData({ ...raw, parts: [part("one", "on_receipt")] }, now);
 assert.equal(single.parts[0].orderNumber, "GJ-TEST");
@@ -84,4 +84,10 @@ assert.equal(scenarioFromOverride({ parts: [
   { key: "a", sourceId: "wh", mode: "courier", leadTimeLabel: "Завтра", items: [cartLines[0]] },
   { key: "b", sourceId: "store", mode: "courier", leadTimeLabel: "Завтра", items: [cartLines[1]] },
 ], remainder: [] }, products, rule, "courier").payOnDeliveryOnly, false);
-console.log("Shipment payment checks passed: mixed methods, discount allocation, independent settlement, retries, expiry, reload, split scenarios.");
+const isolatedOverride = scenarioFromOverride({ parts: [
+  { key: "courier", sourceId: "wh", mode: "courier", leadTimeLabel: "Завтра", items: [cartLines[0]] },
+  { key: "pvz", sourceId: "wh", mode: "pvz", leadTimeLabel: "Послезавтра", items: [cartLines[1]] },
+], remainder: [] }, products, rule, "courier");
+assert.deepEqual(isolatedOverride.parts.map((p) => p.mode), ["courier"]);
+assert.deepEqual(isolatedOverride.remainder, [cartLines[1]]);
+console.log("Order payment checks passed: one method and status, unified settlement, retries, receipt discount, expiry, reload, split scenarios.");
