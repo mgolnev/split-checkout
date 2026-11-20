@@ -17,8 +17,8 @@ function readMap(): ByCity {
 
 export function loadLastPvzPointId(cityId: string): string | null {
   if (!cityId) return null;
-  const id = readMap()[cityId]?.trim();
-  return id || null;
+  const id = readMap()[cityId];
+  return typeof id === "string" ? id.trim() || null : null;
 }
 
 export function saveLastPvzPoint(cityId: string, pointId: string): void {

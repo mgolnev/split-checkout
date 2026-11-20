@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadCourierAddress, saveCourierAddress } from "@/lib/courier-address-storage";
+import { loadCheckoutDelivery, saveCheckoutDelivery } from "@/lib/checkout-delivery-storage";
 import { loadCheckoutCart, saveCheckoutCart, type StoredCartLine } from "@/lib/checkout-cart-storage";
 import { loadLastPickupStoreId, saveLastPickupStore } from "@/lib/pickup-store-storage";
 import { loadLastPvzPointId, saveLastPvzPoint } from "@/lib/pvz-point-storage";
@@ -4094,8 +4095,32 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
         if (cancelled) return;
         setBootError(null);
         setBoot(d);
-        const firstCity = d.cities[0];
-        if (firstCity) setCityId(firstCity.id);
+        const savedDelivery = loadCheckoutDelivery();
+        const savedCity = d.cities.find((city) => city.id === savedDelivery?.cityId);
+        const initialCity = savedCity ?? d.cities[0];
+        if (!initialCity) return;
+        setCityId(initialCity.id);
+
+        const savedStoreId = loadLastPickupStoreId(initialCity.id);
+        const savedPointId = loadLastPvzPointId(initialCity.id);
+        const initialStoreId = d.storesByCity[initialCity.id]?.find((store) => store.id === savedStoreId)?.id ?? "";
+        const initialPvzId = d.pvzByCity[initialCity.id]?.find(
+          (point) => point.id === savedPointId && !point.requiresPrepayment,
+        )?.id ?? "";
+        setStoreId(initialStoreId);
+        setPvzId(initialPvzId);
+
+        // Восстанавливаем только подтверждённый способ с актуальным адресом/точкой.
+        // Не запускаем шиты выбора и добавления отправлений при возвращении в чекаут.
+        if (!savedCity || !savedDelivery) return;
+        const savedMethod = savedDelivery.method;
+        if (!d.deliveryMethods.some((delivery) => delivery.code === savedMethod)
+          || !d.allowedMethodsByCity[initialCity.id]?.includes(savedMethod)) return;
+        if ((savedMethod === "courier" && loadCourierAddress())
+          || (savedMethod === "pickup" && initialStoreId)
+          || (savedMethod === "pvz" && initialPvzId)) {
+          setMethod(savedMethod);
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -4571,6 +4596,17 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
   }, [method, pvzOptions, pvzId]);
 
   const selectedPvzPoint = pvzOptions.find((point) => point.id === pvzId);
+
+  useEffect(() => {
+    if (!method || !cityId || !availableMethods.some((delivery) => delivery.code === method)) return;
+    const hasDestination = method === "courier"
+      ? !!courierAddress.trim()
+      : method === "pickup"
+        ? !!selectedPickupStore
+        : !!selectedPvzPoint && !isPvzUnavailableForCurrentOrder;
+    if (hasDestination) saveCheckoutDelivery({ cityId, method });
+  }, [method, cityId, availableMethods, courierAddress, selectedPickupStore, selectedPvzPoint, isPvzUnavailableForCurrentOrder]);
+
   const pvzSummary = cartDetail?.lines?.length
     ? methodSummariesForUi?.pvz
     : boot?.methodSummaryByCity[cityId]?.pvz;
@@ -5123,6 +5159,21 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
       return;
     }
     setMethod(nextMethod);
+    if (nextMethod === "pickup") {
+      const savedStoreId = loadLastPickupStoreId(cityId);
+      const nextStoreId = pickupStores.find((store) => store.id === storeId)?.id
+        ?? pickupStores.find((store) => store.id === savedStoreId)?.id;
+      setStoreId(nextStoreId ?? "");
+      setPickupSelectorOpen(!nextStoreId);
+      if (nextStoreId) setContinueSplitAfterPrimaryChoice(true);
+    } else if (nextMethod === "pvz") {
+      const savedPointId = loadLastPvzPointId(cityId);
+      const nextPointId = pvzOptions.find((point) => point.id === pvzId)?.id
+        ?? pvzOptions.find((point) => point.id === savedPointId)?.id;
+      setPvzId(nextPointId ?? "");
+      setPvzSelectorOpen(!nextPointId);
+      if (nextPointId) setContinueSplitAfterPrimaryChoice(true);
+    }
   };
 
   useEffect(() => {
@@ -5654,8 +5705,6 @@ export default function CheckoutApp(props: { variant?: "classic" | "redesign" } 
                   : undefined,
                 onSelect: () => {
                   selectPrimaryMethod(dm.code as "courier" | "pickup" | "pvz");
-                  if (dm.code === "pickup") setPickupSelectorOpen(true);
-                  if (dm.code === "pvz") setPvzSelectorOpen(true);
                 },
               };
             })}
